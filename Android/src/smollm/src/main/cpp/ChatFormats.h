@@ -33,7 +33,7 @@ inline std::string trimmed(const std::string &s) {
 // `enableThinking` replica la plantilla canonica de Gemma 4: con thinking activado se escribe el
 // token <|think|> al principio del primer turno de sistema y se deja abierto el canal de
 // pensamiento, para que el modelo razone antes de responder. Con thinking desactivado no se
-// escribe <|think|> y el canal se cierra vacio (respuesta directa).
+// escribe <|think|> (respuesta directa).
 inline std::string formatGemma4(const std::vector<std::pair<std::string, std::string>> &messages,
                                 bool enableThinking) {
     std::string out;
@@ -68,8 +68,11 @@ inline std::string formatGemma4(const std::vector<std::pair<std::string, std::st
     if (enableThinking && !thinkInjected) {
         out = "<|turn>system\n<|think|>\n<turn|>\n" + out;
     }
+    // Prompt de generacion canonico para E2B/E4B (documentacion de Gemma 4): solo "<|turn>model\n".
+    // Con thinking activado el propio modelo escribe "<|channel>thought\n...<channel|>" y luego la
+    // respuesta; con thinking desactivado responde directo. El canal vacio ("<|channel>thought\n
+    // <channel|>") solo lo anade la plantilla oficial en los modelos de 12B/26B/31B.
     out += "<|turn>model\n";
-    out += enableThinking ? "<|channel>thought\n" : "<|channel>thought\n<channel|>";
     return out;
 }
 

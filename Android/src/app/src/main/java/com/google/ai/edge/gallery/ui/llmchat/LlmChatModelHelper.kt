@@ -127,17 +127,17 @@ object LlmChatModelHelper : LlmModelHelper {
       // Decodificación especulativa: solo si el usuario la activó y el archivo del modelo la trae.
       var supportsSpeculative = false
       var modelInfoLog = "ModelInfo no disponible"
+      var modelInfoRead = false
       val settingsStore =
         com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(context)
       val wantsSpeculative = settingsStore.speculativeDecoding()
       try {
         ModelInfo.from(modelPath).use { modelInfo ->
-          modelInfoLog =
-            "type=${modelInfo.modelType} maxContext=${modelInfo.maxContextTokens}"
+          modelInfoRead = true
+          modelInfoLog = "class=${modelInfo::class.java.simpleName}"
           if (modelInfo is ModelInfo.Llm) {
             supportsSpeculative = modelInfo.hasSpeculativeDecodingSupport()
-            modelInfoLog +=
-              " thinking=${modelInfo.supportsThinking()} speculative=$supportsSpeculative"
+            modelInfoLog += " speculative=$supportsSpeculative"
           }
         }
       } catch (e: Exception) {
@@ -145,7 +145,8 @@ object LlmChatModelHelper : LlmModelHelper {
         Log.w(TAG, "No se pudo leer ModelInfo de '${model.name}'", e)
       }
       // Se guarda para que RoleplaySettingsDialog pueda avisar/deshabilitar el interruptor.
-      settingsStore.setSpeculativeSupported(model.name, supportsSpeculative)
+      // Solo se guarda si ModelInfo se pudo leer: un fallo de lectura no debe bloquear el interruptor.
+      if (modelInfoRead) settingsStore.setSpeculativeSupported(model.name, supportsSpeculative)
       val useSpeculative = supportsSpeculative && wantsSpeculative
       Log.i(
         TAG,
@@ -181,9 +182,8 @@ object LlmChatModelHelper : LlmModelHelper {
           }
           created = candidate
           if (useSpeculative && !withSpeculative) {
-            // El motor no pudo arrancar con decodificación especulativa: se deja constancia y se
-            // desactiva el aviso/switch para este modelo.
-            settingsStore.setSpeculativeSupported(model.name, false)
+            // El motor no pudo arrancar con decodificación especulativa: se deja constancia en el
+            // log, sin bloquear el interruptor (el fallo puede ser pasajero, p. ej. poca memoria).
             Log.w(
               TAG,
               "'${model.name}' no pudo inicializar con decodificación especulativa; se usa el modo normal",
