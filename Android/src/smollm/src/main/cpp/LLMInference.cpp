@@ -144,14 +144,13 @@ LLMInference::getContextSizeUsed() const {
     return _nCtxUsed;
 }
 
-std::vector<llama_token>
-LLMInference::_tokenizeMessages(const std::vector<llama_chat_message> &msgs) {
+std::string
+LLMInference::_formatPrompt(const std::vector<llama_chat_message> &msgs) {
     if (_isGemma4) {
         std::vector<std::pair<std::string, std::string>> items;
         items.reserve(msgs.size());
         for (auto &m: msgs) items.emplace_back(m.role, m.content);
-        std::string prompt = chatfmt::formatGemma4(items, _enableThinking);
-        return common_tokenize(llama_model_get_vocab(_model), prompt, true, true);
+        return chatfmt::formatGemma4(items, _enableThinking);
     }
     int new_len = llama_chat_apply_template(
         _chatTemplate,
@@ -180,12 +179,120 @@ LLMInference::_tokenizeMessages(const std::vector<llama_chat_message> &msgs) {
             fallback << msg.role << ": " << msg.content << "\n";
         }
         fallback << _assistantRole << ":";
-        std::string prompt = fallback.str();
-        return common_tokenize(llama_model_get_vocab(_model), prompt, true, true);
+        return fallback.str();
     }
 
-    std::string prompt(_formattedMessages.begin(), _formattedMessages.begin() + new_len);
-    return common_tokenize(llama_model_get_vocab(_model), prompt, true, true);
+    return std::string(_formattedMessages.begin(), _formattedMessages.begin() + new_len);
+}
+
+std::vector<llama_token>
+LLMInference::_tokenizeMessages(const std::vector<llama_chat_message> &msgs) {
+    return common_tokenize(llama_model_get_vocab(_model), _formatPrompt(msgs), true, true);
+}
+
+bool
+LLMInference::loadMmproj(const char *mmprojPath, int nThreads) {
+    if (_mtmd) {
+        mtmd_free(_mtmd);
+        _mtmd = nullptr;
+    }
+    mtmd_context_params p = mtmd_context_params_default();
+    p.use_gpu = false;
+    p.n_threads = nThreads > 0 ? nThreads : 4;
+    p.print_timings = false;
+    p.warmup = false; // arranca antes; el primer uso paga el calentamiento
+    _mtmd = mtmd_init_from_file(mmprojPath, _model, p);
+    if (!_mtmd) {
+        LOGe("mtmd_init_from_file() failed for %s", mmprojPath);
+        return false;
+    }
+    if (!mtmd_support_vision(_mtmd)) {
+        LOGe("mmproj has no vision support");
+        mtmd_free(_mtmd);
+        _mtmd = nullptr;
+        return false;
+    }
+    LOGi("mmproj loaded: %s", mmprojPath);
+    return true;
+}
+
+bool
+LLMInference::addImage(int width, int height, const unsigned char *rgb) {
+    if (!_mtmd || width <= 0 || height <= 0) return false;
+    mtmd_bitmap *bmp = mtmd_bitmap_init((uint32_t) width, (uint32_t) height, rgb);
+    if (!bmp) return false;
+    _pendingBitmaps.push_back(bmp);
+    return true;
+}
+
+void
+LLMInference::_clearPendingBitmaps() {
+    for (mtmd_bitmap *b: _pendingBitmaps) mtmd_bitmap_free(b);
+    _pendingBitmaps.clear();
+}
+
+// Turno con imagenes: se procesa todo el prompt (texto + imagenes) con mtmd y solo queda
+// muestrear. Las imagenes no se reutilizan entre turnos: en el historial quedan como "[imagen]".
+void
+LLMInference::_startMediaCompletion(const std::string &query) {
+    const std::string marker = mtmd_default_marker();
+    std::string stored = query;
+    for (size_t pos = 0; (pos = stored.find(marker, pos)) != std::string::npos;) {
+        stored.replace(pos, marker.size(), "[imagen]");
+        pos += 8;
+    }
+    addChatMessage(stored.c_str(), "user");
+    _applyContextWindow();
+
+    // Prompt con los marcadores: se cambia un momento el ultimo mensaje.
+    char *savedContent = const_cast<char *>(_messages.back().content);
+    _messages.back().content = strdup(query.c_str());
+    std::string prompt = _formatPrompt(_messages);
+    free(const_cast<char *>(_messages.back().content));
+    _messages.back().content = savedContent;
+
+    mtmd_input_text text;
+    text.text = prompt.c_str();
+    text.add_special = true;
+    text.parse_special = true;
+
+    std::vector<const mtmd_bitmap *> bitmaps(_pendingBitmaps.begin(), _pendingBitmaps.end());
+    mtmd_input_chunks *chunks = mtmd_input_chunks_init();
+    int32_t rc = mtmd_tokenize(_mtmd, chunks, &text, bitmaps.data(), bitmaps.size());
+    _clearPendingBitmaps();
+    if (rc != 0) {
+        mtmd_input_chunks_free(chunks);
+        throw std::runtime_error("mtmd_tokenize() failed (el texto debe tener un marcador por imagen)");
+    }
+
+    const int nCtx = (int) llama_n_ctx(_ctx);
+    const size_t nTokens = mtmd_helper_get_n_tokens(chunks);
+    if ((int) nTokens >= nCtx - 16) {
+        mtmd_input_chunks_free(chunks);
+        throw std::runtime_error("context size too small for this image: increase the context length");
+    }
+
+    llama_memory_clear(llama_get_memory(_ctx), false);
+    _kvTokens.clear();
+
+    auto t0 = ggml_time_us();
+    llama_pos newPast = 0;
+    rc = mtmd_helper_eval_chunks(_mtmd, _ctx, chunks, 0, 0, (int32_t) llama_n_batch(_ctx), true, &newPast);
+    mtmd_input_chunks_free(chunks);
+    if (rc != 0) {
+        llama_memory_clear(llama_get_memory(_ctx), false);
+        throw std::runtime_error("mtmd_helper_eval_chunks() failed");
+    }
+    _prefillTimeUs = ggml_time_us() - t0;
+    _prefillTokens = (int) nTokens;
+
+    delete _batch;
+    _batch = new llama_batch();
+    _batch->n_tokens = 0;
+    _pendingPrompt.clear();
+    _promptDecoded = false;
+    _mediaPrefilled = true;
+    _kvDirty = true; // el KV ya no coincide con _kvTokens: el siguiente turno parte de cero
 }
 
 // Cadena de muestreo, en el orden habitual de llama.cpp: penalizaciones, DRY, top-k, top-p, min-p,
@@ -269,6 +376,8 @@ LLMInference::resetChat() {
     _response.clear();
     _cacheResponseTokens.clear();
     _nCtxUsed = 0;
+    _kvDirty = false;
+    _clearPendingBitmaps();
     if (_ctx) llama_memory_clear(llama_get_memory(_ctx), false);
     if (_sampler) llama_sampler_reset(_sampler); // olvida las penalizaciones del chat anterior
 }
@@ -313,6 +422,11 @@ LLMInference::_prepareDecode() {
     }
 
     llama_memory_t mem = llama_get_memory(_ctx);
+    if (_kvDirty) {
+        llama_memory_clear(mem, false);
+        _kvTokens.clear();
+        _kvDirty = false;
+    }
     std::vector<int> cached(_kvTokens.begin(), _kvTokens.end());
     std::vector<int> prompt(_promptTokens.begin(), _promptTokens.end());
     size_t common = ctxwin::reusablePrefix(cached, prompt);
@@ -352,6 +466,11 @@ LLMInference::startCompletion(const char *query) {
     _cacheResponseTokens.clear();
 
     std::string queryString(query);
+    if (_mtmd && !_pendingBitmaps.empty()) {
+        _startMediaCompletion(queryString);
+        return;
+    }
+    _clearPendingBitmaps();
     if (queryString.find("<turn|") != std::string::npos || queryString.find("<start_of_turn>") != std::string::npos) {
         _promptTokens = common_tokenize(llama_model_get_vocab(_model), queryString, true, true);
     } else {
@@ -409,37 +528,44 @@ LLMInference::completionLoop() {
 
     auto start = ggml_time_us();
     const bool firstCall = !_promptDecoded;
-    if (firstCall) {
-        // El prompt se procesa en trozos de n_batch: con lotes pequenos (p. ej. 64) una sola
-        // llamada con todo el prompt fallaria.
-        const int nB = (int) llama_n_batch(_ctx);
-        int remaining = _batch->n_tokens;
-        _prefillTokens = remaining;
-        llama_token *ptr = _batch->token;
-        while (remaining > nB) {
-            llama_batch chunk = llama_batch_get_one(ptr, nB);
-            if (llama_decode(_ctx, chunk) < 0) {
-                _kvTokens.clear();
-                llama_memory_clear(llama_get_memory(_ctx), false);
-                throw std::runtime_error("llama_decode() failed");
+    const bool mediaFirst = _mediaPrefilled;
+    if (mediaFirst) {
+        // El prompt con imagenes ya se proceso en startCompletion: solo hay que muestrear.
+        _mediaPrefilled = false;
+        _promptDecoded = true;
+    } else {
+        if (firstCall) {
+            // El prompt se procesa en trozos de n_batch: con lotes pequenos (p. ej. 64) una sola
+            // llamada con todo el prompt fallaria.
+            const int nB = (int) llama_n_batch(_ctx);
+            int remaining = _batch->n_tokens;
+            _prefillTokens = remaining;
+            llama_token *ptr = _batch->token;
+            while (remaining > nB) {
+                llama_batch chunk = llama_batch_get_one(ptr, nB);
+                if (llama_decode(_ctx, chunk) < 0) {
+                    _kvTokens.clear();
+                    llama_memory_clear(llama_get_memory(_ctx), false);
+                    throw std::runtime_error("llama_decode() failed");
+                }
+                for (int i = 0; i < nB; i++) _kvTokens.push_back(ptr[i]);
+                ptr += nB;
+                remaining -= nB;
             }
-            for (int i = 0; i < nB; i++) _kvTokens.push_back(ptr[i]);
-            ptr += nB;
-            remaining -= nB;
+            _batch->token = ptr;
+            _batch->n_tokens = remaining;
         }
-        _batch->token = ptr;
-        _batch->n_tokens = remaining;
-    }
-    if (llama_decode(_ctx, *_batch) < 0) {
-        // El cache pudo quedar a medias: se descarta para que el siguiente turno parta limpio.
-        _kvTokens.clear();
-        llama_memory_clear(llama_get_memory(_ctx), false);
-        throw std::runtime_error("llama_decode() failed");
-    }
-    _promptDecoded = true;
-    for (int i = 0; i < _batch->n_tokens; i++) _kvTokens.push_back(_batch->token[i]);
+        if (llama_decode(_ctx, *_batch) < 0) {
+            // El cache pudo quedar a medias: se descarta para que el siguiente turno parta limpio.
+            _kvTokens.clear();
+            llama_memory_clear(llama_get_memory(_ctx), false);
+            throw std::runtime_error("llama_decode() failed");
+        }
+        _promptDecoded = true;
+        for (int i = 0; i < _batch->n_tokens; i++) _kvTokens.push_back(_batch->token[i]);
 
-    if (firstCall) _prefillTimeUs = ggml_time_us() - start;
+        if (firstCall) _prefillTimeUs = ggml_time_us() - start;
+    }
     _currToken = llama_sampler_sample(_sampler, _ctx, -1);
     
     // Check if token is EOG or if the text so far contains stop markers
@@ -504,6 +630,8 @@ LLMInference::~LLMInference() {
         free(const_cast<char *>(message.role));
         free(const_cast<char *>(message.content));
     }
+    _clearPendingBitmaps();
+    if (_mtmd) mtmd_free(_mtmd);
     if (_ctx) llama_free(_ctx);
     if (_model) llama_model_free(_model);
     delete _batch;

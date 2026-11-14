@@ -62,6 +62,45 @@ class LlamaCppEngine {
         val contextLengthUsed: Int,
     )
 
+    /** true si se cargó un mmproj y este modelo admite imágenes. */
+    val visionReady: Boolean get() = instance.visionReady
+
+    /**
+     * Encola las imágenes (reducidas a [maxSide] px) para el próximo mensaje y devuelve el texto
+     * con los marcadores que hay que poner delante del mensaje, o "" si no hay visión.
+     */
+    fun queueImages(images: List<android.graphics.Bitmap>, maxSide: Int): String {
+        if (!instance.visionReady) return ""
+        val marker = instance.mediaMarker()
+        val sb = StringBuilder()
+        for (bmp in images) {
+            val (rgb, w, h) = toRgb(bmp, maxSide) ?: continue
+            if (instance.addImage(rgb, w, h)) sb.append(marker).append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun toRgb(src: android.graphics.Bitmap, maxSide: Int): Triple<ByteArray, Int, Int>? {
+        val scale = minOf(1f, maxSide.toFloat() / maxOf(src.width, src.height))
+        val w = maxOf(1, (src.width * scale).toInt())
+        val h = maxOf(1, (src.height * scale).toInt())
+        // copy(): un Bitmap de hardware no deja leer sus píxeles.
+        val soft = src.copy(android.graphics.Bitmap.Config.ARGB_8888, false) ?: return null
+        val scaled = if (w == soft.width && h == soft.height) soft else android.graphics.Bitmap.createScaledBitmap(soft, w, h, true)
+        val px = IntArray(w * h)
+        scaled.getPixels(px, 0, w, 0, 0, w, h)
+        val out = ByteArray(w * h * 3)
+        for (i in px.indices) {
+            val c = px[i]
+            out[i * 3] = ((c shr 16) and 0xFF).toByte()
+            out[i * 3 + 1] = ((c shr 8) and 0xFF).toByte()
+            out[i * 3 + 2] = (c and 0xFF).toByte()
+        }
+        if (scaled !== soft) scaled.recycle()
+        if (soft !== src) soft.recycle()
+        return Triple(out, w, h)
+    }
+
     fun loadModel(
         modelPath: String,
         params: SmolLM.InferenceParams = SmolLM.InferenceParams(),
@@ -84,6 +123,9 @@ class LlamaCppEngine {
                     com.google.ai.edge.gallery.data.characters.LastEnginePerf.loadSeconds =
                         loadTime.inWholeMilliseconds / 1000f
                     Log.i("AGLlamaPerf", "modelo cargado en ${"%.1f".format(loadTime.inWholeMilliseconds / 1000f)} s")
+                    if (params.mmprojPath != null) {
+                        Log.i("AGLlamaPerf", "vision (mmproj ${params.mmprojPath}): ${if (instance.visionReady) "lista" else "NO se pudo cargar"}")
+                    }
                     instance.setContextWindow(CONTEXT_WINDOW_HIGH, CONTEXT_WINDOW_LOW)
                     samplerSettings?.let { instance.setSampler(it.toFloatArray()) }
 

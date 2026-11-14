@@ -1,5 +1,10 @@
 package com.google.ai.edge.gallery.ui.roleplay
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -15,13 +20,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,6 +41,10 @@ import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.characters.EnginePerfSettings
 import com.google.ai.edge.gallery.data.characters.EnginePerfStore
 import com.google.ai.edge.gallery.data.characters.LastEnginePerf
+import com.google.ai.edge.gallery.data.characters.MmprojFiles
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Rendimiento del motor GGUF (llama.cpp): hilos, lotes, mmap, repack, Flash Attention, caché KV,
@@ -48,6 +61,27 @@ fun EnginePerfDialog(onDismiss: () -> Unit) {
         s = n
         store.save(n)
     }
+
+    val scope = rememberCoroutineScope()
+    var mmprojRefresh by remember { mutableIntStateOf(0) }
+    var copying by remember { mutableStateOf(false) }
+    val mmprojFiles = remember(mmprojRefresh) { MmprojFiles.list(context) }
+    val pickMmproj =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            if (uri != null) {
+                copying = true
+                scope.launch {
+                    val name = withContext(Dispatchers.IO) { runCatching { MmprojFiles.import(context, uri) }.getOrNull() }
+                    copying = false
+                    if (name == null) {
+                        Toast.makeText(context, "Elige un archivo mmproj en formato .gguf.", Toast.LENGTH_LONG).show()
+                    } else {
+                        update(s.copy(mmproj = name))
+                        mmprojRefresh++
+                    }
+                }
+            }
+        }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -118,6 +152,36 @@ fun EnginePerfDialog(onDismiss: () -> Unit) {
                 }
                 NumberField("Longitud máx. de respuesta (-1 = sin límite)", s.maxResponse, allowNegative = true) {
                     update(s.copy(maxResponse = it))
+                }
+
+                Section("Visión (mmproj)")
+                Text(
+                    "Para enviar imágenes a un modelo GGUF hace falta su archivo mmproj (el que coincide con ese " +
+                        "modelo). Marca «soporta imágenes» al importar el modelo y úsalo en «AI Chat con imágenes».",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    Modifier.fillMaxWidth().clickable { update(s.copy(mmproj = "")) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = s.mmproj.isEmpty(), onClick = { update(s.copy(mmproj = "")) })
+                    Text("Ninguno (solo texto)", style = MaterialTheme.typography.bodyMedium)
+                }
+                mmprojFiles.forEach { name ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { update(s.copy(mmproj = name)) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = s.mmproj == name, onClick = { update(s.copy(mmproj = name)) })
+                        Text(name, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                OutlinedButton(onClick = { pickMmproj.launch(arrayOf("*/*")) }, enabled = !copying) {
+                    Text(if (copying) "Copiando…" else "Importar mmproj (.gguf)")
+                }
+                NumberField("Reducir imagen enviada (px, lado máximo)", s.imageMaxSide) {
+                    update(s.copy(imageMaxSide = it))
                 }
 
                 Section("Último turno")

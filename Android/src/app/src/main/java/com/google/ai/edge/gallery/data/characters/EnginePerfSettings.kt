@@ -23,6 +23,10 @@ data class EnginePerfSettings(
   val contextLength: Int = 0,
   /** -1 = sin límite. */
   val maxResponse: Int = -1,
+  /** Nombre del archivo mmproj elegido (vacío = sin visión en GGUF). */
+  val mmproj: String = "",
+  /** Lado máximo, en píxeles, al que se reduce una imagen antes de enviarla al modelo. */
+  val imageMaxSide: Int = 512,
 ) {
   fun sanitized(): EnginePerfSettings =
     copy(
@@ -33,6 +37,7 @@ data class EnginePerfSettings(
       kvType = kvType.coerceIn(0, KV_TYPES.size - 1),
       contextLength = if (contextLength <= 0) 0 else contextLength.coerceIn(256, 131072),
       maxResponse = if (maxResponse <= 0) -1 else maxResponse.coerceAtMost(32768),
+      imageMaxSide = imageMaxSide.coerceIn(128, 2048),
     )
 
   fun toEngineOptions(): SmolLM.EngineOptions =
@@ -69,6 +74,8 @@ class EnginePerfStore(context: Context) {
         repack = prefs.getBoolean("repack", d.repack),
         contextLength = prefs.getInt("context", d.contextLength),
         maxResponse = prefs.getInt("max_response", d.maxResponse),
+        mmproj = prefs.getString("mmproj", d.mmproj) ?: "",
+        imageMaxSide = prefs.getInt("image_max_side", d.imageMaxSide),
       )
       .sanitized()
   }
@@ -86,7 +93,33 @@ class EnginePerfStore(context: Context) {
       .putBoolean("repack", v.repack)
       .putInt("context", v.contextLength)
       .putInt("max_response", v.maxResponse)
+      .putString("mmproj", v.mmproj)
+      .putInt("image_max_side", v.imageMaxSide)
       .apply()
+  }
+}
+
+/** Proyectores multimodales (mmproj .gguf) importados para dar visión a los modelos GGUF. */
+object MmprojFiles {
+  fun dir(context: Context): java.io.File = java.io.File(context.filesDir, "mmproj").apply { mkdirs() }
+
+  fun list(context: Context): List<String> =
+    dir(context).listFiles { f -> f.isFile && f.name.endsWith(".gguf", ignoreCase = true) }
+      ?.map { it.name }?.sorted() ?: emptyList()
+
+  /** Copia el archivo elegido a la app (puede pesar cientos de MB: llamar fuera del hilo principal). */
+  fun import(context: Context, uri: android.net.Uri): String? {
+    val name =
+      context.contentResolver
+        .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        ?.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        ?: return null
+    if (!name.endsWith(".gguf", ignoreCase = true)) return null
+    val out = java.io.File(dir(context), name)
+    context.contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } }
+      ?: return null
+    return name
   }
 }
 

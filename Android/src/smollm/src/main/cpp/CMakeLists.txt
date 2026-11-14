@@ -28,6 +28,19 @@ target_link_options(
         -Wl,--exclude-libs,ALL
 )
 
+# Vision para GGUF: libreria multimodal de llama.cpp (mtmd). Se compila sin sus ejecutables de
+# ejemplo (cli/debug), solo las fuentes de la libreria.
+set(MTMD_DIR ${LLAMA_DIR}/tools/mtmd)
+file(GLOB MTMD_SOURCES ${MTMD_DIR}/*.cpp ${MTMD_DIR}/models/*.cpp)
+list(FILTER MTMD_SOURCES EXCLUDE REGEX "(mtmd-cli|deprecation-warning)\\.cpp$")
+add_library(mtmd STATIC ${MTMD_SOURCES})
+target_link_libraries(mtmd PUBLIC ggml llama)
+target_include_directories(mtmd PUBLIC ${MTMD_DIR})
+target_include_directories(mtmd PRIVATE ${LLAMA_DIR} ${VENDOR_DIR})
+target_compile_features(mtmd PRIVATE cxx_std_17)
+target_compile_options(mtmd PRIVATE -Wno-cast-qual -O3 -ffunction-sections -fdata-sections)
+set_target_properties(mtmd PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 function(build_library target_name)
     add_library(
             ${target_name}
@@ -44,6 +57,7 @@ function(build_library target_name)
             ${GGML_DIR}/src/ggml-cpu
             ${LLAMA_DIR}/include
             ${VENDOR_DIR}
+            ${MTMD_DIR}
     )
     target_compile_options(
             ${target_name}
@@ -57,7 +71,7 @@ function(build_library target_name)
     )
     target_link_libraries(
             ${target_name}
-            android log llama common
+            android log llama common mtmd
     )
     target_link_options(
             ${target_name}

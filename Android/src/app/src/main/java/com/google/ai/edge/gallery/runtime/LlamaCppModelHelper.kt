@@ -73,6 +73,11 @@ object LlamaCppModelHelper : LlmModelHelper {
             numThreads = threads,
             useMmap = !perf.noMmap,
             engine = perf.toEngineOptions(),
+            mmprojPath =
+                if (supportImage && perf.mmproj.isNotBlank())
+                    java.io.File(com.google.ai.edge.gallery.data.characters.MmprojFiles.dir(context), perf.mmproj)
+                        .takeIf { it.exists() }?.absolutePath
+                else null,
         )
 
         engine.loadModel(
@@ -183,9 +188,17 @@ object LlamaCppModelHelper : LlmModelHelper {
             return
         }
 
-        // Note: llama.cpp text-only — images/audio not supported in this path
+        // Imágenes: solo si se cargó un mmproj (Rendimiento > Visión); si no, se ignoran.
+        var query = input
         if (images.isNotEmpty()) {
-            Log.w(TAG, "Image input not supported with llama.cpp engine, ignoring ${images.size} images")
+            if (engine.visionReady) {
+                val maxSide =
+                    appContext?.let { com.google.ai.edge.gallery.data.characters.EnginePerfStore(it).load().imageMaxSide } ?: 512
+                query = engine.queueImages(images, maxSide) + input
+                Log.i(TAG, "GGUF vision: ${images.size} imagen(es), lado máx $maxSide")
+            } else {
+                Log.w(TAG, "Sin mmproj cargado: se ignoran ${images.size} imágenes (impórtalo en Rendimiento > Visión)")
+            }
         }
 
         // Thinking: en LiteRT el flag viaja en extraContext; en llama.cpp hay que aplicarlo al
@@ -207,7 +220,7 @@ object LlamaCppModelHelper : LlmModelHelper {
         }
 
         engine.generateResponse(
-            query = input,
+            query = query,
             onToken = { partialResponse ->
                 if (splitter == null) resultListener(partialResponse, false, null)
                 else emit(splitter.feed(partialResponse))

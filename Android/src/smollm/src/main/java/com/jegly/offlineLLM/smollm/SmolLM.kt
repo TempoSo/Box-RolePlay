@@ -96,6 +96,8 @@ class SmolLM {
         val useMmap: Boolean = true,
         val useMlock: Boolean = false,
         val engine: EngineOptions = EngineOptions(),
+        /** Proyector multimodal (mmproj .gguf) para imágenes; null = solo texto. */
+        val mmprojPath: String? = null,
     )
 
     /**
@@ -155,7 +157,24 @@ class SmolLM {
                 params.useMlock,
                 params.engine.toIntArray(),
             )
+            visionReady = false
+            if (!params.mmprojPath.isNullOrBlank()) {
+                visionReady = loadMmproj(nativePtr, params.mmprojPath, params.numThreads)
+            }
         }
+
+    /** true si se cargó un mmproj válido con soporte de imágenes. */
+    var visionReady: Boolean = false
+        private set
+
+    /** Marcador que el texto del mensaje debe llevar por cada imagen. */
+    fun mediaMarker(): String = mediaMarkerNative()
+
+    /** Encola una imagen RGB (3 bytes por píxel) para el próximo mensaje. */
+    fun addImage(rgb: ByteArray, width: Int, height: Int): Boolean {
+        verifyHandle()
+        return addImage(nativePtr, rgb, width, height)
+    }
 
     /**
      * Generic method to add a message with a specific role.
@@ -295,5 +314,9 @@ class SmolLM {
     private external fun setSampler(modelPtr: Long, values: FloatArray)
     private external fun setMaxResponse(modelPtr: Long, maxTokens: Int)
     private external fun getPerfStats(modelPtr: Long): FloatArray
+    private external fun loadMmproj(modelPtr: Long, path: String, nThreads: Int): Boolean
+    private external fun supportsVision(modelPtr: Long): Boolean
+    private external fun addImage(modelPtr: Long, rgb: ByteArray, width: Int, height: Int): Boolean
+    private external fun mediaMarkerNative(): String
     private external fun benchModel(modelPtr: Long, pp: Int, tg: Int, pl: Int, nr: Int): String
 }

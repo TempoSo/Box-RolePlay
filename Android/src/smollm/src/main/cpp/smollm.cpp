@@ -1,5 +1,6 @@
 #include "LLMInference.h"
 #include <jni.h>
+#include <android/log.h>
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_jegly_offlineLLM_smollm_SmolLM_loadModel(JNIEnv* env, jobject thiz, jstring modelPath, jfloat minP,
@@ -150,4 +151,37 @@ Java_com_jegly_offlineLLM_smollm_SmolLM_getPerfStats(JNIEnv* env, jobject thiz, 
     jfloatArray out = env->NewFloatArray(4);
     env->SetFloatArrayRegion(out, 0, 4, v);
     return out;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_loadMmproj(JNIEnv* env, jobject thiz, jlong modelPtr, jstring path, jint nThreads) {
+    const char* cpath = env->GetStringUTFChars(path, nullptr);
+    bool ok = false;
+    try {
+        ok = reinterpret_cast<LLMInference*>(modelPtr)->loadMmproj(cpath, nThreads);
+    } catch (const std::exception& e) {
+        __android_log_print(ANDROID_LOG_ERROR, "SmolLM", "loadMmproj failed: %s", e.what());
+    }
+    env->ReleaseStringUTFChars(path, cpath);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_supportsVision(JNIEnv* env, jobject thiz, jlong modelPtr) {
+    return reinterpret_cast<LLMInference*>(modelPtr)->supportsVision() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_addImage(JNIEnv* env, jobject thiz, jlong modelPtr, jbyteArray rgb, jint width, jint height) {
+    jsize len = env->GetArrayLength(rgb);
+    if ((long) len < (long) width * height * 3) return JNI_FALSE;
+    jbyte* data = env->GetByteArrayElements(rgb, nullptr);
+    bool ok = reinterpret_cast<LLMInference*>(modelPtr)->addImage(width, height, reinterpret_cast<const unsigned char*>(data));
+    env->ReleaseByteArrayElements(rgb, data, JNI_ABORT);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_mediaMarkerNative(JNIEnv* env, jobject thiz) {
+    return env->NewStringUTF(LLMInference::mediaMarker());
 }
