@@ -74,3 +74,11 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 - [ ] Resumen: mensajes/chats, recuerdos (tocarlo abre la memoria), Editar / Compartir / Borrar, descripción con "Mostrar más", escenario.
 - [ ] "Seleccionar saludo": aleatorio o uno concreto; "Nuevo chat" empieza con el saludo elegido.
 - [ ] "Continuar chat" abre la última conversación con ese personaje (gris si no hay ninguna).
+
+## Estructura nueva (Fase C: Apps independientes)
+- [ ] ¿Compila? (nuevo `ui/apps/*`; rutas `box_apps`, `box_app_tts`, `box_app_bench` en `GalleryNavGraph.kt`).
+- [ ] Inicio: fila "Apps fijadas" (Roleplay, Texto a voz, Visión) y tarjeta "Tus apps".
+- [ ] Tus apps: cuadrícula con búsqueda; cada icono abre su app por separado.
+- [ ] Texto a voz (app): escribir y "Leer"/"Parar" sin cargar ningún LLM; "Ajustes de voz".
+- [ ] Visión / Generador de imágenes / Transcripción / Preguntar con audio / Lab de prompts: abren la lista de modelos de su tarea.
+- [ ] Benchmark: "Benchmark completo" y "Prueba rápida del motor GGUF".

@@ -101,6 +101,9 @@ private const val ROUTE_CHAT_HISTORY = "chat_history"
 private const val ROUTE_ROLEPLAY = "roleplay"
 private const val ROUTE_ROLEPLAY_EDIT = "roleplay_edit"
 private const val ROUTE_SETTINGS = "box_settings"
+private const val ROUTE_APPS = "box_apps"
+private const val ROUTE_APP_TTS = "box_app_tts"
+private const val ROUTE_APP_BENCH = "box_app_bench"
 private const val ROUTE_INFERENCE = "box_inference"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
@@ -209,7 +212,35 @@ fun GalleryNavHost(
           ?.distinctBy { it.name } ?: emptyList()
       // El modelo elegido en Configuración de inferencia; si no hay (o ya no existe), el primero.
       val chosen = usable.firstOrNull { it.name == homeStore.defaultModel() } ?: usable.firstOrNull()
+      val openApp: (String) -> Unit = { id ->
+        fun openTask(taskId: String) {
+          pickedTask = modelManagerViewModel.getTaskById(taskId)
+          enableModelListAnimation = true
+          navController.navigate(ROUTE_MODEL_LIST)
+        }
+        when (id) {
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.ROLEPLAY -> navController.navigate(ROUTE_ROLEPLAY)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.CHAT -> {
+            if (chosen != null) {
+              lastNavigatedModelName = ""
+              navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${chosen.name}?autoResume=false")
+            } else navController.navigate(ROUTE_INFERENCE)
+          }
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.TTS -> navController.navigate(ROUTE_APP_TTS)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> openTask(BuiltInTaskId.LLM_ASK_IMAGE)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.IMAGE_GEN -> openTask(BuiltInTaskId.IMAGE_GEN)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.TRANSCRIBE -> openTask(BuiltInTaskId.WHISPER)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.AUDIO_ASK -> openTask(BuiltInTaskId.LLM_ASK_AUDIO)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.PROMPT_LAB -> openTask(BuiltInTaskId.LLM_PROMPT_LAB)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.BENCHMARK -> navController.navigate(ROUTE_APP_BENCH)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.MODELS -> navController.navigate(ROUTE_MODEL_MANAGER)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.HISTORY -> navController.navigate(ROUTE_CHAT_HISTORY)
+          else -> Unit
+        }
+      }
       BoxHomeScreen(
+        onApps = { navController.navigate(ROUTE_APPS) },
+        onOpenApp = { openApp(it) },
         modelLabel = chosen?.let { it.displayName.ifBlank { it.name } },
         onChat = {
           if (chosen != null) {
@@ -222,6 +253,52 @@ fun GalleryNavHost(
         onCharacters = { navController.navigate(ROUTE_ROLEPLAY) },
         onHistory = { navController.navigate(ROUTE_CHAT_HISTORY) },
         onSettings = { navController.navigate(ROUTE_SETTINGS) },
+      )
+    }
+
+    composable(route = ROUTE_APPS) {
+      val appsContext = LocalContext.current
+      com.google.ai.edge.gallery.ui.apps.BoxAppsScreen(
+        onBack = { navController.navigateUp() },
+        onOpenApp = { id ->
+          fun openTask(taskId: String) {
+            pickedTask = modelManagerViewModel.getTaskById(taskId)
+            enableModelListAnimation = true
+            navController.navigate(ROUTE_MODEL_LIST)
+          }
+          val appsStore = com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(appsContext)
+          val llmTask = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
+          val chat = llmTask?.models?.firstOrNull { it.name == appsStore.defaultModel() } ?: llmTask?.models?.firstOrNull()
+          when (id) {
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.ROLEPLAY -> navController.navigate(ROUTE_ROLEPLAY)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.CHAT ->
+              if (chat != null) {
+                lastNavigatedModelName = ""
+                navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${chat.name}?autoResume=false")
+              } else navController.navigate(ROUTE_INFERENCE)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.TTS -> navController.navigate(ROUTE_APP_TTS)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> openTask(BuiltInTaskId.LLM_ASK_IMAGE)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.IMAGE_GEN -> openTask(BuiltInTaskId.IMAGE_GEN)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.TRANSCRIBE -> openTask(BuiltInTaskId.WHISPER)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.AUDIO_ASK -> openTask(BuiltInTaskId.LLM_ASK_AUDIO)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.PROMPT_LAB -> openTask(BuiltInTaskId.LLM_PROMPT_LAB)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.BENCHMARK -> navController.navigate(ROUTE_APP_BENCH)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.MODELS -> navController.navigate(ROUTE_MODEL_MANAGER)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.HISTORY -> navController.navigate(ROUTE_CHAT_HISTORY)
+            else -> Unit
+          }
+        },
+      )
+    }
+
+    composable(route = ROUTE_APP_TTS) {
+      com.google.ai.edge.gallery.ui.apps.TtsAppScreen(onBack = { navController.navigateUp() })
+    }
+
+    composable(route = ROUTE_APP_BENCH) {
+      com.google.ai.edge.gallery.ui.apps.BenchmarkAppScreen(
+        onBack = { navController.navigateUp() },
+        onOpenModelBenchmark = { navController.navigate(ROUTE_MODEL_MANAGER) },
       )
     }
 

@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.People
@@ -174,6 +175,8 @@ fun BoxHomeScreen(
   onCharacters: () -> Unit,
   onHistory: () -> Unit,
   onSettings: () -> Unit,
+  onApps: () -> Unit = {},
+  onOpenApp: (String) -> Unit = {},
 ) {
   Column(
     modifier =
@@ -207,11 +210,31 @@ fun BoxHomeScreen(
       textAlign = TextAlign.Center,
       modifier = Modifier.padding(top = 4.dp, bottom = 18.dp),
     )
+    Text(
+      "APPS FIJADAS",
+      style = MaterialTheme.typography.labelLarge,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 4.dp),
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+      com.google.ai.edge.gallery.ui.apps.BoxAppRegistry.pinned.mapNotNull {
+        com.google.ai.edge.gallery.ui.apps.BoxAppRegistry.byId(it)
+      }.forEach { app ->
+        com.google.ai.edge.gallery.ui.apps.BoxAppTile(app, onClick = { onOpenApp(app.id) }, iconSize = 72.dp)
+      }
+    }
+    Spacer(Modifier.height(8.dp))
     BoxActionCard(
       icon = Icons.Rounded.People,
       title = "Elige un personaje",
       subtitle = "Habla con tus personajes de roleplay",
       onClick = onCharacters,
+    )
+    BoxActionCard(
+      icon = Icons.Rounded.Apps,
+      title = "Tus apps",
+      subtitle = "Voz, visión, imágenes, benchmark… cada una por separado",
+      onClick = onApps,
     )
     BoxActionCard(
       icon = Icons.Rounded.History,
