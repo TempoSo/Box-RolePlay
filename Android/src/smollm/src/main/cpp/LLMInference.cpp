@@ -690,6 +690,10 @@ LLMInference::benchModel(int pp, int tg, int pl, int nr) {
     }
 
     llama_batch_free(g_batch);
+    // El benchmark vació el KV: la caché de prefijo ya no vale (si no, el siguiente turno reusaría
+    // tokens que no existen).
+    _kvTokens.clear();
+    _kvDirty = false;
 
     pp_avg /= double(nr);
     tg_avg /= double(nr);

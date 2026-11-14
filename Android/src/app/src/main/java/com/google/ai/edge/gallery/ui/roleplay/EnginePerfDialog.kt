@@ -195,6 +195,35 @@ fun EnginePerfDialog(onDismiss: () -> Unit) {
                             "${"%.2f".format(st.generationTokensPerSecond)} t/s",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+
+                Section("Prueba de velocidad")
+                val benchScope = androidx.compose.runtime.rememberCoroutineScope()
+                var benchRunning by remember { mutableStateOf(false) }
+                var benchResult by remember { mutableStateOf("") }
+                Text(
+                    "Mide la velocidad pura del modelo cargado (sin chat). Sirve para comparar hilos, batch o " +
+                        "flash attention: cambia un ajuste, vuelve a cargar el modelo y repite. Tarda unos segundos.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                    enabled = !benchRunning,
+                    onClick = {
+                        benchRunning = true
+                        benchResult = "Midiendo…"
+                        benchScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                            val r =
+                                runCatching {
+                                        com.google.ai.edge.gallery.runtime.LlamaCppModelHelper.benchmarkLoaded()
+                                    }
+                                    .getOrElse { "Error: ${it.message}" }
+                            benchResult = r ?: "No hay un modelo GGUF cargado (o está generando). Abre un chat y espera a que cargue."
+                            benchRunning = false
+                        }
+                    },
+                ) { Text(if (benchRunning) "Midiendo…" else "Probar velocidad del modelo cargado") }
+                if (benchResult.isNotEmpty()) {
+                    Text(benchResult, style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         dismissButton = { TextButton(onClick = { update(EnginePerfSettings()) }) { Text("Restablecer") } },

@@ -376,11 +376,11 @@ class LlamaCppEngine {
         }
     }
 
-    fun benchModel(pp: Int = 512, tg: Int = 128, pl: Int = 1, nr: Int = 3): String {
-        return if (isModelLoaded.get()) {
-            instance.benchModel(pp, tg, pl, nr)
-        } else {
-            "Model not loaded"
+    /** Prueba de velocidad sintética (prompt y generación). Devuelve null si no se puede ahora. */
+    fun benchModel(pp: Int = 256, tg: Int = 64, pl: Int = 1, nr: Int = 2): String? {
+        if (!isModelLoaded.get() || isGenerating) return null
+        return stateLock.withLock {
+            if (isGenerating) null else instance.benchModel(pp, tg, pl, nr)
         }
     }
 

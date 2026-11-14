@@ -47,3 +47,8 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 - [ ] Llamada o audio de otra app: la voz se calla sola.
 - [ ] Tras 2 min sin hablar el motor de voz se libera; la siguiente lectura tarda un poco más en arrancar (carga) y luego fluye.
 - [ ] Anota: segundos hasta que suena la primera frase, y si el español suena aceptable con tus archivos del modelo.
+
+## Motor – prueba de velocidad
+- [ ] Con un GGUF cargado: Rendimiento del motor > "Probar velocidad del modelo cargado". Anota PP y TG (t/s).
+- [ ] Cambia hilos (ej. 4 → 5 → 6), vuelve a cargar y repite; dime cuál da mejor TG.
+- [ ] Prueba flash attention encendido/apagado y KV f16 vs q8. Después de la prueba, el chat sigue respondiendo normal.

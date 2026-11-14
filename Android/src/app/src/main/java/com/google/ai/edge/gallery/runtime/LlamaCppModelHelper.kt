@@ -125,6 +125,14 @@ object LlamaCppModelHelper : LlmModelHelper {
         )
     }
 
+    /** Prueba de velocidad del primer modelo GGUF cargado (null si no hay o está ocupado). */
+    fun benchmarkLoaded(): String? {
+        val e = engines.values.firstOrNull { it.isModelLoaded.get() } ?: return null
+        val ctx = e.lastLoadParams?.contextSize?.toInt() ?: 2048
+        val pp = (ctx / 2).coerceIn(32, 256)
+        return e.benchModel(pp = pp, tg = 48)
+    }
+
     /** Tamaño de contexto con el que se cargó el modelo (tokens), si está cargado. */
     fun contextSizeOf(model: Model): Int? = engines[model.name]?.lastLoadParams?.contextSize?.toInt()
 
