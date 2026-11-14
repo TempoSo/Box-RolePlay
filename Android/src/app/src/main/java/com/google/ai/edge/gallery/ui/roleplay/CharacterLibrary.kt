@@ -56,7 +56,7 @@ import java.io.File
 @Composable
 fun CharacterLibrary(
     characters: List<RoleplayCharacter>,
-    onChat: (RoleplayCharacter) -> Unit,
+    onOpen: (RoleplayCharacter) -> Unit,
     onEdit: (RoleplayCharacter) -> Unit,
     onShare: (RoleplayCharacter) -> Unit,
     onDelete: (RoleplayCharacter) -> Unit,
@@ -115,7 +115,7 @@ fun CharacterLibrary(
                 items(visible, key = { it.id }) { c ->
                     CharacterTile(
                         character = c,
-                        onChat = { onChat(c) },
+                        onOpen = { onOpen(c) },
                         onEdit = { onEdit(c) },
                         onShare = { onShare(c) },
                         onDelete = { onDelete(c) },
@@ -130,7 +130,7 @@ fun CharacterLibrary(
 @Composable
 private fun CharacterTile(
     character: RoleplayCharacter,
-    onChat: () -> Unit,
+    onOpen: () -> Unit,
     onEdit: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
@@ -151,7 +151,7 @@ private fun CharacterTile(
     }
     var menu by remember { mutableStateOf(false) }
 
-    Card(Modifier.fillMaxWidth().clickable(onClick = onChat)) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f), contentAlignment = Alignment.Center) {
                 if (cover != null) {

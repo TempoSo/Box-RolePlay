@@ -100,6 +100,8 @@ fun RoleplayScreen(
     var showTts by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var memoryFor by remember { mutableStateOf<RoleplayCharacter?>(null) }
+    var detailFor by remember { mutableStateOf<RoleplayCharacter?>(null) }
+    var detail by remember { mutableStateOf<RoleplayViewModel.CharacterDetail?>(null) }
     val settingsStore = remember { com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(context) }
     var defaultModel by remember { mutableStateOf(settingsStore.defaultModel()) }
     // Modelo con el que se abren los chats: el predeterminado de Roleplay (null = hay que elegir).
@@ -173,19 +175,10 @@ fun RoleplayScreen(
             CharacterLibrary(
                 characters = characters,
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                onChat = { c ->
-                    // Prioridad: modelo del personaje, luego el predeterminado de Roleplay.
-                    val chatModel = com.google.ai.edge.gallery.data.characters.RoleplayModelResolver.resolve(
-                        characterModel = c.modelName,
-                        defaultModel = defaultModel,
-                        available = availableModels,
-                    )
-                    if (chatModel != null) {
-                        viewModel.startChat(c, chatModel) { convId -> onOpenChat(chatModel, convId) }
-                    } else {
-                        // Todavía no hay modelo elegido: se abre la configuración para elegir uno.
-                        showSettings = true
-                    }
+                onOpen = { c ->
+                    detailFor = c
+                    detail = null
+                    viewModel.loadDetail(c) { detail = it }
                 },
                 onEdit = { c -> onEditCharacter(c.id) },
                 onShare = { c ->
@@ -201,6 +194,55 @@ fun RoleplayScreen(
             )
         }
         }
+    }
+
+    detailFor?.let { c ->
+        val mems by viewModel.memories(c.id).collectAsState(initial = emptyList())
+        // Prioridad: modelo del personaje, luego el predeterminado de Roleplay.
+        val chatModel = com.google.ai.edge.gallery.data.characters.RoleplayModelResolver.resolve(
+            characterModel = c.modelName,
+            defaultModel = defaultModel,
+            available = availableModels,
+        )
+        CharacterDetailSheet(
+            character = c,
+            detail = detail,
+            memoriesCount = mems.size,
+            onDismiss = { detailFor = null },
+            onEdit = { detailFor = null; onEditCharacter(c.id) },
+            onShare = {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_SUBJECT, "${c.name}.json")
+                    putExtra(Intent.EXTRA_TEXT, viewModel.exportJson(c))
+                }
+                context.startActivity(Intent.createChooser(send, "Compartir personaje"))
+            },
+            onDelete = { detailFor = null; toDelete = c },
+            onMemories = { detailFor = null; memoryFor = c },
+            onContinue = {
+                val d = detail
+                val convId = d?.latestConversationId
+                val model = d?.latestModel?.takeIf { it in availableModels } ?: chatModel
+                if (convId != null && model != null) {
+                    detailFor = null
+                    onOpenChat(model, convId)
+                } else if (model == null) {
+                    detailFor = null
+                    showSettings = true
+                }
+            },
+            onNewChat = { greeting ->
+                if (chatModel != null) {
+                    detailFor = null
+                    viewModel.startChat(c, chatModel, greeting) { convId -> onOpenChat(chatModel, convId) }
+                } else {
+                    // Todavía no hay modelo elegido: se abre la configuración para elegir uno.
+                    detailFor = null
+                    showSettings = true
+                }
+            },
+        )
     }
 
     memoryFor?.let { c ->

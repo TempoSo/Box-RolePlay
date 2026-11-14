@@ -67,3 +67,10 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 - [ ] "Generador de imágenes": abre la lista de modelos del generador.
 - [ ] "Elige un personaje" abre Roleplay y la flecha de atrás vuelve al inicio.
 - [ ] Icono de la app nuevo (burbuja con carita y chispa) en el launcher.
+
+## Estructura nueva (Fase B: resumen del personaje)
+- [ ] ¿Compila? (nuevo `ui/roleplay/CharacterDetailSheet.kt`; consultas nuevas en `ConversationDao`).
+- [ ] En Personajes, tocar una tarjeta abre el "Resumen" (ya no inicia el chat directo).
+- [ ] Resumen: mensajes/chats, recuerdos (tocarlo abre la memoria), Editar / Compartir / Borrar, descripción con "Mostrar más", escenario.
+- [ ] "Seleccionar saludo": aleatorio o uno concreto; "Nuevo chat" empieza con el saludo elegido.
+- [ ] "Continuar chat" abre la última conversación con ese personaje (gris si no hay ninguna).

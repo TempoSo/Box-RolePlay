@@ -129,11 +129,39 @@ class RoleplayViewModel @Inject constructor(
 
     fun exportJson(character: RoleplayCharacter): String = repository.exportJson(character)
 
-    /** Crea el chat y devuelve el id de la conversación (null si falló). */
-    fun startChat(character: RoleplayCharacter, modelName: String, onReady: (String) -> Unit) {
+    /** Datos para la hoja de detalle: saludos, último chat y estadísticas. */
+    class CharacterDetail(
+        val greetings: List<String>,
+        val latestConversationId: String?,
+        val latestModel: String?,
+        val chats: Int,
+        val messages: Int,
+    )
+
+    fun loadDetail(character: RoleplayCharacter, onLoaded: (CharacterDetail) -> Unit) {
         viewModelScope.launch {
             try {
-                val conversation = repository.startChat(character, modelName, personaRepository.getActive())
+                val persona = personaRepository.getActive()
+                val greetings = repository.greetingsFor(character, persona)
+                val last = repository.latestChat(character.id)
+                val (chats, msgs) = repository.chatStats(character.id)
+                onLoaded(CharacterDetail(greetings, last?.id, last?.modelName, chats, msgs))
+            } catch (e: Exception) {
+                _message.value = "No se pudo cargar el personaje: ${e.message ?: "error desconocido"}"
+            }
+        }
+    }
+
+    /** Crea el chat y devuelve el id de la conversación (null si falló). */
+    fun startChat(
+        character: RoleplayCharacter,
+        modelName: String,
+        greetingOverride: String? = null,
+        onReady: (String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            try {
+                val conversation = repository.startChat(character, modelName, personaRepository.getActive(), greetingOverride = greetingOverride)
                 onReady(conversation.id)
             } catch (e: Exception) {
                 _message.value = "No se pudo abrir el chat: ${e.message ?: "error desconocido"}"

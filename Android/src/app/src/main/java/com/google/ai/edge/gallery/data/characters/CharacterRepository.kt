@@ -151,6 +151,8 @@ class CharacterRepository @Inject constructor(
         modelName: String,
         persona: UserPersona? = null,
         random: Random = Random.Default,
+        /** Saludo elegido por el usuario; null = uno al azar entre los de la tarjeta. */
+        greetingOverride: String? = null,
     ): Conversation = withContext(Dispatchers.IO) {
         // Memoria a largo plazo: los recuerdos más recientes entran en el prompt del chat nuevo.
         val settings = RoleplaySettingsStore(context)
@@ -168,7 +170,7 @@ class CharacterRepository @Inject constructor(
             userDescription = persona?.description ?: "",
             memory = memoryText,
         )
-        val greeting = CharacterPromptBuilder.pickGreeting(built.greetings, random)
+        val greeting = greetingOverride ?: CharacterPromptBuilder.pickGreeting(built.greetings, random)
         val conversation = chatRepository.createConversation(
             title = character.name,
             taskType = "llm_chat",
@@ -186,6 +188,26 @@ class CharacterRepository @Inject constructor(
         }
         conversation
     }
+
+    /** Saludos de la tarjeta (con {{char}} y {{user}} ya resueltos) para elegir uno al abrir el chat. */
+    suspend fun greetingsFor(character: RoleplayCharacter, persona: UserPersona?): List<String> =
+        withContext(Dispatchers.IO) {
+            CharacterPromptBuilder.build(
+                card = character.toCard(),
+                userName = persona?.name ?: CharacterPromptBuilder.DEFAULT_USER_NAME,
+                userDescription = persona?.description ?: "",
+                memory = "",
+            ).greetings
+        }
+
+    suspend fun latestChat(characterId: String): Conversation? =
+        withContext(Dispatchers.IO) { chatRepository.latestConversationForCharacter(characterId) }
+
+    suspend fun chatStats(characterId: String): Pair<Int, Int> =
+        withContext(Dispatchers.IO) {
+            chatRepository.countConversationsForCharacter(characterId) to
+                chatRepository.countMessagesForCharacter(characterId)
+        }
 
     private companion object {
         const val BACKUP_MAX_BYTES = 120 * 1024 * 1024
