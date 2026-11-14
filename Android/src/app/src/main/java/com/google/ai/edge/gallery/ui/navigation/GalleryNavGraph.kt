@@ -100,6 +100,8 @@ private const val ROUTE_MODEL_MANAGER = "model_manager"
 private const val ROUTE_CHAT_HISTORY = "chat_history"
 private const val ROUTE_ROLEPLAY = "roleplay"
 private const val ROUTE_ROLEPLAY_EDIT = "roleplay_edit"
+private const val ROUTE_SETTINGS = "box_settings"
+private const val ROUTE_INFERENCE = "box_inference"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -188,50 +190,75 @@ fun GalleryNavHost(
     navController = navController,
     // La app es de Roleplay: abre en la biblioteca de personajes. El menú clásico (chat libre,
     // modelos, historial) queda a un toque, desde el botón de menú de Roleplay.
-    startDestination = ROUTE_ROLEPLAY,
+    startDestination = ROUTE_HOMESCREEN,
     enterTransition = { EnterTransition.None },
     exitTransition = { ExitTransition.None },
   ) {
     // Home screen.
     composable(route = ROUTE_HOMESCREEN) {
-      Box(modifier = modifier.fillMaxSize()) {
-        HomeScreen(
-          modelManagerViewModel = modelManagerViewModel,
-          tosViewModel = hiltViewModel(),
-          enableAnimation = enableHomeScreenAnimation,
-          navigateToTaskScreen = { task ->
-            pickedTask = task
-            enableModelListAnimation = true
-            navController.navigate(ROUTE_MODEL_LIST)
-            firebaseAnalytics?.logEvent(
-              GalleryEvent.CAPABILITY_SELECT.id,
-              Bundle().apply { putString("capability_name", task.id) },
-            )
-          },
-          onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
-          navigateToChatHistory = { navController.navigate(ROUTE_CHAT_HISTORY) },
-          onRoleplayClicked = {
-            if (!navController.popBackStack(ROUTE_ROLEPLAY, inclusive = false)) {
-              navController.navigate(ROUTE_ROLEPLAY)
-            }
-          },
-          onNewChatClicked = {
-            val llmChatTask = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
-            val firstModel = llmChatTask?.models?.firstOrNull()
-            if (firstModel != null) {
-              lastNavigatedModelName = ""
-              navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${firstModel.name}?autoResume=false")
-            } else {
-              pickedTask = llmChatTask
-              navController.navigate(ROUTE_MODEL_LIST)
-            }
-          },
-          onImportModelClicked = {
-            navController.navigate("$ROUTE_MODEL_MANAGER?startImport=true")
-          },
-          gm4 = true,
-        )
-      }
+      val homeContext = LocalContext.current
+      val homeState by modelManagerViewModel.uiState.collectAsState()
+      val homeStore = remember { com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(homeContext) }
+      val llmTask = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
+      val usable =
+        llmTask?.models
+          ?.filter {
+            homeState.modelDownloadStatus[it.name]?.status ==
+              com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
+          }
+          ?.distinctBy { it.name } ?: emptyList()
+      // El modelo elegido en Configuración de inferencia; si no hay (o ya no existe), el primero.
+      val chosen = usable.firstOrNull { it.name == homeStore.defaultModel() } ?: usable.firstOrNull()
+      BoxHomeScreen(
+        modelLabel = chosen?.let { it.displayName.ifBlank { it.name } },
+        onChat = {
+          if (chosen != null) {
+            lastNavigatedModelName = ""
+            navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${chosen.name}?autoResume=false")
+          } else {
+            navController.navigate(ROUTE_INFERENCE)
+          }
+        },
+        onCharacters = { navController.navigate(ROUTE_ROLEPLAY) },
+        onHistory = { navController.navigate(ROUTE_CHAT_HISTORY) },
+        onSettings = { navController.navigate(ROUTE_SETTINGS) },
+      )
+    }
+
+    composable(route = ROUTE_SETTINGS) {
+      com.google.ai.edge.gallery.ui.home.BoxSettingsScreen(
+        onBack = { navController.navigateUp() },
+        onOpenInference = { navController.navigate(ROUTE_INFERENCE) },
+      )
+    }
+
+    composable(route = ROUTE_INFERENCE) {
+      val infContext = LocalContext.current
+      val infState by modelManagerViewModel.uiState.collectAsState()
+      val infStore = remember { com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(infContext) }
+      var selected by remember { mutableStateOf(infStore.defaultModel()) }
+      val infModels =
+        modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)?.models
+          ?.filter {
+            infState.modelDownloadStatus[it.name]?.status ==
+              com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
+          }
+          ?.distinctBy { it.name } ?: emptyList()
+      com.google.ai.edge.gallery.ui.home.BoxInferenceScreen(
+        models = infModels,
+        selectedModel = selected ?: infModels.firstOrNull()?.name,
+        onSelectModel = {
+          infStore.setDefaultModel(it)
+          selected = it
+        },
+        onAddModel = { navController.navigate("$ROUTE_MODEL_MANAGER?startImport=true") },
+        onOpenImageGen = {
+          pickedTask = modelManagerViewModel.getTaskById(BuiltInTaskId.IMAGE_GEN)
+          enableModelListAnimation = true
+          navController.navigate(ROUTE_MODEL_LIST)
+        },
+        onBack = { navController.navigateUp() },
+      )
     }
 
     // Model list.
@@ -433,7 +460,6 @@ fun GalleryNavHost(
           ?.distinct() ?: emptyList()
       com.google.ai.edge.gallery.ui.roleplay.RoleplayScreen(
         navigateUp = { navController.navigateUp() },
-        onMenuClicked = { navController.navigate(ROUTE_HOMESCREEN) },
         availableModels = downloadedModels,
         onOpenChat = { modelName, conversationId ->
           lastNavigatedModelName = ""

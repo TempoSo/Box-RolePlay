@@ -57,3 +57,13 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 - [ ] Ajustes de Roleplay > "Copia de seguridad: exportar personajes (.zip)": se abre el menú de compartir con un zip (guárdalo en Drive o en archivos).
 - [ ] Borra un personaje de prueba e importa el zip con el icono de carpeta: ¿vuelve con su avatar y datos? (Se importan duplicados de los que ya existen; borra los repetidos.)
 - [ ] Nota: la copia incluye personajes, no los chats ni la memoria.
+
+## Estructura nueva (Fase A: inicio + configuración + inferencia)
+- [ ] ¿Compila? (pantallas nuevas en `ui/home/Box*Screen.kt`; navegación en `GalleryNavGraph.kt`). Pega el primer error con archivo y línea.
+- [ ] La app abre en el inicio nuevo (mascota + "Toca para chatear"), ya no en Roleplay.
+- [ ] "Toca para chatear": abre un chat en blanco con el modelo elegido (sin personaje).
+- [ ] Configuración > Configuración de inferencia: filtro TODOS/GGUF/LITERT, elegir modelo (queda marcado "en uso"), "Añadir modelo personalizado" abre la importación.
+- [ ] Visión: importar un mmproj, elegirlo, "Sin visión". Persona: abrir, crear y activar.
+- [ ] "Generador de imágenes": abre la lista de modelos del generador.
+- [ ] "Elige un personaje" abre Roleplay y la flecha de atrás vuelve al inicio.
+- [ ] Icono de la app nuevo (burbuja con carita y chispa) en el launcher.
