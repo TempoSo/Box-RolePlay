@@ -167,6 +167,7 @@ fun ChatView(
       if (conv?.systemPrompt?.isNotEmpty() == true) {
         llmViewModel.setCurrentSystemPrompt(conv.systemPrompt)
       }
+      com.google.ai.edge.gallery.tts.TtsManager.appContext = context.applicationContext
       llmViewModel.setRoleplayChat(
         value = conv?.characterId?.isNotBlank() == true,
         characterId = conv?.characterId ?: "",

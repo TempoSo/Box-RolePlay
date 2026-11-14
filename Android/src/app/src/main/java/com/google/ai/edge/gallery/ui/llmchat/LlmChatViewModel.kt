@@ -200,6 +200,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
   fun setRoleplayChat(value: Boolean, characterId: String = "", loreMaxEntries: Int = 3) {
     isRoleplayChat = value
+    com.google.ai.edge.gallery.tts.TtsManager.currentCharacterId = if (value) characterId else ""
     this.loreMaxEntries = loreMaxEntries
     loreEntries = emptyList()
     if (value && characterId.isNotBlank()) {
@@ -668,6 +669,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
                 // Box: Persist assistant response to encrypted DB
                 val assistantMsg = getLastMessageWithTypeAndSide(model, ChatMessageType.TEXT, ChatSide.AGENT)
+                if (isRoleplayChat && assistantMsg is ChatMessageText && assistantMsg.content.isNotEmpty()) {
+                  com.google.ai.edge.gallery.tts.TtsManager.autoSpeak(assistantMsg.content)
+                }
                 if (assistantMsg is ChatMessageText && assistantMsg.content.isNotEmpty()) {
                   persistAssistantMessage(
                     model,

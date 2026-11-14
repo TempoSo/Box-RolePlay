@@ -58,6 +58,8 @@ android {
   packaging {
     jniLibs {
       pickFirsts.add("**/liblitertlm_jni.so")
+      pickFirsts.add("**/libonnxruntime.so")
+      pickFirsts.add("**/libc++_shared.so")
     }
   }
   compileOptions {
@@ -90,6 +92,17 @@ dependencies {
   implementation(libs.androidx.security.crypto)
   implementation(libs.androidx.webkit)
   implementation(libs.litertlm)
+
+  // Voz (Pocket TTS con sherpa-onnx). Opcional y a prueba de fallos: la app compila sin esto y el
+  // motor de voz avisa si falta. Dos formas de añadirlo:
+  //  - copiar el .aar a app/libs/sherpa-onnx.aar, o
+  //  - compilar con -PsherpaVersion=<version> (Maven Central: com.k2fsa.sherpa.onnx:sherpa-onnx-android).
+  val sherpaAar = file("libs/sherpa-onnx.aar")
+  if (sherpaAar.exists()) {
+    implementation(files(sherpaAar))
+  } else if (project.hasProperty("sherpaVersion")) {
+    implementation("com.k2fsa.sherpa.onnx:sherpa-onnx-android:${project.property("sherpaVersion")}")
+  }
   implementation(libs.commonmark)
   implementation(libs.richtext)
   implementation(libs.tflite)

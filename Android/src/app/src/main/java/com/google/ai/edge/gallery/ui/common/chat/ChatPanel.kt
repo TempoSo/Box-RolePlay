@@ -52,7 +52,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -527,6 +529,16 @@ fun ChatPanel(
                         }
                       }
                       if (message is ChatMessageText && message.content.isNotEmpty() && !uiState.inProgress && showCopyButton) {
+                        val ttsContext = androidx.compose.ui.platform.LocalContext.current
+                        val ttsSpeaking by com.google.ai.edge.gallery.tts.TtsManager.speaking.collectAsState()
+                        MessageActionButton(
+                          label = if (ttsSpeaking) "Stop" else "Voz",
+                          icon = if (ttsSpeaking) Icons.Outlined.Stop else Icons.Outlined.VolumeUp,
+                          onClick = {
+                            if (ttsSpeaking) com.google.ai.edge.gallery.tts.TtsManager.stop()
+                            else com.google.ai.edge.gallery.tts.TtsManager.speak(ttsContext, message.content)
+                          },
+                        )
                         MessageActionButton(
                           label = "Copy",
                           icon = Icons.Outlined.ContentCopy,
