@@ -39,6 +39,8 @@ fun SamplerDialog(onDismiss: () -> Unit) {
     var mode by remember { mutableStateOf(store.mode()) }
     var custom by remember { mutableStateOf(store.custom()) }
     val shown = SamplerPresets.resolve(mode, custom)
+    var named by remember { mutableStateOf(store.namedPresets()) }
+    var newName by remember { mutableStateOf("") }
 
     // Cambiar un número convierte el modo actual en Custom, partiendo de sus valores.
     fun edit(change: (SamplerSettings) -> SamplerSettings) {
@@ -60,6 +62,19 @@ fun SamplerDialog(onDismiss: () -> Unit) {
                         FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
                     }
                 }
+                if (named.isNotEmpty()) {
+                    Text("Tus presets (toca para cargar, ✕ para borrar):", style = MaterialTheme.typography.labelMedium)
+                    named.forEach { (name, preset) ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(
+                                selected = false,
+                                onClick = { custom = preset; mode = SamplerMode.CUSTOM },
+                                label = { Text(name) },
+                            )
+                            TextButton(onClick = { store.deleteNamedPreset(name); named = store.namedPresets() }) { Text("✕") }
+                        }
+                    }
+                }
                 NumField("Temperatura", shown.temperature) { v -> edit { it.copy(temperature = v) } }
                 NumField("Rango de temp. dinámica (0 = fija)", shown.dynTempRange) { v -> edit { it.copy(dynTempRange = v) } }
                 IntField("Top-K (0 = off)", shown.topK) { v -> edit { it.copy(topK = v) } }
@@ -72,6 +87,21 @@ fun SamplerDialog(onDismiss: () -> Unit) {
                 NumField("DRY multiplicador (0 = off)", shown.dryMultiplier) { v -> edit { it.copy(dryMultiplier = v) } }
                 NumField("DRY base", shown.dryBase) { v -> edit { it.copy(dryBase = v) } }
                 IntField("DRY longitud permitida", shown.dryAllowedLength) { v -> edit { it.copy(dryAllowedLength = v) } }
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Nombre para guardar estos valores como preset") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextButton(
+                    enabled = newName.isNotBlank(),
+                    onClick = {
+                        store.saveNamedPreset(newName, shown)
+                        named = store.namedPresets()
+                        newName = ""
+                    },
+                ) { Text("Guardar como preset") }
             }
         },
         confirmButton = {

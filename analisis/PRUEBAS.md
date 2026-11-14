@@ -31,3 +31,7 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 ## Pendiente de decidir
 - Memoria semántica (embeddings MiniLM + Room): se haría con código propio y modelo bajado en ejecución.
 - Entrada de voz (ASR con sherpa-onnx).
+
+## Fase 6 – Pulido
+- [ ] El nombre de la app ahora es "Box RolePlay" (launcher y pantallas). ¿Se ve bien?
+- [ ] Muestreo (GGUF): escribe un nombre abajo y "Guardar como preset"; reabre y carga el preset; bórralo con ✕.

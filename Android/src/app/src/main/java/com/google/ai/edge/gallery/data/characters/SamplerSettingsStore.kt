@@ -19,7 +19,39 @@ class SamplerSettingsStore(context: Context) {
     }.apply()
   }
 
+  /** Presets con nombre creados por el usuario (nombre -> ajustes), en orden alfabético. */
+  fun namedPresets(): Map<String, SamplerSettings> {
+    val raw = prefs.getString(KEY_NAMED, null) ?: return emptyMap()
+    return runCatching {
+        val o = kotlinx.serialization.json.Json.parseToJsonElement(raw) as kotlinx.serialization.json.JsonObject
+        o.entries
+          .mapNotNull { (k, v) ->
+            SamplerSettings.decodeOrNull((v as kotlinx.serialization.json.JsonPrimitive).content)?.let { k to it }
+          }
+          .sortedBy { it.first.lowercase() }
+          .toMap()
+      }
+      .getOrDefault(emptyMap())
+  }
+
+  fun saveNamedPreset(name: String, settings: SamplerSettings) {
+    val n = name.trim().take(40)
+    if (n.isEmpty()) return
+    writeNamed(namedPresets() + (n to settings.sanitized()))
+  }
+
+  fun deleteNamedPreset(name: String) = writeNamed(namedPresets() - name)
+
+  private fun writeNamed(all: Map<String, SamplerSettings>) {
+    val json =
+      kotlinx.serialization.json.buildJsonObject {
+        all.forEach { (k, v) -> put(k, kotlinx.serialization.json.JsonPrimitive(SamplerSettings.encode(v))) }
+      }
+    prefs.edit().putString(KEY_NAMED, json.toString()).apply()
+  }
+
   private companion object {
+    const val KEY_NAMED = "named_presets"
     const val KEY_MODE = "mode"
     const val KEY_CUSTOM = "custom"
   }
