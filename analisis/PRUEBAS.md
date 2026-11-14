@@ -35,3 +35,8 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 ## Fase 6 – Pulido
 - [ ] El nombre de la app ahora es "Box RolePlay" (launcher y pantallas). ¿Se ve bien?
 - [ ] Muestreo (GGUF): escribe un nombre abajo y "Guardar como preset"; reabre y carga el preset; bórralo con ✕.
+
+## Extras – Logs y contador
+- [ ] Contador de rendimiento: sobre la entrada del chat (bajo la barra de contexto) aparece "⚡ gen X t/s · prompt Y t/s…" tras cada respuesta. GGUF da cifras exactas; LiteRT, aproximadas (fragmentos/s).
+- [ ] Ajustes de Roleplay > "Exportar logs": se abre el menú de compartir con un .txt. Envíamelo (o pega las líneas con `AGLlamaPerf`).
+- [ ] Si la app se cierra sola, abre de nuevo y exporta: el reporte incluye el error del cierre.

@@ -344,6 +344,7 @@ private fun ContextWindowIndicator(model: Model, viewModel: LlmChatViewModelBase
     if (usage.fraction > 0.9f) MaterialTheme.colorScheme.tertiary
     else MaterialTheme.colorScheme.primary
   val muted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+  val perf by viewModel.perfLine.collectAsState()
   var showInfo by remember { mutableStateOf(false) }
 
   if (showInfo) {
@@ -402,6 +403,9 @@ private fun ContextWindowIndicator(model: Model, viewModel: LlmChatViewModelBase
         style = MaterialTheme.typography.labelSmall,
         color = muted,
       )
+    }
+    if (perf.isNotBlank()) {
+      Text(perf, style = MaterialTheme.typography.labelSmall, color = muted)
     }
   }
 }

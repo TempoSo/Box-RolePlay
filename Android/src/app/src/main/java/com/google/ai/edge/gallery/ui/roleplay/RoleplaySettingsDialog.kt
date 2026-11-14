@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
@@ -114,6 +115,14 @@ fun RoleplaySettingsDialog(
                 TextButton(onClick = onOpenSampler) { Text("Ajustes de muestreo (presets)") }
                 TextButton(onClick = onOpenEnginePerf) { Text("Rendimiento del motor (GGUF)") }
                 TextButton(onClick = onOpenTts) { Text("Voz (Pocket TTS)") }
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                TextButton(
+                    onClick = {
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching { com.google.ai.edge.gallery.data.characters.LogExporter.share(context) }
+                        }
+                    }
+                ) { Text("Exportar logs (para reportar errores)") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Listo") } },

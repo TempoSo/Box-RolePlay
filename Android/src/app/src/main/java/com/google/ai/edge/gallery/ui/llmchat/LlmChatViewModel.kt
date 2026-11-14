@@ -254,6 +254,26 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
   private val liteRtWindows = mutableMapOf<String, LiteRtWindowState>()
 
+  /** Contador de rendimiento del último turno ("" = aún sin datos), mostrado sobre la entrada. */
+  private val _perfLine = MutableStateFlow("")
+  val perfLine: StateFlow<String> = _perfLine.asStateFlow()
+
+  private fun formatPerf(
+    isGguf: Boolean,
+    ttftMs: Long,
+    chunks: Int,
+    genMs: Long,
+    totalMs: Long,
+  ): String {
+    val st = if (isGguf) com.google.ai.edge.gallery.data.characters.LastEnginePerf.stats else null
+    return if (st != null && st.generatedTokens > 0) {
+      "⚡ gen %.1f t/s · prompt %.0f t/s (%d tok) · %d tok · %.1f s"
+        .format(st.generationTokensPerSecond, st.promptTokensPerSecond, st.promptTokens, st.generatedTokens, totalMs / 1000f)
+    } else if (chunks > 0 && genMs > 0) {
+      "⚡ ~%.1f frag/s · 1er token %.1f s · %.1f s".format(chunks * 1000f / genMs, ttftMs / 1000f, totalMs / 1000f)
+    } else ""
+  }
+
   /** GGUF: cuántos mensajes (tras el saludo) ya salieron de la ventana de la app, y el tamaño visto. */
   private class GgufWindowState(val dropped: Int, val previousSize: Int)
 
@@ -601,6 +621,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
       var firstRun = true
       val start = System.currentTimeMillis()
+      var perfFirstAt = 0L
+      var perfChunks = 0
+      _perfLine.value = "⏳ procesando…"
 
       try {
         val resultListener: (String, Boolean, String?) -> Unit =
@@ -608,6 +631,21 @@ open class LlmChatViewModelBase() : ChatViewModel() {
             if (partialResult.startsWith("<ctrl")) {
               // Do nothing. Ignore control tokens.
             } else {
+              if (partialResult.isNotEmpty()) {
+                if (perfFirstAt == 0L) perfFirstAt = System.currentTimeMillis()
+                perfChunks++
+              }
+              if (done) {
+                val now = System.currentTimeMillis()
+                _perfLine.value =
+                  formatPerf(
+                    isGguf = model.runtimeHelper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper,
+                    ttftMs = if (perfFirstAt > 0) perfFirstAt - start else 0,
+                    chunks = perfChunks,
+                    genMs = if (perfFirstAt > 0) now - perfFirstAt else 0,
+                    totalMs = now - start,
+                  )
+              }
               // Remove the last message if it is a "loading" message.
               // This will only be done once.
               val lastMessage = getLastMessage(model = model)

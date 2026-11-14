@@ -32,6 +32,7 @@ class GalleryApplication : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    com.google.ai.edge.gallery.data.characters.LogExporter.installCrashRecorder(this)
 
     // Load saved theme.
     ThemeSettings.themeOverride.value = dataStoreRepository.readTheme()
