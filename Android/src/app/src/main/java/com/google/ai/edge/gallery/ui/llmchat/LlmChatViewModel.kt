@@ -254,6 +254,23 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
   private val liteRtWindows = mutableMapOf<String, LiteRtWindowState>()
 
+  /** GGUF: cuántos mensajes (tras el saludo) ya salieron de la ventana de la app, y el tamaño visto. */
+  private class GgufWindowState(val dropped: Int, val previousSize: Int)
+
+  private val ggufWindows = mutableMapOf<String, GgufWindowState>()
+
+  /** Resumen de lo ya borrado de la ventana (memoria larga), para el panel "Información del chat". */
+  @Volatile var lastMemorySummary: String = ""
+    private set
+
+  private fun summaryBudget(maxTokens: Int) = (maxTokens * 0.12f).toInt().coerceIn(0, 600)
+
+  private fun buildSummary(previous: List<ChatMessageText>, keep: Int, dropped: Int, maxTokens: Int): String {
+    if (dropped <= 0) return ""
+    val gone = previous.drop(keep).take(dropped).map { (it.side == ChatSide.USER) to it.content }
+    return com.google.ai.edge.gallery.data.characters.MemorySummarizer.summarize(gone, summaryBudget(maxTokens))
+  }
+
   /** Uso real del contexto (lo que el motor ve ahora), para el indicador de la pantalla. */
   fun contextUsage(model: Model): com.google.ai.edge.gallery.data.characters.ContextUsage {
     val texts =
@@ -267,7 +284,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       promptText = _currentSystemPrompt.value,
       texts = texts.map { it.content },
       keep = keep,
-      dropped = liteRtWindows[model.name]?.dropped ?: 0,
+      dropped = liteRtWindows[model.name]?.dropped ?: ggufWindows[model.name]?.dropped ?: 0,
       maxTokens = maxTokens,
     )
   }
@@ -301,11 +318,38 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       // GGUF (llama.cpp): el historial nativo se deja igual al de la pantalla; la ventana
       // deslizante y la caché de prefijo trabajan dentro del motor nativo.
       if (helper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper) {
+        // Memoria larga: la app decide qué mensajes salen de la ventana y los resume en el prompt.
+        val ctx =
+          helper.contextSizeOf(model)
+            ?: model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+        val gKeep = if (previous.firstOrNull()?.side == ChatSide.AGENT) 1 else 0
+        val st = ggufWindows[model.name]
+        var gDropped = if (st != null && previous.size >= st.previousSize) st.dropped else 0
+        val reserve = if (gDropped > 0) summaryBudget(ctx) else 0
+        fun plan(extraReserve: Int): Int =
+          ContextWindowPlanner.planDrop(
+            systemTokens = ContextWindowPlanner.estimateTokens(prompt) + extraReserve,
+            history = (previous.take(gKeep) + previous.drop(gKeep + gDropped)).map { it.content },
+            inputTokens = ContextWindowPlanner.estimateTokens(input),
+            keep = gKeep,
+            maxTokens = ctx,
+          )
+        var extra = plan(reserve)
+        if (extra > 0 && reserve == 0) extra = plan(summaryBudget(ctx))
+        gDropped += extra
+        ggufWindows[model.name] = GgufWindowState(gDropped, previous.size)
+        val summary = buildSummary(previous, gKeep, gDropped, ctx)
+        lastMemorySummary = summary
+        val window = previous.take(gKeep) + previous.drop(gKeep + gDropped)
         val history =
-          previous.map { (if (it.side == ChatSide.USER) "user" else "assistant") to it.content }
+          window.map { (if (it.side == ChatSide.USER) "user" else "assistant") to it.content }
         // El muestreo de Roleplay solo vale en chats de personaje; los normales usan el del modelo.
         if (isRoleplayChat) helper.refreshSampler(model) else helper.resetSampler(model)
-        helper.seedConversation(model, prompt, history)
+        helper.seedConversation(
+          model,
+          com.google.ai.edge.gallery.data.characters.MemorySummarizer.withSummary(prompt, summary),
+          history,
+        )
         return
       }
 
@@ -330,13 +374,17 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       val visible = previous.take(keep) + previous.drop(keep + alreadyDropped)
       val extraDrop =
         ContextWindowPlanner.planDrop(
-          systemTokens = ContextWindowPlanner.estimateTokens(prompt),
+          systemTokens =
+            ContextWindowPlanner.estimateTokens(prompt) +
+              (if (alreadyDropped > 0) summaryBudget(maxTokens) else 0),
           history = visible.map { it.content },
           inputTokens = ContextWindowPlanner.estimateTokens(input),
           keep = keep,
           maxTokens = maxTokens,
         )
       val dropped = alreadyDropped + extraDrop
+      val summary = buildSummary(previous, keep, dropped, maxTokens)
+      lastMemorySummary = summary
       val needsReset = extraDrop > 0 || (!inSync && (prompt.isNotBlank() || previous.isNotEmpty()))
 
       if (needsReset) {
@@ -345,7 +393,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
           model = model,
           supportImage = model.llmSupportImage,
           supportAudio = model.llmSupportAudio,
-          systemInstruction = if (prompt.isBlank()) null else Contents.of(prompt),
+          systemInstruction =
+            com.google.ai.edge.gallery.data.characters.MemorySummarizer.withSummary(prompt, summary)
+              .let { if (it.isBlank()) null else Contents.of(it) },
           history = window.map { (if (it.side == ChatSide.USER) "user" else "assistant") to it.content },
         )
         if (extraDrop > 0) {

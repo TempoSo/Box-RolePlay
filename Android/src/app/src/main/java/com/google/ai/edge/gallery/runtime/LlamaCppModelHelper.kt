@@ -125,6 +125,9 @@ object LlamaCppModelHelper : LlmModelHelper {
         )
     }
 
+    /** Tamaño de contexto con el que se cargó el modelo (tokens), si está cargado. */
+    fun contextSizeOf(model: Model): Int? = engines[model.name]?.lastLoadParams?.contextSize?.toInt()
+
     /** Roleplay: ver LlamaCppEngine.seedConversation. */
     fun seedConversation(model: Model, systemPrompt: String, history: List<Pair<String, String>>) {
         engines[model.name]?.seedConversation(systemPrompt, history)

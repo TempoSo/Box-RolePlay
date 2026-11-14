@@ -26,7 +26,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -336,9 +344,42 @@ private fun ContextWindowIndicator(model: Model, viewModel: LlmChatViewModelBase
     if (usage.fraction > 0.9f) MaterialTheme.colorScheme.tertiary
     else MaterialTheme.colorScheme.primary
   val muted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+  var showInfo by remember { mutableStateOf(false) }
+
+  if (showInfo) {
+    val summary = viewModel.lastMemorySummary
+    AlertDialog(
+      onDismissRequest = { showInfo = false },
+      confirmButton = { TextButton(onClick = { showInfo = false }) { Text("Cerrar") } },
+      title = { Text("Información del chat") },
+      text = {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+          Text("Contexto: ~${usage.usedTokens} / ${usage.maxTokens} tokens (${usage.percent}%)")
+          Text(
+            if (usage.windowActive) "Ventana deslizante: activa. Los mensajes viejos se resumen."
+            else "Ventana deslizante: aún no hace falta.",
+            style = MaterialTheme.typography.bodySmall,
+            color = muted,
+          )
+          Text("\nMemoria (resumen de lo ya olvidado):", style = MaterialTheme.typography.titleSmall)
+          Text(
+            if (summary.isBlank()) "Todavía no hay nada que resumir." else summary,
+            style = MaterialTheme.typography.bodySmall,
+          )
+          Text("\nPrompt del personaje:", style = MaterialTheme.typography.titleSmall)
+          Text(
+            viewModel.currentSystemPrompt.value.ifBlank { "(vacío)" },
+            style = MaterialTheme.typography.bodySmall,
+          )
+        }
+      },
+    )
+  }
 
   Column(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+    modifier =
+      Modifier.fillMaxWidth().clickable { showInfo = true }
+        .padding(horizontal = 16.dp, vertical = 2.dp),
   ) {
     LinearProgressIndicator(
       progress = { usage.fraction },
