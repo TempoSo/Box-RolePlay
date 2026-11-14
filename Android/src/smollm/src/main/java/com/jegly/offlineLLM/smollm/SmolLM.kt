@@ -30,12 +30,14 @@ class SmolLM {
 
             if (!isEmulated) {
                 if (supportsArm64V8a()) {
-                    if (isAtLeastArmV84 && hasSve && hasI8mm && hasFp16 && hasDotProd) {
+                    // i8mm/dotprod implican un nucleo moderno aunque /proc/cpuinfo no liste dcpop/uscat
+                    // (pasa en varios Dimensity/Snapdragon); antes caian a una libreria sin i8mm, mas lenta.
+                    if (hasSve && hasI8mm && hasFp16 && hasDotProd) {
                         System.loadLibrary("smollm_v8_4_fp16_dotprod_i8mm_sve")
+                    } else if (hasI8mm && hasFp16 && hasDotProd) {
+                        System.loadLibrary("smollm_v8_4_fp16_dotprod_i8mm")
                     } else if (isAtLeastArmV84 && hasSve && hasFp16 && hasDotProd) {
                         System.loadLibrary("smollm_v8_4_fp16_dotprod_sve")
-                    } else if (isAtLeastArmV84 && hasI8mm && hasFp16 && hasDotProd) {
-                        System.loadLibrary("smollm_v8_4_fp16_dotprod_i8mm")
                     } else if (isAtLeastArmV84 && hasFp16 && hasDotProd) {
                         System.loadLibrary("smollm_v8_4_fp16_dotprod")
                     } else if (isAtLeastArmV82 && hasFp16 && hasDotProd) {
@@ -59,6 +61,20 @@ class SmolLM {
                     .substringAfter("Features").substringAfter(":").substringBefore("\n").trim()
             } catch (e: FileNotFoundException) {
                 ""
+            }
+        }
+
+        /** Nucleos rapidos ("big"): los 8 hilos incluian los nucleos pequeños y frenaban todo. */
+        fun performanceCoreCount(): Int {
+            return try {
+                val freqs = (0 until Runtime.getRuntime().availableProcessors()).mapNotNull {
+                    File("/sys/devices/system/cpu/cpu$it/cpufreq/cpuinfo_max_freq")
+                        .takeIf { f -> f.exists() }?.readText()?.trim()?.toLongOrNull()
+                }
+                val max = freqs.maxOrNull() ?: return 4
+                freqs.count { it >= max * 0.8 }.coerceIn(2, 8)
+            } catch (e: Exception) {
+                4
             }
         }
 

@@ -429,7 +429,8 @@ fun GalleryNavHost(
             roleplayUiState.modelDownloadStatus[it.name]?.status ==
               com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
           }
-          ?.map { it.name } ?: emptyList()
+          ?.map { it.name }
+          ?.distinct() ?: emptyList()
       com.google.ai.edge.gallery.ui.roleplay.RoleplayScreen(
         navigateUp = { navController.navigateUp() },
         onMenuClicked = { navController.navigate(ROUTE_HOMESCREEN) },
@@ -456,7 +457,8 @@ fun GalleryNavHost(
             editorUiState.modelDownloadStatus[it.name]?.status ==
               com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
           }
-          ?.map { it.name } ?: emptyList()
+          ?.map { it.name }
+          ?.distinct() ?: emptyList()
       com.google.ai.edge.gallery.ui.roleplay.CharacterEditorScreen(
         characterId = backStackEntry.arguments?.getString("characterId") ?: "new",
         navigateUp = { navController.navigateUp() },

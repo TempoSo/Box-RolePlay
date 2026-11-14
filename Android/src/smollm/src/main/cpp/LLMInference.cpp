@@ -47,6 +47,8 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, f
     ctx_params.n_ctx = contextSize;
     ctx_params.n_batch = contextSize;
     ctx_params.n_threads = nThreads;
+    // Sin esto la ingesta del prompt usaba el valor por defecto (4) distinto del de generacion.
+    ctx_params.n_threads_batch = nThreads;
     ctx_params.no_perf = true;
     _ctx = llama_init_from_model(_model, ctx_params);
     if (!_ctx) {

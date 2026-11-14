@@ -633,10 +633,8 @@ constructor(
       )
     for (task in getTasksByIds(ids = setOfTasks)) {
       // Remove duplicated imported model if existed.
-      val modelIndex = task.models.indexOfFirst { info.fileName == it.name && it.imported }
-      if (modelIndex >= 0) {
+      if (task.models.removeAll { info.fileName == it.name && it.imported }) {
         Log.d(TAG, "duplicated imported model found in task. Removing it first")
-        task.models.removeAt(modelIndex)
       }
       if (
         (task.id == BuiltInTaskId.LLM_ASK_IMAGE && model.llmSupportImage) ||
@@ -676,10 +674,8 @@ constructor(
 
     // Add to data store.
     val importedModels = dataStoreRepository.readImportedModels().toMutableList()
-    val importedModelIndex = importedModels.indexOfFirst { info.fileName == it.fileName }
-    if (importedModelIndex >= 0) {
+    if (importedModels.removeAll { info.fileName == it.fileName }) {
       Log.d(TAG, "duplicated imported model found in data store. Removing it first")
-      importedModels.removeAt(importedModelIndex)
     }
     importedModels.add(info)
     dataStoreRepository.saveImportedModels(importedModels = importedModels)
@@ -1184,7 +1180,8 @@ constructor(
     }
 
     // Load imported models.
-    for (importedModel in dataStoreRepository.readImportedModels()) {
+    // distinctBy: evita entradas repetidas si el mismo archivo se importó varias veces.
+    for (importedModel in dataStoreRepository.readImportedModels().distinctBy { it.fileName }) {
       Log.d(TAG, "stored imported model: $importedModel")
 
       // Create model.

@@ -62,7 +62,7 @@ object LlamaCppModelHelper : LlmModelHelper {
             topP = topP,
             topK = topK,
             contextSize = contextSize,
-            numThreads = Runtime.getRuntime().availableProcessors().coerceAtMost(8),
+            numThreads = SmolLM.performanceCoreCount().also { Log.d(TAG, "llama.cpp threads=$it") },
         )
 
         engine.loadModel(
