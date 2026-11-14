@@ -5,15 +5,23 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_jegly_offlineLLM_smollm_SmolLM_loadModel(JNIEnv* env, jobject thiz, jstring modelPath, jfloat minP,
                                             jfloat temperature, jfloat topP, jint topK, jfloat repeatPenalty,
                                             jboolean storeChats, jlong contextSize,
-                                            jstring chatTemplate, jint nThreads, jboolean useMmap, jboolean useMlock) {
+                                            jstring chatTemplate, jint nThreads, jboolean useMmap, jboolean useMlock,
+                                            jintArray engineOptions) {
     jboolean    isCopy           = true;
     const char* modelPathCstr    = env->GetStringUTFChars(modelPath, &isCopy);
     auto*       llmInference     = new LLMInference();
     const char* chatTemplateCstr = env->GetStringUTFChars(chatTemplate, &isCopy);
 
+    EngineOptions options;
+    if (engineOptions != nullptr) {
+        jint* arr = env->GetIntArrayElements(engineOptions, nullptr);
+        options.fromArray(arr, env->GetArrayLength(engineOptions));
+        env->ReleaseIntArrayElements(engineOptions, arr, JNI_ABORT);
+    }
+
     try {
         llmInference->loadModel(modelPathCstr, minP, temperature, topP, topK, repeatPenalty,
-                                storeChats, contextSize, chatTemplateCstr, nThreads, useMmap, useMlock);
+                                storeChats, contextSize, chatTemplateCstr, nThreads, useMmap, useMlock, options);
     } catch (std::exception& error) {
         env->ReleaseStringUTFChars(modelPath, modelPathCstr);
         env->ReleaseStringUTFChars(chatTemplate, chatTemplateCstr);
@@ -128,4 +136,18 @@ Java_com_jegly_offlineLLM_smollm_SmolLM_setSampler(JNIEnv* env, jobject thiz, jl
         llmInference->setSampler(settings);
     }
     env->ReleaseFloatArrayElements(values, data, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_setMaxResponse(JNIEnv* env, jobject thiz, jlong modelPtr, jint maxTokens) {
+    reinterpret_cast<LLMInference*>(modelPtr)->setMaxResponse(maxTokens);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_getPerfStats(JNIEnv* env, jobject thiz, jlong modelPtr) {
+    float v[4] = {0, 0, 0, 0};
+    reinterpret_cast<LLMInference*>(modelPtr)->getPerf(v);
+    jfloatArray out = env->NewFloatArray(4);
+    env->SetFloatArrayRegion(out, 0, 4, v);
+    return out;
 }

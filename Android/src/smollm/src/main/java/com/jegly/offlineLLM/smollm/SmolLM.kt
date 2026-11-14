@@ -95,7 +95,38 @@ class SmolLM {
         val numThreads: Int = 4,
         val useMmap: Boolean = true,
         val useMlock: Boolean = false,
+        val engine: EngineOptions = EngineOptions(),
     )
+
+    /**
+     * Ajustes de rendimiento del motor. Los indices de `kvType` son: 0 f32, 1 f16, 2 bf16, 3 q8_0,
+     * 4 q5_0, 5 q5_1, 6 q4_0, 7 q4_1, 8 iq4_nl. `flashAttn`: 0 auto, 1 apagado, 2 encendido.
+     * El orden de toIntArray debe coincidir con EngineOptions.h.
+     */
+    data class EngineOptions(
+        val nBatch: Int = 512,
+        val nUBatch: Int = 512,
+        val nThreadsBatch: Int = 0,
+        val flashAttn: Int = 0,
+        val kvTypeK: Int = 1,
+        val kvTypeV: Int = 1,
+        val repack: Boolean = true,
+        val maxResponse: Int = -1,
+    ) {
+        fun toIntArray(): IntArray =
+            intArrayOf(nBatch, nUBatch, nThreadsBatch, flashAttn, kvTypeK, kvTypeV, if (repack) 1 else 0, maxResponse)
+    }
+
+    /** Estadisticas del ultimo turno: tokens/segundos de prompt y de generacion. */
+    data class PerfStats(
+        val promptTokens: Int,
+        val promptSeconds: Float,
+        val generatedTokens: Int,
+        val generationSeconds: Float,
+    ) {
+        val promptTokensPerSecond: Float get() = if (promptSeconds > 0f) promptTokens / promptSeconds else 0f
+        val generationTokensPerSecond: Float get() = if (generationSeconds > 0f) generatedTokens / generationSeconds else 0f
+    }
 
     object DefaultParams {
         const val CONTEXT_SIZE: Long = 2048L
@@ -122,6 +153,7 @@ class SmolLM {
                 params.numThreads,
                 params.useMmap,
                 params.useMlock,
+                params.engine.toIntArray(),
             )
         }
 
@@ -180,6 +212,18 @@ class SmolLM {
         setSampler(nativePtr, values)
     }
 
+    /** Limite de tokens por respuesta (-1 = sin limite). Se puede cambiar entre turnos. */
+    fun setMaxResponse(maxTokens: Int) {
+        verifyHandle()
+        setMaxResponse(nativePtr, maxTokens)
+    }
+
+    fun getPerfStats(): PerfStats {
+        verifyHandle()
+        val v = getPerfStats(nativePtr)
+        return PerfStats(v[0].toInt(), v[1], v[2].toInt(), v[3])
+    }
+
     fun getResponseGenerationSpeed(): Float {
         verifyHandle()
         return getResponseGenerationSpeed(nativePtr)
@@ -235,7 +279,7 @@ class SmolLM {
     private external fun loadModel(
         modelPath: String, minP: Float, temperature: Float, topP: Float, topK: Int,
         repeatPenalty: Float, storeChats: Boolean, contextSize: Long, chatTemplate: String,
-        nThreads: Int, useMmap: Boolean, useMlock: Boolean
+        nThreads: Int, useMmap: Boolean, useMlock: Boolean, engineOptions: IntArray
     ): Long
 
     private external fun addChatMessage(modelPtr: Long, message: String, role: String)
@@ -249,5 +293,7 @@ class SmolLM {
     private external fun setThinkingNative(modelPtr: Long, enabled: Boolean)
     private external fun setContextWindow(modelPtr: Long, high: Float, low: Float)
     private external fun setSampler(modelPtr: Long, values: FloatArray)
+    private external fun setMaxResponse(modelPtr: Long, maxTokens: Int)
+    private external fun getPerfStats(modelPtr: Long): FloatArray
     private external fun benchModel(modelPtr: Long, pp: Int, tg: Int, pl: Int, nr: Int): String
 }

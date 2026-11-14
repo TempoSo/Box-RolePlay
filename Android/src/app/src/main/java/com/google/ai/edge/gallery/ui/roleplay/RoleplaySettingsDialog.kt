@@ -39,6 +39,7 @@ fun RoleplaySettingsDialog(
     selectedModel: String?,
     onSelectModel: (String) -> Unit,
     onOpenSampler: () -> Unit,
+    onOpenEnginePerf: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -110,6 +111,7 @@ fun RoleplaySettingsDialog(
                     }
                 }
                 TextButton(onClick = onOpenSampler) { Text("Ajustes de muestreo (presets)") }
+                TextButton(onClick = onOpenEnginePerf) { Text("Rendimiento del motor (GGUF)") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Listo") } },

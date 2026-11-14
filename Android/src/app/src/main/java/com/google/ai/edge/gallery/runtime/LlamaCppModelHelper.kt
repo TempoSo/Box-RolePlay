@@ -51,18 +51,28 @@ object LlamaCppModelHelper : LlmModelHelper {
         engines[model.name] = engine
         appContext = context.applicationContext
 
-        // El tamaño del contexto es el "Max tokens" del modelo (cualquier número). Antes se usaba
-        // el máximo del modelo, que en Gemma es enorme y gasta mucha RAM.
-        val contextSize = model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
-            .coerceAtLeast(256)
-            .toLong()
+        // Ajustes de rendimiento del motor (pantalla "Rendimiento"): se leen en cada carga.
+        val perf = com.google.ai.edge.gallery.data.characters.EnginePerfStore(context).load()
+
+        // El tamaño del contexto es el "Max tokens" del modelo, salvo que se haya fijado otro en
+        // los ajustes de rendimiento. Antes se usaba el máximo del modelo, que en Gemma es enorme.
+        val contextSize =
+            (if (perf.contextLength > 0) perf.contextLength
+             else model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN))
+                .coerceAtLeast(256)
+                .toLong()
+
+        val threads = if (perf.threads > 0) perf.threads else SmolLM.performanceCoreCount()
+        Log.d(TAG, "llama.cpp threads=$threads ctx=$contextSize perf=$perf")
 
         val params = SmolLM.InferenceParams(
             temperature = temperature,
             topP = topP,
             topK = topK,
             contextSize = contextSize,
-            numThreads = SmolLM.performanceCoreCount().also { Log.d(TAG, "llama.cpp threads=$it") },
+            numThreads = threads,
+            useMmap = !perf.noMmap,
+            engine = perf.toEngineOptions(),
         )
 
         engine.loadModel(

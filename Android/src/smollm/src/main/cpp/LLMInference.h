@@ -5,6 +5,7 @@
 #include "common.h"
 #include "ggml.h"
 #include "SamplerSettings.h"
+#include "EngineOptions.h"
 #include <string>
 #include <vector>
 
@@ -12,7 +13,8 @@ class LLMInference {
 public:
     void loadModel(const char *model_path, float minP, float temperature, float topP, int topK,
                    float repeatPenalty, bool storeChats, long contextSize, const char *chatTemplate,
-                   int nThreads, bool useMmap, bool useMlock);
+                   int nThreads, bool useMmap, bool useMlock,
+                   const EngineOptions &options = EngineOptions());
     void addChatMessage(const char *message, const char *role);
     float getResponseGenerationTime() const;
     int getContextSizeUsed() const;
@@ -27,6 +29,10 @@ public:
     void setThinking(bool enabled);
     // Umbrales de la ventana deslizante, como fraccion del contexto (alto > bajo).
     void setContextWindow(float high, float low);
+    // Limite de tokens por respuesta (-1 = sin limite); se puede cambiar entre turnos.
+    void setMaxResponse(int maxTokens) { _maxResponse = maxTokens; }
+    // [tokens del prompt procesados, segundos, tokens generados, segundos] del ultimo turno.
+    void getPerf(float *out4) const;
     std::string benchModel(int pp, int tg, int pl, int nr);
     ~LLMInference();
 
@@ -49,6 +55,12 @@ private:
     int64_t _responseGenerationTime = 0;
     int _responseNumTokens = 0;
     int _nCtxUsed = 0;
+    int _maxResponse = -1;
+    int64_t _prefillTimeUs = 0;
+    int _prefillTokens = 0;
+    int64_t _genTimeUs = 0;
+    int _genTokens = 0;
+    int64_t _turnStartUs = 0;
 
     llama_batch g_batch;
 

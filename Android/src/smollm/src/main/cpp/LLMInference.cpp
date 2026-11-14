@@ -16,7 +16,8 @@
 void
 LLMInference::loadModel(const char *model_path, float minP, float temperature, float topP, int topK,
                         float repeatPenalty, bool storeChats, long contextSize,
-                        const char *chatTemplate, int nThreads, bool useMmap, bool useMlock) {
+                        const char *chatTemplate, int nThreads, bool useMmap, bool useMlock,
+                        const EngineOptions &opts) {
     LOGi("loading model with"
          "\n\tmodel_path = %s"
          "\n\tminP = %f"
@@ -37,6 +38,7 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, f
     llama_model_params model_params = llama_model_default_params();
     model_params.use_mmap = useMmap;
     model_params.use_mlock = useMlock;
+    model_params.use_extra_bufts = opts.repack != 0;
     _model = llama_model_load_from_file(model_path, model_params);
     if (!_model) {
         LOGe("failed to load model from %s", model_path);
@@ -45,16 +47,39 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, f
 
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx = contextSize;
-    ctx_params.n_batch = contextSize;
+    ctx_params.n_batch = std::min<long>(opts.nBatch, contextSize);
+    ctx_params.n_ubatch = std::min<int>(opts.nUBatch, (int) ctx_params.n_batch);
     ctx_params.n_threads = nThreads;
-    // Sin esto la ingesta del prompt usaba el valor por defecto (4) distinto del de generacion.
-    ctx_params.n_threads_batch = nThreads;
+    ctx_params.n_threads_batch = opts.nThreadsBatch > 0 ? opts.nThreadsBatch : nThreads;
     ctx_params.no_perf = true;
+    ctx_params.type_k = EngineOptions::kvType(opts.kvTypeK);
+    ctx_params.type_v = EngineOptions::kvType(opts.kvTypeV);
+    ctx_params.flash_attn_type = opts.flashAttn == 2 ? LLAMA_FLASH_ATTN_TYPE_ENABLED
+                               : opts.flashAttn == 1 ? LLAMA_FLASH_ATTN_TYPE_DISABLED
+                                                     : LLAMA_FLASH_ATTN_TYPE_AUTO;
+    // La cuantizacion de la cache V exige Flash Attention.
+    if (ctx_params.type_v != GGML_TYPE_F16 && ctx_params.type_v != GGML_TYPE_F32 &&
+        ctx_params.flash_attn_type == LLAMA_FLASH_ATTN_TYPE_DISABLED) {
+        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    }
     _ctx = llama_init_from_model(_model, ctx_params);
+    if (!_ctx) {
+        // Combinacion no soportada (p. ej. cache cuantizada): se reintenta con valores seguros.
+        LOGe("llama_init_from_model() failed with custom options, retrying with defaults");
+        ctx_params.type_k = GGML_TYPE_F16;
+        ctx_params.type_v = GGML_TYPE_F16;
+        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+        _ctx = llama_init_from_model(_model, ctx_params);
+    }
     if (!_ctx) {
         LOGe("llama_new_context_with_model() returned null");
         throw std::runtime_error("llama_new_context_with_model() returned null");
     }
+    _maxResponse = opts.maxResponse;
+    LOGi("context: n_ctx=%u n_batch=%u n_ubatch=%u threads=%d/%d flash=%d kv=%d/%d repack=%d",
+         llama_n_ctx(_ctx), llama_n_batch(_ctx), llama_n_ubatch(_ctx), nThreads,
+         ctx_params.n_threads_batch, (int) ctx_params.flash_attn_type, (int) ctx_params.type_k,
+         (int) ctx_params.type_v, opts.repack);
 
     SamplerSettings settings;
     settings.minP = minP;
@@ -101,8 +126,17 @@ LLMInference::addChatMessage(const char *message, const char *role) {
 
 float
 LLMInference::getResponseGenerationTime() const {
-    if (_responseGenerationTime == 0) return 0.0f;
-    return (float) _responseNumTokens / (_responseGenerationTime / 1e6);
+    // tokens por segundo de la generacion (sin contar el procesamiento del prompt)
+    if (_genTimeUs == 0 || _genTokens == 0) return 0.0f;
+    return (float) _genTokens / ((float) _genTimeUs / 1e6f);
+}
+
+void
+LLMInference::getPerf(float *out4) const {
+    out4[0] = (float) _prefillTokens;
+    out4[1] = (float) _prefillTimeUs / 1e6f;
+    out4[2] = (float) _genTokens;
+    out4[3] = (float) _genTimeUs / 1e6f;
 }
 
 int
@@ -310,6 +344,10 @@ LLMInference::startCompletion(const char *query) {
     }
     _responseGenerationTime = 0;
     _responseNumTokens = 0;
+    _prefillTimeUs = 0;
+    _prefillTokens = 0;
+    _genTimeUs = 0;
+    _genTokens = 0;
     _response.clear();
     _cacheResponseTokens.clear();
 
@@ -370,6 +408,28 @@ LLMInference::completionLoop() {
     }
 
     auto start = ggml_time_us();
+    const bool firstCall = !_promptDecoded;
+    if (firstCall) {
+        // El prompt se procesa en trozos de n_batch: con lotes pequenos (p. ej. 64) una sola
+        // llamada con todo el prompt fallaria.
+        const int nB = (int) llama_n_batch(_ctx);
+        int remaining = _batch->n_tokens;
+        _prefillTokens = remaining;
+        llama_token *ptr = _batch->token;
+        while (remaining > nB) {
+            llama_batch chunk = llama_batch_get_one(ptr, nB);
+            if (llama_decode(_ctx, chunk) < 0) {
+                _kvTokens.clear();
+                llama_memory_clear(llama_get_memory(_ctx), false);
+                throw std::runtime_error("llama_decode() failed");
+            }
+            for (int i = 0; i < nB; i++) _kvTokens.push_back(ptr[i]);
+            ptr += nB;
+            remaining -= nB;
+        }
+        _batch->token = ptr;
+        _batch->n_tokens = remaining;
+    }
     if (llama_decode(_ctx, *_batch) < 0) {
         // El cache pudo quedar a medias: se descarta para que el siguiente turno parta limpio.
         _kvTokens.clear();
@@ -379,6 +439,7 @@ LLMInference::completionLoop() {
     _promptDecoded = true;
     for (int i = 0; i < _batch->n_tokens; i++) _kvTokens.push_back(_batch->token[i]);
 
+    if (firstCall) _prefillTimeUs = ggml_time_us() - start;
     _currToken = llama_sampler_sample(_sampler, _ctx, -1);
     
     // Check if token is EOG or if the text so far contains stop markers
@@ -399,6 +460,8 @@ LLMInference::completionLoop() {
         }
     }
 
+    if (!is_eog && _maxResponse > 0 && _responseNumTokens >= _maxResponse) is_eog = true;
+
     if (is_eog) {
         addChatMessage(_response.c_str(), "assistant");
         _response.clear();
@@ -408,6 +471,10 @@ LLMInference::completionLoop() {
     auto end = ggml_time_us();
     _responseGenerationTime += (end - start);
     _responseNumTokens += 1;
+    if (!firstCall) {
+        _genTimeUs += (end - start);
+        _genTokens += 1;
+    }
     _cacheResponseTokens += piece;
 
     _batch->token = &_currToken;

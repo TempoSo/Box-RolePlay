@@ -94,6 +94,7 @@ fun RoleplayScreen(
     val personas by viewModel.personas.collectAsState()
     var showPersonas by remember { mutableStateOf(false) }
     var showSampler by remember { mutableStateOf(false) }
+    var showEnginePerf by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var memoryFor by remember { mutableStateOf<RoleplayCharacter?>(null) }
     val settingsStore = remember { com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(context) }
@@ -212,12 +213,17 @@ fun RoleplayScreen(
                 defaultModel = it
             },
             onOpenSampler = { showSampler = true },
+            onOpenEnginePerf = { showEnginePerf = true },
             onDismiss = { showSettings = false },
         )
     }
 
     if (showSampler) {
         SamplerDialog(onDismiss = { showSampler = false })
+    }
+
+    if (showEnginePerf) {
+        EnginePerfDialog(onDismiss = { showEnginePerf = false })
     }
 
     if (showPersonas) {

@@ -1,6 +1,7 @@
 package com.google.ai.edge.gallery.engine
 
 import com.jegly.offlineLLM.smollm.SmolLM
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,7 +80,10 @@ class LlamaCppEngine {
 
             loadJob = CoroutineScope(Dispatchers.Default).launch {
                 try {
-                    instance.load(modelPath, params)
+                    val loadTime = measureTime { instance.load(modelPath, params) }
+                    com.google.ai.edge.gallery.data.characters.LastEnginePerf.loadSeconds =
+                        loadTime.inWholeMilliseconds / 1000f
+                    Log.i("AGLlamaPerf", "modelo cargado en ${"%.1f".format(loadTime.inWholeMilliseconds / 1000f)} s")
                     instance.setContextWindow(CONTEXT_WINDOW_HIGH, CONTEXT_WINDOW_LOW)
                     samplerSettings?.let { instance.setSampler(it.toFloatArray()) }
 
@@ -265,6 +269,17 @@ class LlamaCppEngine {
                         if (fullResponse.isNotBlank()) "(No visible content produced)" else "(Empty response)"
                     }
 
+                    runCatching {
+                        val st = instance.getPerfStats()
+                        com.google.ai.edge.gallery.data.characters.LastEnginePerf.stats = st
+                        Log.i(
+                            "AGLlamaPerf",
+                            "prompt: ${st.promptTokens} tok en ${"%.1f".format(st.promptSeconds)} s " +
+                                "(${"%.1f".format(st.promptTokensPerSecond)} t/s) | " +
+                                "generacion: ${st.generatedTokens} tok en ${"%.1f".format(st.generationSeconds)} s " +
+                                "(${"%.2f".format(st.generationTokensPerSecond)} t/s)",
+                        )
+                    }
                     withContext(Dispatchers.Main) {
                         isGenerating = false
                         onComplete(
