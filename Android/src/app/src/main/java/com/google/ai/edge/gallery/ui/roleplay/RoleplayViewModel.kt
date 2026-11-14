@@ -59,8 +59,10 @@ class RoleplayViewModel @Inject constructor(
     fun import(uri: Uri) {
         viewModelScope.launch {
             try {
-                val c = repository.importFromUri(uri)
-                _message.value = "Personaje importado: ${c.name}"
+                val list = repository.importAnyFromUri(uri)
+                _message.value =
+                    if (list.size == 1) "Personaje importado: ${list[0].name}"
+                    else "Se importaron ${list.size} personajes"
             } catch (e: CharacterCardException) {
                 _message.value = e.message ?: "No se pudo importar la tarjeta"
             } catch (e: Exception) {
@@ -121,6 +123,9 @@ class RoleplayViewModel @Inject constructor(
     }
 
     suspend fun getById(id: String): RoleplayCharacter? = repository.getById(id)
+
+    /** Copia de seguridad de todos los personajes (.zip) lista para compartir. */
+    suspend fun backupZip(): ByteArray = repository.exportBackupZip()
 
     fun exportJson(character: RoleplayCharacter): String = repository.exportJson(character)
 

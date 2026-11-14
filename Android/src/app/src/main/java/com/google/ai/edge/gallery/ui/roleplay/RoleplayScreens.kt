@@ -1,6 +1,7 @@
 package com.google.ai.edge.gallery.ui.roleplay
 
 import android.content.Intent
+import kotlinx.coroutines.launch
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -90,6 +91,7 @@ fun RoleplayScreen(
     val characters by viewModel.characters.collectAsState()
     val message by viewModel.message.collectAsState()
     val snackbar = remember { SnackbarHostState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var toDelete by remember { mutableStateOf<RoleplayCharacter?>(null) }
     val personas by viewModel.personas.collectAsState()
     var showPersonas by remember { mutableStateOf(false) }
@@ -216,6 +218,23 @@ fun RoleplayScreen(
             onOpenSampler = { showSampler = true },
             onOpenEnginePerf = { showEnginePerf = true },
             onOpenTts = { showTts = true },
+            onBackup = {
+                scope.launch {
+                    runCatching {
+                        val zip = viewModel.backupZip()
+                        val dir = java.io.File(context.cacheDir, "backup").apply { mkdirs() }
+                        dir.listFiles()?.forEach { it.delete() }
+                        val f = java.io.File(dir, "box-roleplay-personajes.zip").apply { writeBytes(zip) }
+                        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/zip"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(send, "Guardar copia de seguridad"))
+                    }.onFailure { snackbar.showSnackbar("No se pudo crear la copia: ${it.message}") }
+                }
+            },
             onDismiss = { showSettings = false },
         )
     }

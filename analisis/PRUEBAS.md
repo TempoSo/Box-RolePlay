@@ -52,3 +52,8 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 - [ ] Con un GGUF cargado: Rendimiento del motor > "Probar velocidad del modelo cargado". Anota PP y TG (t/s).
 - [ ] Cambia hilos (ej. 4 → 5 → 6), vuelve a cargar y repite; dime cuál da mejor TG.
 - [ ] Prueba flash attention encendido/apagado y KV f16 vs q8. Después de la prueba, el chat sigue respondiendo normal.
+
+## Copia de seguridad de personajes
+- [ ] Ajustes de Roleplay > "Copia de seguridad: exportar personajes (.zip)": se abre el menú de compartir con un zip (guárdalo en Drive o en archivos).
+- [ ] Borra un personaje de prueba e importa el zip con el icono de carpeta: ¿vuelve con su avatar y datos? (Se importan duplicados de los que ya existen; borra los repetidos.)
+- [ ] Nota: la copia incluye personajes, no los chats ni la memoria.

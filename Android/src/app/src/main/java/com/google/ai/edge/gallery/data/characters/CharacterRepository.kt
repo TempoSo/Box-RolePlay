@@ -16,6 +16,7 @@ import javax.inject.Singleton
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -43,6 +44,69 @@ class CharacterRepository @Inject constructor(
             it.readNBytes(CharacterCardParser.MAX_FILE_BYTES + 1)
         } ?: throw CharacterCardException("No se pudo abrir el archivo")
         importFromBytes(bytes)
+    }
+
+    /**
+     * Importa un archivo: una tarjeta (.json/.png) o una copia de seguridad (.zip) con varias.
+     * Devuelve los personajes creados.
+     */
+    suspend fun importAnyFromUri(uri: Uri): List<RoleplayCharacter> = withContext(Dispatchers.IO) {
+        val bytes = context.contentResolver.openInputStream(uri)?.use {
+            it.readNBytes(BACKUP_MAX_BYTES + 1)
+        } ?: throw CharacterCardException("No se pudo abrir el archivo")
+        if (bytes.size > BACKUP_MAX_BYTES) throw CharacterCardException("El archivo es demasiado grande")
+        val isZip = bytes.size > 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
+        if (!isZip) return@withContext listOf(importFromBytes(bytes))
+
+        val jsons = linkedMapOf<String, ByteArray>()
+        val avatars = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(bytes.inputStream()).use { zin ->
+            var e = zin.nextEntry
+            while (e != null) {
+                val name = e.name.substringAfterLast('/')
+                if (!e.isDirectory) {
+                    val data = zin.readNBytes(CharacterCardParser.MAX_FILE_BYTES)
+                    when {
+                        name.endsWith(".avatar.png") -> avatars[name.removeSuffix(".avatar.png")] = data
+                        name.endsWith(".json") -> jsons[name.removeSuffix(".json")] = data
+                    }
+                }
+                e = zin.nextEntry
+            }
+        }
+        val created = mutableListOf<RoleplayCharacter>()
+        for ((key, data) in jsons) {
+            val c = runCatching { importFromBytes(data) }.getOrNull() ?: continue
+            val png = avatars[key]
+            created += if (png != null && c.avatarPath.isEmpty()) {
+                val f = avatarFile(c.id).also { it.writeBytes(png) }
+                c.copy(avatarPath = f.absolutePath).also { characterDao.insert(it) }
+            } else c
+        }
+        if (created.isEmpty()) throw CharacterCardException("El zip no contiene tarjetas válidas")
+        created
+    }
+
+    /** Copia de seguridad: un .zip con cada personaje (.json chara_card_v2) y su avatar. */
+    suspend fun exportBackupZip(): ByteArray = withContext(Dispatchers.IO) {
+        val all = characterDao.getAll().first()
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            all.forEachIndexed { i, c ->
+                val safe = c.name.replace(Regex("[^A-Za-z0-9._-]+"), "_").take(40).ifEmpty { "personaje" }
+                val key = "%03d-%s".format(i + 1, safe)
+                zip.putNextEntry(java.util.zip.ZipEntry("$key.json"))
+                zip.write(exportJson(c).toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+                val av = if (c.avatarPath.isNotEmpty()) File(c.avatarPath) else null
+                if (av != null && av.exists()) {
+                    zip.putNextEntry(java.util.zip.ZipEntry("$key.avatar.png"))
+                    zip.write(av.readBytes())
+                    zip.closeEntry()
+                }
+            }
+        }
+        out.toByteArray()
     }
 
     suspend fun importFromBytes(bytes: ByteArray): RoleplayCharacter = withContext(Dispatchers.IO) {
@@ -121,6 +185,10 @@ class CharacterRepository @Inject constructor(
             )
         }
         conversation
+    }
+
+    private companion object {
+        const val BACKUP_MAX_BYTES = 120 * 1024 * 1024
     }
 
     private fun avatarFile(id: String): File {
