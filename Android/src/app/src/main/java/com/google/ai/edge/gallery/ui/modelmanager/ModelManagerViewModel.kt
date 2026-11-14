@@ -66,6 +66,8 @@ import java.net.URL
 import javax.inject.Inject
 import kotlin.collections.sortedWith
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -82,6 +84,9 @@ private const val MODEL_ALLOWLIST_FILENAME = "model_allowlist.json"
 private const val MODEL_ALLOWLIST_TEST_FILENAME = "model_allowlist_test.json"
 private const val ALLOWLIST_BASE_URL =
   "https://raw.githubusercontent.com/google-ai-edge/gallery/refs/heads/main/model_allowlists"
+
+/** Tiempo en segundo plano tras el cual se libera el modelo (10 min). */
+private const val IDLE_UNLOAD_MS = 10L * 60 * 1000
 
 private const val TEST_MODEL_ALLOW_LIST = ""
 
@@ -1089,8 +1094,30 @@ constructor(
     }
   }
 
+  private var idleUnloadJob: Job? = null
+
+  /**
+   * Ligereza: si la app pasa un rato en segundo plano (sin estar generando), se libera el modelo
+   * para devolver la RAM al sistema. Al volver al chat se recarga solo (ver ChatView).
+   */
   fun setAppInForeground(foreground: Boolean) {
     lifecycleProvider.isAppInForeground = foreground
+    idleUnloadJob?.cancel()
+    idleUnloadJob = null
+    if (foreground) return
+    idleUnloadJob =
+      viewModelScope.launch(Dispatchers.Default) {
+        delay(IDLE_UNLOAD_MS)
+        if (lifecycleProvider.isAppInForeground) return@launch
+        for (task in uiState.value.tasks) {
+          for (model in task.models) {
+            val inst = model.instance ?: continue
+            if (inst is com.google.ai.edge.gallery.engine.LlamaCppEngine && inst.isGenerating) continue
+            Log.d(TAG, "Liberando '${model.name}' por inactividad en segundo plano")
+            cleanupModel(context = context, task = task, model = model)
+          }
+        }
+      }
   }
 
   private fun saveModelAllowlistToDisk(modelAllowlistContent: String) {

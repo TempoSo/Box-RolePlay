@@ -211,6 +211,18 @@ fun ChatView(
     }
   }
 
+  // Si el modelo se liberó por inactividad en segundo plano, se recarga al volver al chat.
+  val initStatus = modelManagerUiState.modelInitializationStatus[selectedModel.name]?.status
+  LaunchedEffect(initStatus) {
+    if (
+      !navigatingUp &&
+        initStatus == ModelInitializationStatusType.NOT_INITIALIZED &&
+        curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
+    ) {
+      modelManagerViewModel.initializeModel(context, task = task, model = selectedModel)
+    }
+  }
+
   LaunchedEffect(sendMessageTrigger) {
     sendMessageTrigger?.let { trigger -> onSendMessage(trigger.model, trigger.messages) }
   }
