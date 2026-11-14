@@ -2,7 +2,9 @@ package com.google.ai.edge.gallery.tts
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
@@ -47,15 +49,57 @@ object TtsManager {
   @Volatile private var engineKey: String = ""
   @Volatile private var track: AudioTrack? = null
 
-  fun stop() {
+  private const val IDLE_RELEASE_MS = 2L * 60 * 1000
+  private val releaseTask = Runnable { release() }
+  @Volatile private var focusRequest: AudioFocusRequest? = null
+
+  private fun requestFocus(app: Context) {
+    runCatching {
+      val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+      val req =
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+          .setAudioAttributes(
+            AudioAttributes.Builder()
+              .setUsage(AudioAttributes.USAGE_MEDIA)
+              .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+              .build()
+          )
+          // Si entra una llamada u otra app con prioridad, la voz se calla.
+          .setOnAudioFocusChangeListener { change ->
+            if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) stop()
+          }
+          .build()
+      am.requestAudioFocus(req)
+      focusRequest = req
+    }
+  }
+
+  private fun abandonFocus() {
+    val app = appContext ?: return
+    runCatching {
+      focusRequest?.let { (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager).abandonAudioFocusRequest(it) }
+      focusRequest = null
+    }
+  }
+
+  private fun stopPlayback() {
     generation.incrementAndGet()
     runCatching { track?.pause(); track?.flush() }
     _speaking.value = false
+    abandonFocus()
+  }
+
+  fun stop() {
+    stopPlayback()
+    // El motor ocupa RAM: se libera solo tras 2 min sin hablar.
+    main.removeCallbacks(releaseTask)
+    main.postDelayed(releaseTask, IDLE_RELEASE_MS)
   }
 
   /** Libera el motor (RAM) cuando no se necesita. */
   fun release() {
-    stop()
+    main.removeCallbacks(releaseTask)
+    stopPlayback()
     executor.execute {
       engine?.release()
       engine = null
@@ -93,6 +137,9 @@ object TtsManager {
     }
 
     val myGen = generation.incrementAndGet()
+    main.removeCallbacks(releaseTask)
+    appContext = app
+    requestFocus(app)
     _speaking.value = true
     val speed = settings.speed()
     val steps = settings.numSteps()
@@ -164,7 +211,14 @@ object TtsManager {
       } finally {
         runCatching { out?.release() }
         if (track === out) track = null
-        if (generation.get() == myGen) main.post { _speaking.value = false }
+        if (generation.get() == myGen) {
+          main.post {
+            _speaking.value = false
+            abandonFocus()
+            main.removeCallbacks(releaseTask)
+            main.postDelayed(releaseTask, IDLE_RELEASE_MS)
+          }
+        }
       }
     }
   }

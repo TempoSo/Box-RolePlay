@@ -36,12 +36,43 @@ object SpeechText {
 
     /** Quita *, _, #, `, [], <...> y espacios repetidos. */
     fun stripFormatting(s: String): String =
-        s.replace(Regex("<[^>]{1,40}>"), " ") // <|channel>, <channel|>, etiquetas
+        stripEmoji(s)
+            .replace(Regex("<[^>]{1,40}>"), " ") // <|channel>, <channel|>, etiquetas
             .replace(Regex("[*_`#~]+"), "")
+            .replace(Regex("([!?])\\1{1,}"), "$1") // !!! -> !
+            .replace(Regex("\\.{4,}"), "...") // ...... -> ...
+            .replace(Regex("\\s*[-–—]{2,}\\s*"), ", ") // -- -> pausa
             .replace(Regex("\\[([^\\]]*)]\\([^)]*\\)"), "$1") // [texto](url) -> texto
             .replace(Regex("[ \\t]+"), " ")
             .replace(Regex("\\n{3,}"), "\n\n")
             .trim()
+
+    /** Quita emojis y símbolos gráficos: el motor de voz los lee mal o se atasca con ellos. */
+    fun stripEmoji(s: String): String {
+        val sb = StringBuilder(s.length)
+        var i = 0
+        while (i < s.length) {
+            val cp = s.codePointAt(i)
+            i += Character.charCount(cp)
+            val emoji =
+                cp in 0x1F000..0x1FAFF || cp in 0x2600..0x27BF || cp in 0x2B00..0x2BFF ||
+                    cp == 0xFE0F || cp == 0x200D || cp in 0x1F1E6..0x1F1FF
+            if (!emoji) sb.appendCodePoint(cp)
+        }
+        return sb.toString()
+    }
+
+    /** Une frases muy cortas con la siguiente (menos cortes y menos arranques del motor de voz). */
+    fun mergeShort(chunks: List<String>, maxLen: Int = 220, minLen: Int = 60): List<String> {
+        val out = mutableListOf<String>()
+        for (c in chunks) {
+            val last = out.lastOrNull()
+            if (last != null && last.length < minLen && last.length + 1 + c.length <= maxLen) {
+                out[out.lastIndex] = "$last $c"
+            } else out.add(c)
+        }
+        return out
+    }
 
     /**
      * Parte el texto en frases de a lo sumo [maxLen] caracteres, cortando en . ! ? … o salto de
@@ -70,6 +101,6 @@ object SpeechText {
             if (ch == '.' || ch == '!' || ch == '?' || ch == '…' || ch == '\n') flush()
         }
         flush()
-        return out.filter { s -> s.any { it.isLetterOrDigit() } }
+        return mergeShort(out.filter { s -> s.any { it.isLetterOrDigit() } }, limit)
     }
 }

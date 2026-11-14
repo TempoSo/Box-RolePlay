@@ -40,3 +40,10 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 - [ ] Contador de rendimiento: sobre la entrada del chat (bajo la barra de contexto) aparece "⚡ gen X t/s · prompt Y t/s…" tras cada respuesta. GGUF da cifras exactas; LiteRT, aproximadas (fragmentos/s).
 - [ ] Ajustes de Roleplay > "Exportar logs": se abre el menú de compartir con un .txt. Envíamelo (o pega las líneas con `AGLlamaPerf`).
 - [ ] Si la app se cierra sola, abre de nuevo y exporta: el reporte incluye el error del cierre.
+
+## TTS – pulido
+- [ ] Emojis y "!!!" / "......" no se leen raro; frases cortas ya no suenan entrecortadas.
+- [ ] Al enviar un mensaje nuevo (o regenerar), la voz de la respuesta anterior se corta.
+- [ ] Llamada o audio de otra app: la voz se calla sola.
+- [ ] Tras 2 min sin hablar el motor de voz se libera; la siguiente lectura tarda un poco más en arrancar (carga) y luego fluye.
+- [ ] Anota: segundos hasta que suena la primera frase, y si el español suena aceptable con tus archivos del modelo.

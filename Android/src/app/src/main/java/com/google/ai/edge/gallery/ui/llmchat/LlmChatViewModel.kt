@@ -593,6 +593,8 @@ open class LlmChatViewModelBase() : ChatViewModel() {
   ) {
     val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
     lastAllowThinking = allowThinking
+    // Si la voz sigue leyendo la respuesta anterior, se corta al enviar o regenerar.
+    com.google.ai.edge.gallery.tts.TtsManager.stop()
     viewModelScope.launch(Dispatchers.Default) {
       setInProgress(true)
       setPreparing(true)
