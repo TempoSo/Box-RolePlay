@@ -1,5 +1,6 @@
 package com.google.ai.edge.gallery.data.characters
 
+import com.google.ai.edge.gallery.tts.PocketModelFiles
 import java.io.ByteArrayOutputStream
 import java.io.File
 import org.junit.Assert.*
