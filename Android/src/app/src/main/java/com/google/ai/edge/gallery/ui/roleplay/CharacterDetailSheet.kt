@@ -81,6 +81,7 @@ fun CharacterDetailSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // -1 = saludo aleatorio; si no, índice en detail.greetings.
     var greetingIdx by remember { mutableIntStateOf(-1) }
+    val greetings = detail?.greetings.orEmpty()
     val avatar = remember(character.avatarPath) {
         if (character.avatarPath.isEmpty()) null
         else runCatching {
@@ -159,7 +160,6 @@ fun CharacterDetailSheet(
                 ExpandableBlock("Personalidad", character.personality)
                 ExpandableBlock("Escenario actual", character.scenario, emptyText = "No hay escenario establecido.")
 
-                val greetings = detail?.greetings.orEmpty()
                 if (greetings.isNotEmpty()) {
                     Text("SELECCIONAR SALUDO", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                     GreetingOption("Saludo aleatorio", selected = greetingIdx == -1) { greetingIdx = -1 }
