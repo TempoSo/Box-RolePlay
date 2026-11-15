@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +21,17 @@ import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.RemoveRedEye
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import com.google.ai.edge.gallery.data.characters.EnginePreset
+import com.google.ai.edge.gallery.data.characters.EnginePresetStore
+import com.google.ai.edge.gallery.data.characters.SamplerMode
+import com.google.ai.edge.gallery.data.characters.SamplerSettings
+import com.google.ai.edge.gallery.data.characters.SamplerSettingsStore
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,6 +78,11 @@ fun BoxInferenceScreen(
   var importing by remember { mutableStateOf(false) }
   var filter by remember { mutableStateOf("todos") }
   var showPersonas by remember { mutableStateOf(false) }
+  val presetStore = remember { EnginePresetStore(context) }
+  val samplerStore = remember { SamplerSettingsStore(context) }
+  var presets by remember { mutableStateOf(presetStore.all()) }
+  var showSavePreset by remember { mutableStateOf(false) }
+  var presetName by remember { mutableStateOf("") }
   var note by remember { mutableStateOf<String?>(null) }
   val personas by viewModel.personas.collectAsState()
 
@@ -87,6 +104,45 @@ fun BoxInferenceScreen(
       }
     }
 
+  if (showSavePreset) {
+    AlertDialog(
+      onDismissRequest = { showSavePreset = false },
+      title = { Text("Guardar motor") },
+      text = {
+        Column {
+          Text(
+            "Guarda el modelo, la visión, la persona y el muestreo actuales para volver a ellos con un toque.",
+            style = MaterialTheme.typography.bodySmall,
+          )
+          OutlinedTextField(
+            value = presetName, onValueChange = { presetName = it },
+            placeholder = { Text("p. ej., Rápido para el móvil") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+          )
+        }
+      },
+      confirmButton = {
+        TextButton(
+          enabled = presetName.isNotBlank(),
+          onClick = {
+            presetStore.save(
+              EnginePreset(
+                name = presetName,
+                model = selectedModel ?: "",
+                mmproj = mmproj,
+                personaId = personas.firstOrNull { it.isActive }?.id ?: "",
+                samplerMode = samplerStore.mode().id,
+                samplerCustom = samplerStore.custom()?.let { SamplerSettings.encode(it) } ?: "",
+              )
+            )
+            presets = presetStore.all(); showSavePreset = false; presetName = ""
+          },
+        ) { Text("Guardar") }
+      },
+      dismissButton = { TextButton(onClick = { showSavePreset = false }) { Text("Cancelar") } },
+    )
+  }
+
   if (showPersonas) {
     PersonaManagerDialog(
       personas = personas,
@@ -103,6 +159,51 @@ fun BoxInferenceScreen(
     onBack = onBack,
   ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+      BoxSectionLabel("Motores guardados")
+      BoxActionCard(
+        icon = Icons.Rounded.Bookmark,
+        title = "Guardar combinación actual",
+        subtitle = "Modelo, visión, persona y muestreo en un perfil",
+        onClick = { showSavePreset = true },
+        dashed = true,
+      )
+      presets.forEach { pr ->
+        BoxActionCard(
+          icon = Icons.Rounded.Bookmark,
+          title = pr.name,
+          subtitle = listOfNotNull(
+            pr.model.takeIf { it.isNotBlank() }?.let { n -> models.firstOrNull { it.name == n }?.let { m -> m.displayName.ifBlank { m.name } } ?: n },
+            pr.mmproj.takeIf { it.isNotBlank() }?.let { "visión" },
+            personas.firstOrNull { it.id == pr.personaId }?.name,
+            pr.samplerMode.takeIf { it.isNotBlank() },
+          ).joinToString(" · ").ifBlank { "Vacío" },
+          onClick = {
+            val missing = mutableListOf<String>()
+            if (pr.model.isNotBlank()) {
+              if (models.any { it.name == pr.model }) onSelectModel(pr.model) else missing += "modelo"
+            }
+            if (pr.mmproj.isNotBlank() && pr.mmproj !in mmprojFiles) missing += "visión"
+            else {
+              mmproj = pr.mmproj
+              perfStore.save(perfStore.load().copy(mmproj = pr.mmproj))
+            }
+            if (pr.personaId.isNotBlank()) {
+              val persona = personas.firstOrNull { it.id == pr.personaId }
+              if (persona != null) viewModel.selectPersona(persona) else missing += "persona"
+            }
+            if (pr.samplerMode.isNotBlank()) {
+              samplerStore.save(SamplerMode.fromId(pr.samplerMode), pr.samplerCustom.takeIf { it.isNotBlank() }?.let { SamplerSettings.decodeOrNull(it) })
+            }
+            note = "Motor «${pr.name}» aplicado" + if (missing.isEmpty()) "" else " (no se encontró: ${missing.joinToString()})"
+          },
+          trailing = {
+            IconButton(onClick = { presetStore.delete(pr.id); presets = presetStore.all() }) {
+              Icon(Icons.Rounded.Delete, "Borrar motor", tint = MaterialTheme.colorScheme.error)
+            }
+          },
+        )
+      }
+
       BoxSectionLabel("Mis modelos")
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
         listOf("todos" to "TODOS", "gguf" to "GGUF", "litert" to "LITERT").forEach { (k, label) ->

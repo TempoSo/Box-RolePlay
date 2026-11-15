@@ -110,3 +110,9 @@ Pendiente (E2): generación automática de recuerdos tras cada respuesta y conso
 4. Chat nuevo con el personaje: solo los recuerdos reales (procesados) entran al prompt.
 5. Tras absorber, volver al chat: debe seguir funcionando (el motor se reinicia la conversación).
 6. Interruptores por personaje: "Usar memoria" y "Recopilar recuerdos automáticamente".
+
+## Motores guardados (Configuración de inferencia)
+1. "Guardar combinación actual": pide un nombre y guarda modelo, visión (mmproj), persona activa y muestreo.
+2. Tocar un motor guardado: cambia el modelo, la visión, la persona y el muestreo de golpe y avisa si algo ya no existe (modelo borrado, persona eliminada…).
+3. Guardar otro con el mismo nombre lo reemplaza; la papelera lo borra. Sobrevive a cerrar la app.
+4. Tras aplicar uno con otra visión o modelo, recargar el modelo (la visión se aplica al cargar).
