@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Memory
@@ -65,6 +66,7 @@ data class BoxApp(
 
 object BoxAppIds {
     const val ROLEPLAY = "roleplay"
+    const val SCENARIOS = "scenarios"
     const val CHAT = "chat"
     const val TTS = "tts"
     const val VISION = "vision"
@@ -79,7 +81,8 @@ object BoxAppIds {
 
 object BoxAppRegistry {
     val all: List<BoxApp> = listOf(
-        BoxApp(BoxAppIds.ROLEPLAY, "Roleplay", "Personajes con voz, visión y memoria", Icons.Rounded.Forum, Color(0xFF7B52E0), Color(0xFF2E2F7A)),
+        BoxApp(BoxAppIds.ROLEPLAY, "Personajes", "Habla 1 a 1 con voz, visión y memoria", Icons.Rounded.Forum, Color(0xFF7B52E0), Color(0xFF2E2F7A)),
+        BoxApp(BoxAppIds.SCENARIOS, "Roleplay", "Escenas con varios personajes: tú controlas a uno", Icons.Rounded.Groups, Color(0xFFE05297), Color(0xFF7A2E55)),
         BoxApp(BoxAppIds.CHAT, "Chat libre", "Conversa directo con el modelo", Icons.Rounded.Chat, Color(0xFF3B82F6), Color(0xFF1E3A8A)),
         BoxApp(BoxAppIds.TTS, "Texto a voz", "Pocket TTS por separado: escribe y escucha", Icons.Rounded.RecordVoiceOver, Color(0xFF2DD4BF), Color(0xFF0F766E)),
         BoxApp(BoxAppIds.VISION, "Visión", "Describe y pregunta sobre imágenes", Icons.Rounded.RemoveRedEye, Color(0xFFF97316), Color(0xFF9A3412)),
@@ -93,7 +96,7 @@ object BoxAppRegistry {
     )
 
     /** Apps fijadas en el inicio (en este orden). */
-    val pinned: List<String> = listOf(BoxAppIds.ROLEPLAY, BoxAppIds.TTS, BoxAppIds.VISION)
+    val pinned: List<String> = listOf(BoxAppIds.ROLEPLAY, BoxAppIds.SCENARIOS, BoxAppIds.TTS, BoxAppIds.VISION)
 
     fun byId(id: String): BoxApp? = all.firstOrNull { it.id == id }
 }

@@ -82,3 +82,12 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 - [ ] Texto a voz (app): escribir y "Leer"/"Parar" sin cargar ningún LLM; "Ajustes de voz".
 - [ ] Visión / Generador de imágenes / Transcripción / Preguntar con audio / Lab de prompts: abren la lista de modelos de su tarea.
 - [ ] Benchmark: "Benchmark completo" y "Prueba rápida del motor GGUF".
+
+## Fase D — Escenas multipersonaje (app "Roleplay")
+1. Inicio → app fijada "Roleplay" (rosa) → "Crear un escenario": poner nombre, prompt, etiquetas, elegir 2+ personajes, guardar. Debe aparecer en la lista.
+2. Buscar por nombre/etiqueta en la lista; editar y borrar (el borrado pide confirmación).
+3. Tocar una escena: abre un chat con el modelo elegido en Configuración de inferencia. Si no hay modelo, lleva a la configuración. Sin personajes muestra aviso.
+4. En el chat, escribir algo: la IA debe responder con líneas "Nombre: texto" para varios personajes y sin hablar por ti. Revisar que usa tu persona activa.
+5. Narrador activado: aparece "Narrator:" ocasionalmente.
+6. "Personajes" (antes Roleplay) sigue funcionando 1 a 1.
+Pendiente (D2): chips Aleatorio/Narrador/User/personaje sobre el input.

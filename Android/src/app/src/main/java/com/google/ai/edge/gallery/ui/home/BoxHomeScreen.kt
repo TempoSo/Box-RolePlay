@@ -220,14 +220,14 @@ fun BoxHomeScreen(
       com.google.ai.edge.gallery.ui.apps.BoxAppRegistry.pinned.mapNotNull {
         com.google.ai.edge.gallery.ui.apps.BoxAppRegistry.byId(it)
       }.forEach { app ->
-        com.google.ai.edge.gallery.ui.apps.BoxAppTile(app, onClick = { onOpenApp(app.id) }, iconSize = 72.dp)
+        com.google.ai.edge.gallery.ui.apps.BoxAppTile(app, onClick = { onOpenApp(app.id) }, iconSize = 64.dp)
       }
     }
     Spacer(Modifier.height(8.dp))
     BoxActionCard(
       icon = Icons.Rounded.People,
-      title = "Elige un personaje",
-      subtitle = "Habla con tus personajes de roleplay",
+      title = "Hablar con personajes",
+      subtitle = "Chat 1 a 1 con voz, visión y memoria",
       onClick = onCharacters,
     )
     BoxActionCard(
