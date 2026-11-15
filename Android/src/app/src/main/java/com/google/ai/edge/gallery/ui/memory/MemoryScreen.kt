@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -38,7 +39,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.characters.CharacterRepository
+import com.google.ai.edge.gallery.data.characters.MemoryAbsorbPrompt
 import com.google.ai.edge.gallery.data.characters.MemoryRepository
+import com.google.ai.edge.gallery.data.characters.PersonaRepository
+import com.google.ai.edge.gallery.data.characters.RawMemory
+import com.google.ai.edge.gallery.data.characters.RawMemoryStore
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore
 import com.google.ai.edge.gallery.data.local.entities.CharacterMemory
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
@@ -50,6 +57,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -58,30 +66,65 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class MemoryViewModel @Inject constructor(
+  @ApplicationContext context: Context,
   characterRepository: CharacterRepository,
   private val memoryRepository: MemoryRepository,
+  private val personaRepository: PersonaRepository,
 ) : ViewModel() {
+  private val rawStore = RawMemoryStore(context)
+  private val _raw = MutableStateFlow<List<RawMemory>>(emptyList())
+  val raw: StateFlow<List<RawMemory>> = _raw.asStateFlow()
+  private fun refreshRaw() { _raw.value = rawStore.forCharacter(selectedId.value) }
+  fun deleteRaw(id: String) { viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { rawStore.remove(setOf(id)); refreshRaw() } }
+
+  /** Absorber clústeres: el modelo resume las notas sin procesar en un recuerdo real. */
+  fun absorb(character: RoleplayCharacter, absorber: MemoryAbsorber, preferredModel: String?, onMessage: (String) -> Unit) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      val notes = rawStore.forCharacter(character.id)
+      if (notes.isEmpty()) { onMessage("No hay recuerdos sin procesar."); return@launch }
+      val userName = personaRepository.getActive()?.name ?: "User"
+      val prompt = MemoryAbsorbPrompt.build(userName, character.name, notes.asReversed().map { it.text })
+      absorber.run(preferredModel, prompt,
+        onResult = { out ->
+          val clean = MemoryAbsorbPrompt.clean(out)
+          if (clean == null) onMessage("El modelo no generó un resumen útil. Tus notas se conservan.")
+          else viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            memoryRepository.save(CharacterMemory(characterId = character.id, content = clean))
+            rawStore.remove(notes.map { it.id }.toSet()); refreshRaw()
+            onMessage("Listo: ${notes.size} notas absorbidas en un recuerdo.")
+          }
+        },
+        onError = { onMessage(it) })
+    }
+  }
+
   val characters: StateFlow<List<RoleplayCharacter>> =
     characterRepository.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
   private val selectedId = MutableStateFlow("")
-  fun select(id: String) { selectedId.value = id }
+  fun select(id: String) { selectedId.value = id; refreshRaw() }
   val memories: StateFlow<List<CharacterMemory>> =
     selectedId.flatMapLatest { id -> if (id.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else memoryRepository.observe(id) }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
   fun save(m: CharacterMemory) { viewModelScope.launch { memoryRepository.save(m) } }
   fun delete(m: CharacterMemory) { viewModelScope.launch { memoryRepository.delete(m) } }
-  fun consolidate(characterId: String, onDone: (Int) -> Unit) { viewModelScope.launch { onDone(memoryRepository.consolidate(characterId)) } }
   fun clear(characterId: String) { viewModelScope.launch { memoryRepository.deleteAll(characterId) } }
 }
 
 /** Memoria a largo plazo: recuerdos por personaje, búsqueda, edición y ajustes. */
 @Composable
-fun MemoryScreen(onBack: () -> Unit, viewModel: MemoryViewModel = hiltViewModel()) {
+fun MemoryScreen(
+  onBack: () -> Unit,
+  absorber: MemoryAbsorber,
+  preferredModel: String?,
+  viewModel: MemoryViewModel = hiltViewModel(),
+) {
   val context = LocalContext.current
   val store = remember { RoleplaySettingsStore(context) }
   val characters by viewModel.characters.collectAsState()
   val memories by viewModel.memories.collectAsState()
+  val rawNotes by viewModel.raw.collectAsState()
+  var absorbing by remember { mutableStateOf(false) }
   var selected by remember { mutableStateOf("") }
   var query by remember { mutableStateOf("") }
   var editing by remember { mutableStateOf<CharacterMemory?>(null) }
@@ -140,9 +183,31 @@ fun MemoryScreen(onBack: () -> Unit, viewModel: MemoryViewModel = hiltViewModel(
             Text("Recopilar recuerdos automáticamente", Modifier.weight(1f))
             Switch(checked = auto, onCheckedChange = { auto = it; store.setAutoMemory(selected, it) })
           }
-          Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(note ?: "Los recuerdos nuevos se guardan al instante con las frases clave de cada intercambio, sin usar el modelo.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = { viewModel.consolidate(selected) { n -> note = if (n == 0) "No hay recuerdos viejos que absorber." else "Se juntaron $n recuerdos viejos en uno." } }, enabled = memories.size > 6) { Text("Absorber") }
+          BoxSectionLabel("Recuerdos sin procesar (${rawNotes.size})")
+          Text(
+            note ?: "Notas ligeras que se guardan al instante mientras chateas. Al absorberlas, el modelo las resume en un recuerdo real que se usa en el prompt.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Button(
+            onClick = {
+              current?.let { c ->
+                absorbing = true; note = "Absorbiendo… (puede tardar si el modelo debe cargarse; no salgas de esta pantalla)"
+                viewModel.absorb(c, absorber, preferredModel) { msg -> note = msg; absorbing = false }
+              }
+            },
+            enabled = rawNotes.isNotEmpty() && !absorbing,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+          ) { Text(if (absorbing) "Absorbiendo…" else "Absorber clústeres") }
+          rawNotes.take(30).forEach { r ->
+            Card(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+              Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                  Text(relativeTime(r.createdAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text(r.text, maxLines = 4, style = MaterialTheme.typography.bodyMedium)
+                }
+                IconButton(onClick = { viewModel.deleteRaw(r.id) }) { Icon(Icons.Rounded.Delete, "Borrar nota", tint = MaterialTheme.colorScheme.error) }
+              }
+            }
           }
           Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Número total de recuerdos: ${memories.size}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)

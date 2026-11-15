@@ -72,6 +72,7 @@ import androidx.navigation.navArgument
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskData
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskDataForBuiltinTask
+import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
@@ -272,7 +273,20 @@ fun GalleryNavHost(
     }
 
     composable(route = ROUTE_MEMORY) {
-      com.google.ai.edge.gallery.ui.memory.MemoryScreen(onBack = { navController.navigateUp() })
+      val memCtx = androidx.compose.ui.platform.LocalContext.current
+      val memAbsorber =
+        androidx.compose.runtime.remember {
+          com.google.ai.edge.gallery.ui.memory.MemoryAbsorber(
+            context = memCtx.applicationContext,
+            modelManager = modelManagerViewModel,
+            scope = modelManagerViewModel.viewModelScope,
+          )
+        }
+      com.google.ai.edge.gallery.ui.memory.MemoryScreen(
+        onBack = { navController.navigateUp() },
+        absorber = memAbsorber,
+        preferredModel = com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(memCtx).defaultModel(),
+      )
     }
 
     composable(route = ROUTE_APPS) {

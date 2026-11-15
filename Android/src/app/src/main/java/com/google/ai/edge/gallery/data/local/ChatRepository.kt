@@ -4,11 +4,11 @@ import com.google.ai.edge.gallery.data.characters.Swipes
 import com.google.ai.edge.gallery.data.local.dao.CharacterDao
 import android.content.Context
 import com.google.ai.edge.gallery.data.characters.AutoMemory
+import com.google.ai.edge.gallery.data.characters.RawMemory
+import com.google.ai.edge.gallery.data.characters.RawMemoryStore
 import com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore
 import com.google.ai.edge.gallery.data.local.dao.ConversationDao
-import com.google.ai.edge.gallery.data.local.dao.MemoryDao
 import com.google.ai.edge.gallery.data.local.dao.PersonaDao
-import com.google.ai.edge.gallery.data.local.entities.CharacterMemory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.ai.edge.gallery.data.local.dao.MessageDao
 import com.google.ai.edge.gallery.data.local.entities.Conversation
@@ -26,7 +26,6 @@ class ChatRepository @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val characterDao: CharacterDao,
-    private val memoryDao: MemoryDao,
     private val personaDao: PersonaDao,
     @ApplicationContext private val context: Context,
 ) {
@@ -47,9 +46,9 @@ class ChatRepository @Inject constructor(
         val charName = characterDao.getById(charId)?.name ?: return
         val userName = personaDao.getActive()?.name ?: "User"
         val text = AutoMemory.fromExchange(userName, charName, user.content, reply.content) ?: return
-        val recent = memoryDao.getAll(charId).take(5).map { it.content }
-        if (AutoMemory.isDuplicate(text, recent)) return
-        memoryDao.insert(CharacterMemory(characterId = charId, content = text))
+        val raw = RawMemoryStore(context)
+        if (AutoMemory.isDuplicate(text, raw.forCharacter(charId).take(5).map { it.text })) return
+        raw.add(RawMemory(characterId = charId, text = text))
     }
 
     /** Roleplay: JSON del lorebook (character_book) del personaje, o "" si no tiene. */

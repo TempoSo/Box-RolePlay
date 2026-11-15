@@ -98,9 +98,10 @@ Pendiente (D2): chips Aleatorio/Narrador/User/personaje sobre el input.
 3. Memoria a largo plazo: elegir personaje, buscar recuerdos, editar/borrar, interruptor por personaje, "Borrar todos".
 Pendiente (E2): generación automática de recuerdos tras cada respuesta y consolidación en clústeres con el modelo.
 
-## Fase E2 — Memoria automática
-1. Chat con un personaje: desde tu 2.º mensaje, tras cada respuesta aparece un recuerdo nuevo en Memoria (frases clave de tu mensaje y la respuesta, en tu idioma, sin markdown ni emojis). No debe notarse ninguna pausa.
-2. Sin duplicados al repetir; en escenas ("Roleplay") no se guardan recuerdos.
-3. Interruptores por personaje: "Usar memoria" y "Recopilar automáticamente".
-4. "Absorber" (con más de 6 recuerdos): junta los viejos en uno y deja los 5 más recientes.
-5. Chat nuevo con el personaje: los recuerdos recientes entran al prompt (máx. configurable).
+## Fase E2 — Memoria en dos niveles
+1. Chat con un personaje: desde tu 2.º mensaje, tras cada respuesta se guarda al instante una nota ligera ("sin procesar"). No debe notarse pausa ni recarga.
+2. Memoria a largo plazo → personaje: la sección "Recuerdos sin procesar (N)" lista las notas (se pueden borrar una a una).
+3. "Absorber clústeres": carga el modelo elegido en Configuración si hace falta, genera UN resumen y lo guarda como recuerdo real; las notas absorbidas desaparecen. Revisar: idioma correcto, sin inventos, sin etiquetas raras. Si falla, las notas se conservan y se muestra el motivo.
+4. Chat nuevo con el personaje: solo los recuerdos reales (procesados) entran al prompt.
+5. Tras absorber, volver al chat: debe seguir funcionando (el motor se reinicia la conversación).
+6. Interruptores por personaje: "Usar memoria" y "Recopilar recuerdos automáticamente".
