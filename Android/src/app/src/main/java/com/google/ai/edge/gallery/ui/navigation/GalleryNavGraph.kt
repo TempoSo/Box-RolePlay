@@ -102,6 +102,7 @@ private const val ROUTE_CHAT_HISTORY = "chat_history"
 private const val ROUTE_ROLEPLAY = "roleplay"
 private const val ROUTE_SCENARIOS = "box_scenarios"
 private const val ROUTE_MEMORY = "box_memory"
+private const val ROUTE_HF = "box_hf"
 private const val ROUTE_SCENARIO_EDIT = "box_scenario_edit"
 private const val ROUTE_ROLEPLAY_EDIT = "roleplay_edit"
 private const val ROUTE_SETTINGS = "box_settings"
@@ -272,6 +273,34 @@ fun GalleryNavHost(
       )
     }
 
+    composable(route = ROUTE_HF) {
+      com.google.ai.edge.gallery.ui.modelmanager.HfBrowserScreen(
+        onBack = { navController.navigateUp() },
+        onModelReady = { fileName, size ->
+          // Se registra igual que un modelo importado desde el teléfono.
+          modelManagerViewModel.addImportedLlmModel(
+            com.google.ai.edge.gallery.proto.ImportedModel.newBuilder()
+              .setFileName(fileName)
+              .setFileSize(size)
+              .setLlmConfig(
+                com.google.ai.edge.gallery.proto.LlmConfig.newBuilder()
+                  .addAllCompatibleAccelerators(listOf("CPU", "GPU"))
+                  .setDefaultMaxTokens(4096)
+                  .setDefaultTopk(com.google.ai.edge.gallery.data.DEFAULT_TOPK)
+                  .setDefaultTopp(com.google.ai.edge.gallery.data.DEFAULT_TOPP)
+                  .setDefaultTemperature(com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE)
+                  .setSupportImage(false)
+                  .setSupportAudio(false)
+                  .setSupportMobileActions(false)
+                  .setSupportThinking(false)
+                  .build()
+              )
+              .build()
+          )
+        },
+      )
+    }
+
     composable(route = ROUTE_MEMORY) {
       val memCtx = androidx.compose.ui.platform.LocalContext.current
       val memAbsorber =
@@ -363,6 +392,7 @@ fun GalleryNavHost(
           selected = it
         },
         onAddModel = { navController.navigate("$ROUTE_MODEL_MANAGER?startImport=true") },
+        onOpenHf = { navController.navigate(ROUTE_HF) },
         onOpenImageGen = {
           pickedTask = modelManagerViewModel.getTaskById(BuiltInTaskId.IMAGE_GEN)
           enableModelListAnimation = true

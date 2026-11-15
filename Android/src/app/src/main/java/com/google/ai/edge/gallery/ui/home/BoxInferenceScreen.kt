@@ -23,6 +23,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -66,6 +67,7 @@ fun BoxInferenceScreen(
   selectedModel: String?,
   onSelectModel: (String) -> Unit,
   onAddModel: () -> Unit,
+  onOpenHf: () -> Unit = {},
   onOpenImageGen: () -> Unit,
   onBack: () -> Unit,
   viewModel: RoleplayViewModel = hiltViewModel(),
@@ -210,6 +212,12 @@ fun BoxInferenceScreen(
           FilterChip(selected = filter == k, onClick = { filter = k }, label = { Text(label) })
         }
       }
+      BoxActionCard(
+        icon = Icons.Rounded.Download,
+        title = "Descargar de Hugging Face",
+        subtitle = "Busca modelos .gguf y descárgalos directo al teléfono",
+        onClick = onOpenHf,
+      )
       BoxActionCard(
         icon = Icons.Rounded.Add,
         title = "Añadir modelo personalizado",

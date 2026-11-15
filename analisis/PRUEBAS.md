@@ -137,3 +137,13 @@ Pendiente (E2): generación automática de recuerdos tras cada respuesta y conso
 2. En la biblioteca aparece una fila de chips ("Todos" + tus grupos) encima de las etiquetas; elegir uno filtra la lista. Se combina con la búsqueda y las etiquetas.
 3. Un personaje puede estar en varios grupos. Al cerrar y abrir la app los grupos siguen ahí.
 4. Borrar un grupo no borra los personajes. Si no hay grupos, la fila no aparece.
+
+## Descargar de Hugging Face
+1. Configuración de inferencia → "Descargar de Hugging Face". Escribe un nombre (p. ej. "qwen 3b gguf") y busca: salen repositorios ordenados por descargas.
+2. También sirve pegar "usuario/repositorio" o un enlace de huggingface.co: abre directo la lista de archivos.
+3. Archivos: tamaño, cuantización (Q4_K_M…), marca "cabe bien / justo / demasiado grande" según tu RAM, "visión" para los mmproj. Los modelos partidos en varios archivos salen deshabilitados.
+4. Descargar un modelo: barra de progreso; al terminar aparece en "Mis modelos" como cualquier modelo importado y se puede elegir y cargar.
+5. Descargar un mmproj: aparece en la lista de visión de Configuración de inferencia.
+6. Cortar la conexión o cancelar a mitad y volver a pulsar Descargar: continúa donde iba (archivo .part).
+7. Sin espacio libre: avisa antes de empezar. Repositorios privados o con acceso restringido: error "No encontrado/403", sin romper nada.
+8. La app debe seguir abierta durante la descarga (no hay servicio en segundo plano todavía).
