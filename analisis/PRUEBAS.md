@@ -90,7 +90,12 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 4. En el chat, escribir algo: la IA debe responder con líneas "Nombre: texto" para varios personajes y sin hablar por ti. Revisar que usa tu persona activa.
 5. Narrador activado: aparece "Narrator:" ocasionalmente.
 6. "Personajes" (antes Roleplay) sigue funcionando 1 a 1.
-Pendiente (D2): chips Aleatorio/Narrador/User/personaje sobre el input.
+
+### Fase D2 — Barra de escena en el chat
+1. En un chat de escena aparece sobre el campo de texto: "🎲 Aleatorio", "Yo", "Narrador" y un chip por personaje. En chats normales NO aparece.
+2. "Yo" (por defecto): escribes normal. "Narrador" o un personaje: tu texto sale con "Nombre: " delante y la IA no debe responder como ese nombre.
+3. "🎲 Aleatorio": envía "(Next message: write only as X.)" con un personaje al azar (distinto del anterior y del que controlas) y la IA habla como él.
+4. Reabrir la escena desde el cajón: la barra vuelve a salir.
 
 ## Fase E — Cajón lateral y Memoria a largo plazo
 1. Inicio: botón de menú (arriba izquierda) o deslizar desde el borde izquierdo abre el cajón.

@@ -434,6 +434,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     }
   }
 
+  suspend fun sceneMemberNames(conversationId: String): List<String> =
+    chatRepository.sceneMemberNames(conversationId)
+
   suspend fun getConversationById(conversationId: String) =
     chatRepository.getConversationById(conversationId)
 

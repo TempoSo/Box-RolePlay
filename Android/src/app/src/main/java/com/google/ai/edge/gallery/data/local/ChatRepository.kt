@@ -29,6 +29,15 @@ class ChatRepository @Inject constructor(
     private val personaDao: PersonaDao,
     @ApplicationContext private val context: Context,
 ) {
+    /** Nombres de los personajes de una escena ("scene:<id>"), o lista vacía si no es una escena. */
+    suspend fun sceneMemberNames(conversationId: String): List<String> {
+        val cid = conversationDao.getConversationById(conversationId)?.characterId ?: return emptyList()
+        if (!cid.startsWith("scene:")) return emptyList()
+        val scenario = com.google.ai.edge.gallery.data.characters.ScenarioStore(context).get(cid.removePrefix("scene:"))
+            ?: return emptyList()
+        return scenario.participantIds.mapNotNull { characterDao.getById(it)?.name }
+    }
+
     /**
      * Memoria automática tras cada respuesta: guarda las frases clave del último intercambio.
      * Empieza con el 2.º mensaje del usuario, no usa el modelo y no inventa texto.

@@ -224,11 +224,34 @@ fun ChatViewWrapper(
     onSystemPromptChanged(sp)
   }
 
+  // Escenas de roleplay: con quién escribe el usuario y botón "Aleatorio".
+  var sceneNames by remember(conversationId) { mutableStateOf<List<String>>(emptyList()) }
+  var sceneSpeaker by remember(conversationId) { mutableStateOf<String?>(null) }
+  var lastRandomSpeaker by remember(conversationId) { mutableStateOf<String?>(null) }
+  var localTrigger by remember { mutableStateOf<SendMessageTrigger?>(null) }
+  androidx.compose.runtime.LaunchedEffect(conversationId) {
+    sceneNames =
+      if (conversationId == null) emptyList()
+      else runCatching { viewModel.sceneMemberNames(conversationId) }.getOrDefault(emptyList())
+  }
+
   ChatView(
     task = task,
     viewModel = viewModel,
     modelManagerViewModel = modelManagerViewModel,
-    onSendMessage = { model, messages ->
+    onSendMessage = { model, rawMessages ->
+      // Escena: si escribes como el narrador o un personaje, tu texto lleva su nombre delante.
+      val speakerPrefix =
+        sceneSpeaker?.let { if (it == com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.NARRATOR) "Narrator: " else "$it: " }
+      val messages =
+        if (sceneNames.isEmpty() || speakerPrefix == null) rawMessages
+        else
+          rawMessages.map { m ->
+            if (m is ChatMessageText && m.side == com.google.ai.edge.gallery.ui.common.chat.ChatSide.USER &&
+              !m.content.startsWith("(Next message")
+            ) ChatMessageText(content = speakerPrefix + m.content, side = m.side)
+            else m
+          }
       for (message in messages) {
         viewModel.addMessage(model = model, message = message)
       }
@@ -317,12 +340,40 @@ fun ChatViewWrapper(
     emptyStateComposable = emptyStateComposable,
     aboveInputComposable = { model ->
       ContextWindowIndicator(model = model, viewModel = viewModel)
+      if (sceneNames.isNotEmpty()) {
+        val busy = viewModel.uiState.collectAsState().value.inProgress
+        SceneSpeakerBar(
+          names = sceneNames,
+          narrator = true,
+          selected = sceneSpeaker,
+          onSelect = { sceneSpeaker = it },
+          enabled = !busy,
+          onRandom = {
+            val pool = sceneNames.filter { it != sceneSpeaker }
+            val pick =
+              com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.pickRandom(pool, lastRandomSpeaker)
+            if (pick != null) {
+              lastRandomSpeaker = pick
+              localTrigger =
+                SendMessageTrigger(
+                  model,
+                  listOf(
+                    ChatMessageText(
+                      content = "(Next message: write only as $pick.)",
+                      side = com.google.ai.edge.gallery.ui.common.chat.ChatSide.USER,
+                    )
+                  ),
+                )
+            }
+          },
+        )
+      }
       aboveInputComposable(model)
     },
     allowEditingSystemPrompt = allowEditingSystemPrompt,
     curSystemPrompt = effectiveCurSystemPrompt,
     onSystemPromptChanged = effectiveOnSystemPromptChanged,
-    sendMessageTrigger = sendMessageTrigger,
+    sendMessageTrigger = localTrigger ?: sendMessageTrigger,
     showAudioPicker = showAudioPicker,
     conversationId = conversationId,
     autoResumeConversation = autoResumeConversation,

@@ -52,7 +52,10 @@ object ScenePromptBuilder {
         parts += "The User is $user. Write every message as lines that start with the speaker's name and a colon, " +
             "like \"Name: text\". Only write for the characters listed" +
             (if (narrator) " and the $NARRATOR" else "") +
-            ". Never speak, think or act for $user. Reply in the language $user writes in."
+            ". Never speak, think or act for $user. " +
+            "If a message from the User starts with \"Name:\" (the User is speaking as that name), " +
+            "never write lines for that same name in your reply; answer as the others. " +
+            "Reply in the language $user writes in."
         return parts.joinToString("\n\n")
     }
 
