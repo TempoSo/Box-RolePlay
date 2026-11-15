@@ -131,3 +131,9 @@ Pendiente (E2): generación automática de recuerdos tras cada respuesta y conso
 3. La elección se recuerda al cerrar la app. Prioridad del modelo: motor > modelo propio del personaje > predeterminado.
 4. Si el modelo del motor fue borrado, cae al del personaje o al predeterminado sin romper nada.
 5. Si el modelo ya estaba cargado con otra visión, hay que recargarlo para que la visión nueva se aplique.
+
+## Grupos de personajes
+1. Abrir un personaje → botón "Grupos": crear un grupo (p. ej. "Asistentes"), marcar/desmarcar al personaje y borrar grupos.
+2. En la biblioteca aparece una fila de chips ("Todos" + tus grupos) encima de las etiquetas; elegir uno filtra la lista. Se combina con la búsqueda y las etiquetas.
+3. Un personaje puede estar en varios grupos. Al cerrar y abrir la app los grupos siguen ahí.
+4. Borrar un grupo no borra los personajes. Si no hay grupos, la fila no aparece.

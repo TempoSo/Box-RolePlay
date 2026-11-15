@@ -93,6 +93,7 @@ fun RoleplayScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var toDelete by remember { mutableStateOf<RoleplayCharacter?>(null) }
+    var groupsFor by remember { mutableStateOf<RoleplayCharacter?>(null) }
     val personas by viewModel.personas.collectAsState()
     var showPersonas by remember { mutableStateOf(false) }
     var showSampler by remember { mutableStateOf(false) }
@@ -234,6 +235,7 @@ fun RoleplayScreen(
             enginePresets = enginePresets,
             enginePresetId = enginePresetId,
             onPickEngine = { id -> enginePresetId = id; engineStore.set(c.id, id) },
+            onGroups = { groupsFor = c },
             onContinue = {
                 applyEngine()
                 val d = detail
@@ -259,6 +261,10 @@ fun RoleplayScreen(
                 }
             },
         )
+    }
+
+    groupsFor?.let { c ->
+        CharacterGroupsDialog(characterId = c.id, characterName = c.name, onDismiss = { groupsFor = null })
     }
 
     memoryFor?.let { c ->

@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +66,13 @@ fun CharacterLibrary(
 ) {
     var query by remember { mutableStateOf("") }
     var tag by remember { mutableStateOf<String?>(null) }
+    // Grupos (archivo propio): filtro por grupo encima de las etiquetas.
+    val groupContext = androidx.compose.ui.platform.LocalContext.current
+    val groupStore = remember { com.google.ai.edge.gallery.data.characters.CharacterGroupStore(groupContext) }
+    val groupsVersion by com.google.ai.edge.gallery.data.characters.CharacterGroupStore.changes.collectAsState()
+    val groups = remember(groupsVersion) { groupStore.all() }
+    var groupId by remember { mutableStateOf<String?>(null) }
+    val activeGroup = groups.firstOrNull { it.id == groupId }
 
     val searchable = remember(characters) {
         characters.map { SearchableCharacter(it.id, it.name, it.description, it.tagsJson.toStringList()) }
@@ -75,7 +83,7 @@ fun CharacterLibrary(
     val visibleIds = remember(searchable, query, activeTag) {
         CharacterSearch.filterIds(searchable, query, activeTag).toSet()
     }
-    val visible = characters.filter { it.id in visibleIds }
+    val visible = characters.filter { it.id in visibleIds && (activeGroup == null || it.id in activeGroup.characterIds) }
 
     Column(modifier) {
         OutlinedTextField(
@@ -85,6 +93,20 @@ fun CharacterLibrary(
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         )
+        if (groups.isNotEmpty()) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                rowItems(listOf<com.google.ai.edge.gallery.data.characters.CharacterGroup?>(null) + groups) { g ->
+                    FilterChip(
+                        selected = activeGroup?.id == g?.id,
+                        onClick = { groupId = g?.id },
+                        label = { Text(g?.name ?: "Todos") },
+                    )
+                }
+            }
+        }
         if (tags.isNotEmpty()) {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),

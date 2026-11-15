@@ -73,6 +73,7 @@ fun CharacterDetailSheet(
     enginePresets: List<com.google.ai.edge.gallery.data.characters.EnginePreset> = emptyList(),
     enginePresetId: String = "",
     onPickEngine: (String) -> Unit = {},
+    onGroups: () -> Unit = {},
     onContinue: () -> Unit,
     /** greeting = null → uno al azar. */
     onNewChat: (greeting: String?) -> Unit,
@@ -111,6 +112,7 @@ fun CharacterDetailSheet(
                     }
                 }
 
+                OutlinedButton(onClick = onGroups, modifier = Modifier.fillMaxWidth()) { Text("Grupos") }
                 if (enginePresets.isNotEmpty()) {
                     var menu by remember { mutableStateOf(false) }
                     Box {
