@@ -83,6 +83,9 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
             }
         }
 
+    var showDownload by remember { mutableStateOf(false) }
+    if (showDownload) TtsModelDownloadDialog(onDismiss = { showDownload = false }, onDone = { refresh++ })
+
     val missing = remember(refresh) { PocketModelFiles.missing(TtsFiles.modelDir(context)) }
     val libOk = remember { SherpaPocketEngine.isLibraryAvailable() }
     val voice = remember(refresh) { store.defaultVoicePath()?.takeIf { File(it).exists() } }
@@ -107,6 +110,7 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = if (missing.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
+                OutlinedButton(onClick = { showDownload = true }) { Text("Descargar de Hugging Face") }
                 OutlinedButton(onClick = { pickModel.launch(null) }) { Text("Importar carpeta del modelo") }
                 Text(
                     "Elige la carpeta con lm_flow, lm_main, encoder, decoder, text_conditioner, vocab.json y token_scores.json " +
