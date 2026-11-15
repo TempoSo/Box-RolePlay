@@ -125,7 +125,7 @@ fun RoleplayScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Roleplay") },
+                title = { Text("Personajes") },
                 navigationIcon = {
                     if (onMenuClicked != null) {
                         IconButton(onClick = onMenuClicked) {
