@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -128,7 +129,7 @@ fun BoxDrawerContent(
   var query by remember { mutableStateOf("") }
   var expanded by remember { mutableStateOf<String?>(null) }
 
-  Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+  Column(Modifier.fillMaxWidth().fillMaxHeight().padding(top = 16.dp)) {
     Text("Box RolePlay", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
     OutlinedTextField(
       value = query, onValueChange = { query = it },

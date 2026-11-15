@@ -134,9 +134,11 @@ fun MemoryScreen(
   var auto by remember(selected) { mutableStateOf(selected.isBlank() || store.autoMemory(selected)) }
   var note by remember { mutableStateOf<String?>(null) }
 
-  if (selected.isBlank() && characters.isNotEmpty()) {
-    selected = characters.first().id
-    viewModel.select(selected)
+  androidx.compose.runtime.LaunchedEffect(characters) {
+    if (selected.isBlank() && characters.isNotEmpty()) {
+      selected = characters.first().id
+      viewModel.select(selected)
+    }
   }
   val current = characters.firstOrNull { it.id == selected }
   val shown = memories.filter { query.isBlank() || it.content.contains(query, true) }
