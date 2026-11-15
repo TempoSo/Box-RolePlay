@@ -199,8 +199,19 @@ fun RoleplayScreen(
     detailFor?.let { c ->
         val mems by viewModel.memories(c.id).collectAsState(initial = emptyList())
         // Prioridad: modelo del personaje, luego el predeterminado de Roleplay.
+        val engineStore = remember { com.google.ai.edge.gallery.data.characters.CharacterEngineStore(context) }
+        val enginePresets = remember(c.id) { com.google.ai.edge.gallery.data.characters.EnginePresetStore(context).all() }
+        var enginePresetId by remember(c.id) { mutableStateOf(engineStore.get(c.id)) }
+        val enginePreset = enginePresets.firstOrNull { it.id == enginePresetId }
+        // Aplica visión, muestreo y persona del motor de este personaje antes de abrir el chat.
+        fun applyEngine() {
+            val pr = enginePreset ?: return
+            com.google.ai.edge.gallery.data.characters.EngineApply.applyBasics(context, pr)
+            viewModel.personas.value.firstOrNull { it.id == pr.personaId }?.let { viewModel.selectPersona(it) }
+        }
+        // Prioridad: motor del personaje, modelo del personaje, predeterminado de Roleplay.
         val chatModel = com.google.ai.edge.gallery.data.characters.RoleplayModelResolver.resolve(
-            characterModel = c.modelName,
+            characterModel = enginePreset?.model?.takeIf { it.isNotBlank() } ?: c.modelName,
             defaultModel = defaultModel,
             available = availableModels,
         )
@@ -220,7 +231,11 @@ fun RoleplayScreen(
             },
             onDelete = { detailFor = null; toDelete = c },
             onMemories = { detailFor = null; memoryFor = c },
+            enginePresets = enginePresets,
+            enginePresetId = enginePresetId,
+            onPickEngine = { id -> enginePresetId = id; engineStore.set(c.id, id) },
             onContinue = {
+                applyEngine()
                 val d = detail
                 val convId = d?.latestConversationId
                 val model = d?.latestModel?.takeIf { it in availableModels } ?: chatModel
@@ -234,6 +249,7 @@ fun RoleplayScreen(
             },
             onNewChat = { greeting ->
                 if (chatModel != null) {
+                    applyEngine()
                     detailFor = null
                     viewModel.startChat(c, chatModel, greeting) { convId -> onOpenChat(chatModel, convId) }
                 } else {

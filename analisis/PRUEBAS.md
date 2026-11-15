@@ -124,3 +124,10 @@ Pendiente (E2): generación automática de recuerdos tras cada respuesta y conso
 4. Parar la respuesta a mitad: la voz termina lo ya encolado y se calla. Tocar el altavoz de un mensaje sigue funcionando.
 5. Sin muestra de voz o sin modelo TTS: aviso como antes, el chat sigue normal.
 6. Con el interruptor apagado el comportamiento es el de antes (lee al terminar).
+
+## Motor por personaje
+1. Con al menos un motor guardado (Configuración de inferencia), abrir un personaje: aparece el botón "Motor: …" con un menú.
+2. Elegir un motor y abrir un chat (nuevo o "Continuar"): usa el modelo del motor, aplica su visión y muestreo y cambia a su persona. Elegir "El de Configuración" lo quita.
+3. La elección se recuerda al cerrar la app. Prioridad del modelo: motor > modelo propio del personaje > predeterminado.
+4. Si el modelo del motor fue borrado, cae al del personaje o al predeterminado sin romper nada.
+5. Si el modelo ya estaba cargado con otra visión, hay que recargarlo para que la visión nueva se aplique.

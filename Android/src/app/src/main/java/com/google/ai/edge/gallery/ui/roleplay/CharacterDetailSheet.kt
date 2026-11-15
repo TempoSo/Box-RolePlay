@@ -69,6 +69,10 @@ fun CharacterDetailSheet(
     onShare: () -> Unit,
     onDelete: () -> Unit,
     onMemories: () -> Unit,
+    /** Motores guardados disponibles y el elegido para este personaje ("" = el de Configuración). */
+    enginePresets: List<com.google.ai.edge.gallery.data.characters.EnginePreset> = emptyList(),
+    enginePresetId: String = "",
+    onPickEngine: (String) -> Unit = {},
     onContinue: () -> Unit,
     /** greeting = null → uno al azar. */
     onNewChat: (greeting: String?) -> Unit,
@@ -103,6 +107,27 @@ fun CharacterDetailSheet(
                         Text(character.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         if (character.creator.isNotBlank()) {
                             Text("por ${character.creator}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                if (enginePresets.isNotEmpty()) {
+                    var menu by remember { mutableStateOf(false) }
+                    Box {
+                        OutlinedButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Motor: " + (enginePresets.firstOrNull { it.id == enginePresetId }?.name ?: "el de Configuración"))
+                        }
+                        androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("El de Configuración") },
+                                onClick = { menu = false; onPickEngine("") },
+                            )
+                            enginePresets.forEach { pr ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(pr.name) },
+                                    onClick = { menu = false; onPickEngine(pr.id) },
+                                )
+                            }
                         }
                     }
                 }
