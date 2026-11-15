@@ -5,6 +5,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.rounded.Menu
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -177,7 +179,34 @@ fun BoxHomeScreen(
   onSettings: () -> Unit,
   onApps: () -> Unit = {},
   onOpenApp: (String) -> Unit = {},
+  onMemory: () -> Unit = {},
+  onOpenConversation: (com.google.ai.edge.gallery.data.local.entities.Conversation) -> Unit = {},
 ) {
+  val drawerState = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
+  val drawerScope = androidx.compose.runtime.rememberCoroutineScope()
+  fun closeThen(action: () -> Unit): () -> Unit = {
+    drawerScope.launch { drawerState.close() }
+    action()
+  }
+  androidx.compose.material3.ModalNavigationDrawer(
+    drawerState = drawerState,
+    drawerContent = {
+      androidx.compose.material3.ModalDrawerSheet {
+        BoxDrawerContent(
+          onCharacters = closeThen(onCharacters),
+          onApps = closeThen(onApps),
+          onMemory = closeThen(onMemory),
+          onSettings = closeThen(onSettings),
+          onOpenConversation = { c -> drawerScope.launch { drawerState.close() }; onOpenConversation(c) },
+        )
+      }
+    },
+  ) {
+  Box(Modifier.fillMaxSize()) {
+  androidx.compose.material3.IconButton(
+    onClick = { drawerScope.launch { drawerState.open() } },
+    modifier = Modifier.systemBarsPadding().padding(start = 8.dp, top = 8.dp).align(Alignment.TopStart),
+  ) { Icon(Icons.Rounded.Menu, "Menú") }
   Column(
     modifier =
       Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -249,5 +278,7 @@ fun BoxHomeScreen(
       onClick = onSettings,
     )
     Spacer(Modifier.height(24.dp))
+  }
+  }
   }
 }

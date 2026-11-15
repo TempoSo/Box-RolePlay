@@ -100,6 +100,7 @@ private const val ROUTE_MODEL_MANAGER = "model_manager"
 private const val ROUTE_CHAT_HISTORY = "chat_history"
 private const val ROUTE_ROLEPLAY = "roleplay"
 private const val ROUTE_SCENARIOS = "box_scenarios"
+private const val ROUTE_MEMORY = "box_memory"
 private const val ROUTE_SCENARIO_EDIT = "box_scenario_edit"
 private const val ROUTE_ROLEPLAY_EDIT = "roleplay_edit"
 private const val ROUTE_SETTINGS = "box_settings"
@@ -256,7 +257,22 @@ fun GalleryNavHost(
         onCharacters = { navController.navigate(ROUTE_ROLEPLAY) },
         onHistory = { navController.navigate(ROUTE_CHAT_HISTORY) },
         onSettings = { navController.navigate(ROUTE_SETTINGS) },
+        onMemory = { navController.navigate(ROUTE_MEMORY) },
+        onOpenConversation = { c ->
+          val model = c.modelName.ifBlank { chosen?.name ?: "" }
+          if (model.isBlank()) navController.navigate(ROUTE_INFERENCE)
+          else {
+            lastNavigatedModelName = ""
+            navController.navigate(
+              "$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/$model?conversationId=${c.id}&autoResume=false"
+            )
+          }
+        },
       )
+    }
+
+    composable(route = ROUTE_MEMORY) {
+      com.google.ai.edge.gallery.ui.memory.MemoryScreen(onBack = { navController.navigateUp() })
     }
 
     composable(route = ROUTE_APPS) {

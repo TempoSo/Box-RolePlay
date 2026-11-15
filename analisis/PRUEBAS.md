@@ -91,3 +91,9 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 5. Narrador activado: aparece "Narrator:" ocasionalmente.
 6. "Personajes" (antes Roleplay) sigue funcionando 1 a 1.
 Pendiente (D2): chips Aleatorio/Narrador/User/personaje sobre el input.
+
+## Fase E — Cajón lateral y Memoria a largo plazo
+1. Inicio: botón de menú (arriba izquierda) o deslizar desde el borde izquierdo abre el cajón.
+2. Cajón: buscar chats, Personajes, Apps, Memoria; lista de chats agrupados por personaje (contador), tocar un chat lo abre; papelera borra; abajo tu persona y engranaje a Configuración.
+3. Memoria a largo plazo: elegir personaje, buscar recuerdos, editar/borrar, interruptor por personaje, "Borrar todos".
+Pendiente (E2): generación automática de recuerdos tras cada respuesta y consolidación en clústeres con el modelo.
