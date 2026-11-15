@@ -116,3 +116,11 @@ Pendiente (E2): generación automática de recuerdos tras cada respuesta y conso
 2. Tocar un motor guardado: cambia el modelo, la visión, la persona y el muestreo de golpe y avisa si algo ya no existe (modelo borrado, persona eliminada…).
 3. Guardar otro con el mismo nombre lo reemplaza; la papelera lo borra. Sobrevive a cerrar la app.
 4. Tras aplicar uno con otra visión o modelo, recargar el modelo (la visión se aplica al cargar).
+
+## Voz en vivo (hablar mientras se escribe)
+1. Voz → activar "Leer cada respuesta automáticamente" y luego "Hablar mientras se escribe" (apagado por defecto; depende del primero).
+2. Con un personaje: la voz debe empezar cuando termina la primera frase, sin esperar la respuesta completa, y seguir frase a frase sin cortes ni repetir ni saltarse frases. Compara el audio con el texto final.
+3. Fíjate en la velocidad de escritura (el contador de rendimiento): la voz y el modelo comparten CPU; si baja mucho, deja el interruptor apagado.
+4. Parar la respuesta a mitad: la voz termina lo ya encolado y se calla. Tocar el altavoz de un mensaje sigue funcionando.
+5. Sin muestra de voz o sin modelo TTS: aviso como antes, el chat sigue normal.
+6. Con el interruptor apagado el comportamiento es el de antes (lee al terminar).

@@ -11,6 +11,11 @@ class TtsSettingsStore(context: Context) {
 
   fun setAutoRead(v: Boolean) = prefs.edit().putBoolean("auto_read", v).apply()
 
+  /** Empezar a hablar con la primera frase completa, sin esperar a que termine la respuesta. */
+  fun streamWhileGenerating(): Boolean = prefs.getBoolean("stream_live", false)
+
+  fun setStreamWhileGenerating(v: Boolean) = prefs.edit().putBoolean("stream_live", v).apply()
+
   fun scope(): SpeechScope =
     runCatching { SpeechScope.valueOf(prefs.getString("scope", null) ?: "") }.getOrDefault(SpeechScope.ALL)
 

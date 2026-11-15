@@ -631,6 +631,10 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       var perfFirstAt = 0L
       var perfChunks = 0
       _perfLine.value = "⏳ procesando…"
+      // Voz en vivo (opcional): habla frase a frase mientras el modelo sigue escribiendo.
+      val liveText = StringBuilder()
+      var liveTried = false
+      var liveOn = false
 
       try {
         val resultListener: (String, Boolean, String?) -> Unit =
@@ -641,6 +645,16 @@ open class LlmChatViewModelBase() : ChatViewModel() {
               if (partialResult.isNotEmpty()) {
                 if (perfFirstAt == 0L) perfFirstAt = System.currentTimeMillis()
                 perfChunks++
+              }
+              if (isRoleplayChat && partialResult.isNotEmpty() && partialThinkingResult.isNullOrEmpty()) {
+                if (!liveTried) {
+                  liveTried = true
+                  liveOn = com.google.ai.edge.gallery.tts.TtsManager.liveBegin()
+                }
+                if (liveOn) {
+                  liveText.append(partialResult)
+                  com.google.ai.edge.gallery.tts.TtsManager.liveFeed(liveText.toString())
+                }
               }
               if (done) {
                 val now = System.currentTimeMillis()
@@ -765,7 +779,8 @@ open class LlmChatViewModelBase() : ChatViewModel() {
                 // Box: Persist assistant response to encrypted DB
                 val assistantMsg = getLastMessageWithTypeAndSide(model, ChatMessageType.TEXT, ChatSide.AGENT)
                 if (isRoleplayChat && assistantMsg is ChatMessageText && assistantMsg.content.isNotEmpty()) {
-                  com.google.ai.edge.gallery.tts.TtsManager.autoSpeak(assistantMsg.content)
+                  if (liveOn) com.google.ai.edge.gallery.tts.TtsManager.liveEnd(assistantMsg.content)
+                  else com.google.ai.edge.gallery.tts.TtsManager.autoSpeak(assistantMsg.content)
                 }
                 if (assistantMsg is ChatMessageText && assistantMsg.content.isNotEmpty()) {
                   persistAssistantMessage(
@@ -786,6 +801,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
         val errorListener: (String) -> Unit = { message ->
           Log.e(TAG, "Error occurred while running inference")
+          com.google.ai.edge.gallery.tts.TtsManager.liveCancel()
           setInProgress(false)
           setPreparing(false)
           onError(message)
@@ -822,6 +838,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       removeLastMessage(model = model)
     }
     setInProgress(false)
+    com.google.ai.edge.gallery.tts.TtsManager.liveCancel()
     model.runtimeHelper.stopResponse(model)
     Log.d(TAG, "Done stopping response")
   }

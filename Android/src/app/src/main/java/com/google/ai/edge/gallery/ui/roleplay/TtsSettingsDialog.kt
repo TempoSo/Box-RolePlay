@@ -51,6 +51,7 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
     val store = remember { TtsSettingsStore(context) }
     var refresh by remember { mutableIntStateOf(0) }
     var autoRead by remember { mutableStateOf(store.autoRead()) }
+    var live by remember { mutableStateOf(store.streamWhileGenerating()) }
     var scope by remember { mutableStateOf(store.scope()) }
     var speed by remember { mutableStateOf(store.speed().toString()) }
     var steps by remember { mutableStateOf(store.numSteps().toString()) }
@@ -158,6 +159,19 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = live, enabled = autoRead, onCheckedChange = { live = it; store.setStreamWhileGenerating(it) })
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Hablar mientras se escribe", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Empieza con la primera frase completa. La voz y el modelo comparten procesador: la escritura puede ir algo más lenta.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(checked = autoRead, onCheckedChange = { autoRead = it; store.setAutoRead(it) })

@@ -10,12 +10,15 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
+import com.google.ai.edge.gallery.data.characters.SpeechStreamer
 import com.google.ai.edge.gallery.data.characters.SpeechText
 import com.google.ai.edge.gallery.data.characters.TtsSettingsStore
 import com.google.ai.edge.gallery.data.characters.WavReader
 import com.jegly.offlineLLM.smollm.SmolLM
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -113,6 +116,28 @@ object TtsManager {
     main.post { Toast.makeText(context.applicationContext, msg, Toast.LENGTH_LONG).show() }
   }
 
+  private class Inputs(val voicePath: String, val files: PocketModelFiles)
+
+  /** Comprueba voz y modelo; si falta algo avisa con un mensaje y devuelve null. */
+  private fun resolveInputs(app: Context, settings: TtsSettingsStore): Inputs? {
+    val voicePath =
+      settings.characterVoicePath(currentCharacterId)?.takeIf { File(it).exists() }
+        ?: settings.defaultVoicePath()?.takeIf { File(it).exists() }
+    if (voicePath == null) {
+      toast(app, "Elige una muestra de voz (.wav) en Roleplay > Voz, o en el personaje.")
+      return null
+    }
+    val files = PocketModelFiles.resolve(TtsFiles.modelDir(app))
+    if (files == null) {
+      toast(app, "Falta el modelo Pocket TTS: impórtalo en Roleplay > Voz.")
+      return null
+    }
+    return Inputs(voicePath, files)
+  }
+
+  /** Fin de la cola de frases. */
+  private const val END = "\u0000END"
+
   /** Lee [message] con la voz del personaje actual (o la predeterminada). */
   fun speak(context: Context, message: String) {
     val app = context.applicationContext
@@ -123,20 +148,63 @@ object TtsManager {
       toast(app, "No hay texto para leer con este alcance (¿solo diálogo y no hay comillas?).")
       return
     }
-    val voicePath =
-      settings.characterVoicePath(currentCharacterId)?.takeIf { File(it).exists() }
-        ?: settings.defaultVoicePath()?.takeIf { File(it).exists() }
-    if (voicePath == null) {
-      toast(app, "Elige una muestra de voz (.wav) en Roleplay > Voz, o en el personaje.")
-      return
-    }
-    val files = PocketModelFiles.resolve(TtsFiles.modelDir(app))
-    if (files == null) {
-      toast(app, "Falta el modelo Pocket TTS: impórtalo en Roleplay > Voz.")
-      return
-    }
+    val inputs = resolveInputs(app, settings) ?: return
+    val queue = LinkedBlockingQueue<String>()
+    chunks.forEach { queue.put(it) }
+    queue.put(END)
+    launchJob(app, settings, inputs, queue)
+  }
 
+  // --- Voz en vivo: empieza a hablar con la primera frase completa mientras el modelo sigue escribiendo.
+  private class Live(val queue: LinkedBlockingQueue<String>, val streamer: SpeechStreamer)
+  @Volatile private var live: Live? = null
+
+  /** Interruptor "hablar mientras se genera" (la lectura automática debe estar activa). */
+  fun liveEnabled(): Boolean {
+    val ctx = appContext ?: return false
+    val st = TtsSettingsStore(ctx)
+    return st.autoRead() && st.streamWhileGenerating()
+  }
+
+  /** Empieza una lectura en vivo; devuelve false si no está activada o falta voz/modelo. */
+  fun liveBegin(): Boolean {
+    live = null
+    if (!liveEnabled()) return false
+    val app = appContext ?: return false
+    val settings = TtsSettingsStore(app)
+    val inputs = resolveInputs(app, settings) ?: return false
+    val l = Live(LinkedBlockingQueue(), SpeechStreamer(settings.scope()))
+    live = l
+    launchJob(app, settings, inputs, l.queue)
+    return true
+  }
+
+  /** [fullText]: todo lo generado hasta ahora. */
+  fun liveFeed(fullText: String) {
+    val l = live ?: return
+    l.streamer.push(fullText).forEach { l.queue.put(it) }
+  }
+
+  /** Termina la lectura en vivo con el texto final. */
+  fun liveEnd(fullText: String) {
+    val l = live ?: return
+    live = null
+    l.streamer.finish(fullText).forEach { l.queue.put(it) }
+    l.queue.put(END)
+  }
+
+  /** Cancela la lectura en vivo (p. ej. el usuario detuvo la respuesta). */
+  fun liveCancel() {
+    val l = live ?: return
+    live = null
+    l.queue.put(END)
+  }
+
+  private fun launchJob(app: Context, settings: TtsSettingsStore, inputs: Inputs, queue: LinkedBlockingQueue<String>) {
+    val voicePath = inputs.voicePath
+    val files = inputs.files
     val myGen = generation.incrementAndGet()
+    live?.takeIf { it.queue !== queue }?.let { live = null }
     main.removeCallbacks(releaseTask)
     appContext = app
     requestFocus(app)
@@ -189,8 +257,16 @@ object TtsManager {
         t.play()
 
         var totalFrames = 0L
-        for (chunk in chunks) {
-          if (generation.get() != myGen) break
+        var lastActivity = System.currentTimeMillis()
+        while (generation.get() == myGen) {
+          val chunk = queue.poll(250, TimeUnit.MILLISECONDS)
+          if (chunk == null) {
+            // El modelo de chat puede tardar en escribir la siguiente frase; no esperar para siempre.
+            if (System.currentTimeMillis() - lastActivity > 120_000) break
+            continue
+          }
+          if (chunk == END) break
+          lastActivity = System.currentTimeMillis()
           eng.generate(chunk, wav.samples, wav.sampleRate, speed, steps) { samples ->
             if (generation.get() != myGen) return@generate false
             t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
