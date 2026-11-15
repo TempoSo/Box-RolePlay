@@ -20,6 +20,13 @@ class RoleplaySettingsStore(context: Context) {
     prefs.edit().putBoolean("memory_$characterId", enabled).apply()
   }
 
+  /** Si se guardan recuerdos automáticamente mientras chateas con este personaje (por defecto sí). */
+  fun autoMemory(characterId: String): Boolean = prefs.getBoolean("automemory_$characterId", true)
+
+  fun setAutoMemory(characterId: String, enabled: Boolean) {
+    prefs.edit().putBoolean("automemory_$characterId", enabled).apply()
+  }
+
   /** Cuántos recuerdos (los más recientes) se inyectan en el prompt. */
   fun memoryMaxInjections(): Int = prefs.getInt(KEY_MEMORY_MAX, 3).coerceIn(0, 20)
 

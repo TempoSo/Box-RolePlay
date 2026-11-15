@@ -558,6 +558,8 @@ open class LlmChatViewModelBase() : ChatViewModel() {
               latencyMs = latencyMs,
             )
             refreshMessageTools()
+            // Memoria automática (sin modelo, instantánea): solo chats con personaje.
+            if (isRoleplayChat) runCatching { repo.captureAutoMemory(convId) }
             Log.d(TAG, "Successfully persisted assistant message to conversation: $convId")
           } catch (fkException: android.database.sqlite.SQLiteConstraintException) {
             Log.w(TAG, "Foreign key constraint failed for assistant message, conversation might not be committed yet. Retrying...", fkException)

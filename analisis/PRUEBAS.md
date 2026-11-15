@@ -97,3 +97,10 @@ Pendiente (D2): chips Aleatorio/Narrador/User/personaje sobre el input.
 2. Cajón: buscar chats, Personajes, Apps, Memoria; lista de chats agrupados por personaje (contador), tocar un chat lo abre; papelera borra; abajo tu persona y engranaje a Configuración.
 3. Memoria a largo plazo: elegir personaje, buscar recuerdos, editar/borrar, interruptor por personaje, "Borrar todos".
 Pendiente (E2): generación automática de recuerdos tras cada respuesta y consolidación en clústeres con el modelo.
+
+## Fase E2 — Memoria automática
+1. Chat con un personaje: desde tu 2.º mensaje, tras cada respuesta aparece un recuerdo nuevo en Memoria (frases clave de tu mensaje y la respuesta, en tu idioma, sin markdown ni emojis). No debe notarse ninguna pausa.
+2. Sin duplicados al repetir; en escenas ("Roleplay") no se guardan recuerdos.
+3. Interruptores por personaje: "Usar memoria" y "Recopilar automáticamente".
+4. "Absorber" (con más de 6 recuerdos): junta los viejos en uno y deja los 5 más recientes.
+5. Chat nuevo con el personaje: los recuerdos recientes entran al prompt (máx. configurable).

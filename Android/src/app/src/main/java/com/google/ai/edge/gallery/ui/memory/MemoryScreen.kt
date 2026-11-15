@@ -71,6 +71,7 @@ class MemoryViewModel @Inject constructor(
 
   fun save(m: CharacterMemory) { viewModelScope.launch { memoryRepository.save(m) } }
   fun delete(m: CharacterMemory) { viewModelScope.launch { memoryRepository.delete(m) } }
+  fun consolidate(characterId: String, onDone: (Int) -> Unit) { viewModelScope.launch { onDone(memoryRepository.consolidate(characterId)) } }
   fun clear(characterId: String) { viewModelScope.launch { memoryRepository.deleteAll(characterId) } }
 }
 
@@ -87,6 +88,8 @@ fun MemoryScreen(onBack: () -> Unit, viewModel: MemoryViewModel = hiltViewModel(
   var editText by remember { mutableStateOf("") }
   var confirmClear by remember { mutableStateOf(false) }
   var enabled by remember(selected) { mutableStateOf(selected.isBlank() || store.memoryEnabled(selected)) }
+  var auto by remember(selected) { mutableStateOf(selected.isBlank() || store.autoMemory(selected)) }
+  var note by remember { mutableStateOf<String?>(null) }
 
   if (selected.isBlank() && characters.isNotEmpty()) {
     selected = characters.first().id
@@ -132,6 +135,14 @@ fun MemoryScreen(onBack: () -> Unit, viewModel: MemoryViewModel = hiltViewModel(
           Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Usar memoria con este personaje", Modifier.weight(1f))
             Switch(checked = enabled, onCheckedChange = { enabled = it; store.setMemoryEnabled(selected, it) })
+          }
+          Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Recopilar recuerdos automáticamente", Modifier.weight(1f))
+            Switch(checked = auto, onCheckedChange = { auto = it; store.setAutoMemory(selected, it) })
+          }
+          Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(note ?: "Los recuerdos nuevos se guardan al instante con las frases clave de cada intercambio, sin usar el modelo.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { viewModel.consolidate(selected) { n -> note = if (n == 0) "No hay recuerdos viejos que absorber." else "Se juntaron $n recuerdos viejos en uno." } }, enabled = memories.size > 6) { Text("Absorber") }
           }
           Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Número total de recuerdos: ${memories.size}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)

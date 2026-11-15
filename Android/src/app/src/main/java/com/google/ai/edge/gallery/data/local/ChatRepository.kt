@@ -2,7 +2,14 @@ package com.google.ai.edge.gallery.data.local
 
 import com.google.ai.edge.gallery.data.characters.Swipes
 import com.google.ai.edge.gallery.data.local.dao.CharacterDao
+import android.content.Context
+import com.google.ai.edge.gallery.data.characters.AutoMemory
+import com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore
 import com.google.ai.edge.gallery.data.local.dao.ConversationDao
+import com.google.ai.edge.gallery.data.local.dao.MemoryDao
+import com.google.ai.edge.gallery.data.local.dao.PersonaDao
+import com.google.ai.edge.gallery.data.local.entities.CharacterMemory
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.ai.edge.gallery.data.local.dao.MessageDao
 import com.google.ai.edge.gallery.data.local.entities.Conversation
 import com.google.ai.edge.gallery.data.local.entities.Message
@@ -19,7 +26,32 @@ class ChatRepository @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val characterDao: CharacterDao,
+    private val memoryDao: MemoryDao,
+    private val personaDao: PersonaDao,
+    @ApplicationContext private val context: Context,
 ) {
+    /**
+     * Memoria automática tras cada respuesta: guarda las frases clave del último intercambio.
+     * Empieza con el 2.º mensaje del usuario, no usa el modelo y no inventa texto.
+     */
+    suspend fun captureAutoMemory(conversationId: String) {
+        val conv = conversationDao.getConversationById(conversationId) ?: return
+        val charId = conv.characterId
+        if (charId.isBlank() || charId.startsWith("scene:")) return
+        val settings = RoleplaySettingsStore(context)
+        if (!settings.memoryEnabled(charId) || !settings.autoMemory(charId)) return
+        val msgs = messageDao.getMessagesForConversationSync(conversationId)
+        if (msgs.count { it.role == "user" } < 2) return
+        val reply = msgs.lastOrNull { it.role == "assistant" } ?: return
+        val user = msgs.lastOrNull { it.role == "user" } ?: return
+        val charName = characterDao.getById(charId)?.name ?: return
+        val userName = personaDao.getActive()?.name ?: "User"
+        val text = AutoMemory.fromExchange(userName, charName, user.content, reply.content) ?: return
+        val recent = memoryDao.getAll(charId).take(5).map { it.content }
+        if (AutoMemory.isDuplicate(text, recent)) return
+        memoryDao.insert(CharacterMemory(characterId = charId, content = text))
+    }
+
     /** Roleplay: JSON del lorebook (character_book) del personaje, o "" si no tiene. */
     suspend fun getCharacterBookJson(characterId: String): String =
         characterDao.getById(characterId)?.characterBookJson ?: ""
