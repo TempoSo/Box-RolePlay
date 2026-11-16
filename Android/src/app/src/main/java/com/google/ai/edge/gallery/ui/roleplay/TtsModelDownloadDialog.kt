@@ -17,6 +17,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,7 +29,9 @@ import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.characters.HfApi
 import com.google.ai.edge.gallery.data.characters.HfClient
 import com.google.ai.edge.gallery.tts.PocketHfSelect
+import com.google.ai.edge.gallery.tts.PocketModelFiles
 import com.google.ai.edge.gallery.tts.PocketVariant
+import com.google.ai.edge.gallery.tts.SentencePieceModel
 import com.google.ai.edge.gallery.tts.TtsFiles
 import com.google.ai.edge.gallery.tts.TtsManager
 import java.io.File
@@ -63,9 +66,9 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
       busy = false
       res.onSuccess {
         variants = it
-        picked = it.firstOrNull()
-        status = if (it.isEmpty()) "Ese repo no tiene un modelo Pocket TTS completo (lm_flow, lm_main, encoder, decoder, text_conditioner, vocab.json, token_scores.json)."
-        else "${it.size} variante(s) encontrada(s)."
+        picked = it.firstOrNull { v -> v.folder.isNotEmpty() && repoInput.contains("/" + v.folder) } ?: it.firstOrNull()
+        status = if (it.isEmpty()) "No encontré ninguna carpeta con un modelo Pocket TTS completo en ese repositorio."
+        else "${it.size} modelo(s) compatible(s) encontrado(s). Elige idioma:"
       }.onFailure { status = "No se pudo leer el repo: ${it.message}" }
     }
   }
@@ -77,17 +80,32 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
     scope.launch {
       val total = v.totalBytes.coerceAtLeast(1)
       var base = 0L
-      val dir = TtsFiles.modelDir(context)
+      val stage = File(TtsFiles.modelDir(context).parentFile, "pocket_dl").apply { mkdirs() }
       val res = withContext(Dispatchers.IO) {
         runCatching {
-          for (f in v.files) {
-            status = "Descargando ${f.name}…"
+          for (pk in v.files) {
+            status = "Descargando ${pk.file.name}…"
             HfClient.download(
-              HfApi.downloadUrl(repo, f.path), File(dir, f.name), f.size,
+              HfApi.downloadUrl(repo, pk.file.path), File(stage, pk.localName), pk.file.size,
               onProgress = { done, _ -> progress = ((base + done).toFloat() / total).coerceIn(0f, 1f) },
               isCancelled = { cancelled },
             )
-            base += f.size
+            base += pk.file.size
+          }
+          // El formato v2 trae tokenizer.model: se convierte a los dos JSON que usa sherpa-onnx.
+          val tok = File(stage, PocketHfSelect.TOKENIZER)
+          if (tok.exists()) {
+            status = "Preparando el tokenizador…"
+            val pieces = SentencePieceModel.parse(tok.readBytes())
+            File(stage, "vocab.json").writeText(SentencePieceModel.vocabJson(pieces))
+            File(stage, "token_scores.json").writeText(SentencePieceModel.scoresJson(pieces))
+          }
+          // Todo bajado: se reemplaza el modelo anterior por el nuevo.
+          val dir = TtsFiles.modelDir(context)
+          dir.listFiles()?.filter { PocketModelFiles.isPart(it.name) || it.name == PocketHfSelect.TOKENIZER }?.forEach { it.delete() }
+          stage.listFiles()?.filter { !it.name.endsWith(".part") }?.forEach { f ->
+            val dest = File(dir, f.name)
+            if (!f.renameTo(dest)) { f.copyTo(dest, overwrite = true); f.delete() }
           }
         }
       }
@@ -101,6 +119,8 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
     }
   }
 
+  LaunchedEffect(Unit) { search() }
+
   AlertDialog(
     onDismissRequest = { if (!busy) onDismiss() },
     title = { Text("Descargar modelo de voz") },
@@ -111,7 +131,7 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
           label = { Text("Repositorio de Hugging Face") }, modifier = Modifier.fillMaxWidth(),
         )
         Text(
-          "Para otro idioma pega aquí el repo con ese modelo (formato ONNX de Pocket TTS). Si el repo tiene varias carpetas, eliges una.",
+          "Se buscan solas las carpetas compatibles del repo (idiomas y variantes). Para otro repo, pega su nombre o enlace y vuelve a buscar.",
           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedButton(onClick = { search() }, enabled = !busy) { Text("Buscar archivos") }

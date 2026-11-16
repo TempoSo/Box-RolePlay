@@ -149,7 +149,9 @@ Pendiente (E2): generación automática de recuerdos tras cada respuesta y conso
 8. La app debe seguir abierta durante la descarga (no hay servicio en segundo plano todavía).
 
 ## Descargar modelo de voz de Hugging Face
-- [ ] Ajustes de voz → «Descargar de Hugging Face» → «Buscar archivos» con `KevinAHM/pocket-tts-onnx` lista al menos una variante con su tamaño.
+- [ ] Ajustes de voz → «Descargar de Hugging Face»: al abrir busca solo y lista idiomas (Español, Inglés, Alemán… y variantes 24l) con su tamaño.
+- [ ] Elegir «Español» → Descargar: baja 5 .onnx int8 + tokenizer.model y lo convierte (vocab.json / token_scores.json); aparece «Modelo completo.»
+- [ ] Probar «Leer»: si el motor falla al cargar (formato v2 distinto al que espera sherpa-onnx), copiar el mensaje de error.
 - [ ] «Descargar» baja las 7 piezas con barra de progreso; al terminar, «Modelo completo.»
 - [ ] Cortar la red a mitad y repetir: reanuda sin empezar de cero.
 - [ ] Con un repo de otro idioma (pegar usuario/repo o enlace): si tiene varias carpetas, deja elegir una.
