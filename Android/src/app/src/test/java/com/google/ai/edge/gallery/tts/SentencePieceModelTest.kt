@@ -30,4 +30,15 @@ class SentencePieceModelTest {
   @Test(expected = IllegalArgumentException::class) fun rejects_garbage() {
     SentencePieceModel.parse(byteArrayOf(0x12, 0x00))
   }
+
+  @Test fun parses_hf_tokenizer_json() {
+    val j = """{"version":"1.0","model":{"type":"Unigram","unk_id":0,"vocab":[["<unk>",0.0],["▁hola",-3.5],["ñ",-7.25]]}}"""
+    val p = SentencePieceModel.parseHfJson(j)
+    assertEquals(listOf("<unk>", "▁hola", "ñ"), p.map { it.text })
+    assertEquals(-7.25f, p[2].score, 0f)
+  }
+
+  @Test(expected = IllegalArgumentException::class) fun rejects_non_unigram_json() {
+    SentencePieceModel.parseHfJson("""{"model":{"type":"BPE","vocab":{"a":0}}}""")
+  }
 }

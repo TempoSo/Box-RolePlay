@@ -40,4 +40,17 @@ class PocketHfSelectTest {
     assertEquals("Inglés (2026-04)", PocketHfSelect.friendly("onnx/english_2026-04"))
     assertTrue(PocketHfSelect.friendly("").startsWith("Principal"))
   }
+
+  @Test fun tokenizer_json_repo_with_q4_ignores_q4() {
+    val f = listOf(
+      "flow_lm_flow_int8.onnx", "flow_lm_main_int8.onnx", "mimi_decoder_int8.onnx", "mimi_encoder.onnx", "text_conditioner.onnx",
+      "flow_lm_main_q4.onnx", "mimi_encoder_q4.onnx", "tokenizer.json", "model.safetensors", "pocket.json",
+    ).map { HfFile(it, if (it.contains("q4")) 1L else 5L) }
+    val v = PocketHfSelect.variants(f)
+    assertEquals(1, v.size)
+    assertEquals(
+      setOf("lm_flow.int8.onnx", "lm_main.int8.onnx", "decoder.int8.onnx", "encoder.onnx", "text_conditioner.onnx", "tokenizer.json"),
+      v[0].files.map { it.localName }.toSet(),
+    )
+  }
 }

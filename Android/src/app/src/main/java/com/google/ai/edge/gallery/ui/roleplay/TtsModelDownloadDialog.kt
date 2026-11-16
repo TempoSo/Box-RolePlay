@@ -93,16 +93,19 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
             base += pk.file.size
           }
           // El formato v2 trae tokenizer.model: se convierte a los dos JSON que usa sherpa-onnx.
-          val tok = File(stage, PocketHfSelect.TOKENIZER)
-          if (tok.exists()) {
+          val tokM = File(stage, PocketHfSelect.TOKENIZER)
+          val tokJ = File(stage, PocketHfSelect.TOKENIZER_JSON)
+          if (tokM.exists() || tokJ.exists()) {
             status = "Preparando el tokenizador…"
-            val pieces = SentencePieceModel.parse(tok.readBytes())
+            val pieces =
+              if (tokM.exists()) SentencePieceModel.parse(tokM.readBytes())
+              else SentencePieceModel.parseHfJson(tokJ.readText())
             File(stage, "vocab.json").writeText(SentencePieceModel.vocabJson(pieces))
             File(stage, "token_scores.json").writeText(SentencePieceModel.scoresJson(pieces))
           }
           // Todo bajado: se reemplaza el modelo anterior por el nuevo.
           val dir = TtsFiles.modelDir(context)
-          dir.listFiles()?.filter { PocketModelFiles.isPart(it.name) || it.name == PocketHfSelect.TOKENIZER }?.forEach { it.delete() }
+          dir.listFiles()?.filter { PocketModelFiles.isPart(it.name) || it.name == PocketHfSelect.TOKENIZER || it.name == PocketHfSelect.TOKENIZER_JSON }?.forEach { it.delete() }
           stage.listFiles()?.filter { !it.name.endsWith(".part") }?.forEach { f ->
             val dest = File(dir, f.name)
             if (!f.renameTo(dest)) { f.copyTo(dest, overwrite = true); f.delete() }

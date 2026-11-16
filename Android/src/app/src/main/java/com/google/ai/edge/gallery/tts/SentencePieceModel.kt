@@ -1,6 +1,13 @@
 package com.google.ai.edge.gallery.tts
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.float
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 /**
@@ -74,6 +81,19 @@ object SentencePieceModel {
       }
     }
     return Piece(text, score)
+  }
+
+  /** Lee un `tokenizer.json` de Hugging Face (modelo Unigram: model.vocab = [[pieza, puntuación], …]). */
+  fun parseHfJson(text: String): List<Piece> {
+    val vocab =
+      runCatching { (Json.parseToJsonElement(text) as JsonObject)["model"]!!.jsonObject["vocab"]!!.jsonArray }
+        .getOrElse { throw IllegalArgumentException("El tokenizer.json no es un modelo Unigram con vocabulario") }
+    val out = vocab.map { e ->
+      val a: JsonArray = e.jsonArray
+      Piece(a[0].jsonPrimitive.content, a[1].jsonPrimitive.float)
+    }
+    require(out.isNotEmpty()) { "Vocabulario vacío" }
+    return out
   }
 
   fun vocabJson(pieces: List<Piece>): String =

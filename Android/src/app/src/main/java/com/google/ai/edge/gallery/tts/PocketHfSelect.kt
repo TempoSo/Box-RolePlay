@@ -18,6 +18,7 @@ data class PocketVariant(val folder: String, val files: List<PocketPick>) {
  */
 object PocketHfSelect {
   const val TOKENIZER = "tokenizer.model"
+  const val TOKENIZER_JSON = "tokenizer.json"
   private val ALIASES =
     mapOf(
       "lm_flow" to listOf("lm_flow", "flow_lm_flow"),
@@ -32,7 +33,7 @@ object PocketHfSelect {
 
   /** Clave canónica de la pieza a la que corresponde el archivo, o null si no es una pieza. */
   fun partOf(name: String): String? {
-    if (name in JSONS || name == TOKENIZER) return name
+    if (name in JSONS || name == TOKENIZER || name == TOKENIZER_JSON) return name
     if (!name.endsWith(".onnx")) return null
     val base = name.removeSuffix(".onnx").removeSuffix(".int8").removeSuffix("_int8")
     return ALIASES.entries.firstOrNull { base in it.value }?.key
@@ -46,8 +47,9 @@ object PocketHfSelect {
         val byPart = files.groupBy { partOf(it.name)!! }
         if (ALIASES.keys.any { it !in byPart }) return@mapNotNull null
         val hasJsons = JSONS.all { it in byPart }
-        if (!hasJsons && TOKENIZER !in byPart) return@mapNotNull null
-        val keys = ALIASES.keys.toList() + if (hasJsons) JSONS else listOf(TOKENIZER)
+        val tok = listOf(TOKENIZER, TOKENIZER_JSON).firstOrNull { it in byPart }
+        if (!hasJsons && tok == null) return@mapNotNull null
+        val keys = ALIASES.keys.toList() + if (hasJsons) JSONS else listOf(tok!!)
         val picks =
           keys.map { key ->
             val opts = byPart.getValue(key)
