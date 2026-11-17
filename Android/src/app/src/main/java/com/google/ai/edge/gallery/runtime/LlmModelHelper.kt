@@ -108,6 +108,12 @@ interface LlmModelHelper {
   fun cleanUp(model: Model, onDone: () -> Unit)
 
   /**
+   * BUG-016: indica si el motor ya puede atender inferencias. Por defecto basta con que exista la
+   * instancia; llama.cpp comprueba además que su motor esté cargado y que sea el actual.
+   */
+  fun isModelReady(model: Model): Boolean = model.instance != null
+
+  /**
    * Runs an inference pass on the specified model.
    *
    * @param model the model to run inference on.

@@ -17,6 +17,9 @@ import kotlinx.coroutines.CoroutineScope
 
 private const val TAG = "BoxLlamaCppModelHelper"
 
+// BUG-016: tiempo máximo que se espera a que el motor recién seleccionado termine de cargar.
+private const val ESPERA_CARGA_MS = 60_000L
+
 /**
  * Box: LlmModelHelper implementation backed by llama.cpp for GGUF models.
  * Routes through the smollm JNI bridge.
@@ -203,6 +206,15 @@ object LlamaCppModelHelper : LlmModelHelper {
         Log.d(TAG, "Clean up done for ${model.name}")
     }
 
+    /**
+     * BUG-016: `model.instance` puede seguir apuntando al motor anterior mientras se libera y se
+     * carga el nuevo; hay que comprobar también el motor real del mapa y que esté cargado.
+     */
+    override fun isModelReady(model: Model): Boolean {
+        val engine = engines[model.name] ?: return false
+        return model.instance === engine && engine.isModelLoaded.get()
+    }
+
     override fun stopResponse(model: Model) {
         val engine = engines[model.name]
         engine?.stopGeneration()
@@ -219,9 +231,18 @@ object LlamaCppModelHelper : LlmModelHelper {
         coroutineScope: CoroutineScope?,
         extraContext: Map<String, String>?,
     ) {
-        val engine = engines[model.name]
+        // BUG-016 (vía B): esperar la inicialización con un límite en vez de fallar al primer
+        // intento. Se vuelve a leer el mapa por si el motor se sustituye mientras se espera.
+        var engine = engines[model.name]
+        val esperaInicio = System.currentTimeMillis()
+        while ((engine == null || !engine.isModelLoaded.get()) &&
+            System.currentTimeMillis() - esperaInicio < ESPERA_CARGA_MS
+        ) {
+            Thread.sleep(50)
+            engine = engines[model.name]
+        }
         if (engine == null || !engine.isModelLoaded.get()) {
-            onError("llama.cpp engine not initialized for ${model.name}")
+            onError("El modelo sigue cargando (${model.name}). Vuelve a enviar el mensaje en unos segundos.")
             return
         }
         // BUG-001: no mandar cadenas vacias al tokenizador nativo (con imágenes el texto puede

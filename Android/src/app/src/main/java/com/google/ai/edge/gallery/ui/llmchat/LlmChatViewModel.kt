@@ -55,6 +55,11 @@ import kotlinx.coroutines.sync.withLock
 
 private const val TAG = "AGLlmChatViewModel"
 
+// BUG-016: el primer mensaje se encola hasta que el motor esté listo, con un límite para no
+// dejar la interfaz esperando indefinidamente si la carga falló.
+private const val ESPERA_MODELO_MS = 180_000L
+private const val ERROR_CARGA_MODELO = "El modelo sigue cargando"
+
 @OptIn(ExperimentalApi::class)
 open class LlmChatViewModelBase() : ChatViewModel() {
 
@@ -609,16 +614,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         persistUserMessage(model, input)
       }
 
-      // Loading.
+      // Loading. BUG-016: el mensaje queda encolado aquí; la espera al motor y el armado del
+      // prompt se hacen justo antes de inferir (ver más abajo).
       addMessage(model = model, message = ChatMessageLoading(accelerator = accelerator))
-
-      // Wait for instance to be initialized.
-      while (model.instance == null) {
-        delay(100)
-      }
-      delay(500)
-
-      applySystemPromptIfNeeded(model, input)
 
       // Run inference.
       val audioClips: MutableList<ByteArray> = mutableListOf()
@@ -812,6 +810,22 @@ open class LlmChatViewModelBase() : ChatViewModel() {
             model.getBooleanConfigValue(key = ConfigKeys.ENABLE_THINKING, defaultValue = false)
         val extraContext = if (enableThinking) mapOf("enable_thinking" to "true") else null
 
+        // BUG-016 (vía A): no inferir mientras el modelo recién seleccionado se está cargando.
+        // `model.instance` puede apuntar todavía al motor anterior durante el cambio, así que se
+        // pregunta al runtime (isModelReady) en vez de mirar solo esa referencia.
+        _perfLine.value = "⏳ cargando modelo…"
+        val esperaInicio = System.currentTimeMillis()
+        while (!model.runtimeHelper.isModelReady(model)) {
+          if (System.currentTimeMillis() - esperaInicio > ESPERA_MODELO_MS) {
+            Log.e(TAG, "Timeout esperando a que cargue ${model.name}")
+            errorListener("$ERROR_CARGA_MODELO (${model.name}). Vuelve a enviar el mensaje en unos segundos.")
+            return@launch
+          }
+          delay(100)
+        }
+        delay(500)
+        applySystemPromptIfNeeded(model, input)
+
         model.runtimeHelper.runInference(
           model = model,
           input = input,
@@ -886,11 +900,8 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     allowThinking: Boolean = false,
   ) {
     viewModelScope.launch(Dispatchers.Default) {
-      // Wait for model to be initialized.
-      while (model.instance == null) {
-        delay(100)
-      }
-
+      // BUG-016: generateResponse ya espera a que el motor esté listo; este bucle solo miraba
+      // model.instance y podía seguir con una instancia obsoleta durante un cambio de modelo.
       // Clone the clicked message and add it.
       addMessage(model = model, message = message.clone())
 
@@ -918,6 +929,10 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
     // Show error message.
     addMessage(model = model, message = ChatMessageError(content = errorMessage))
+
+    // BUG-016: si el error es solo "todavía está cargando", limpiar y reinicializar aquí empeoraría
+    // la carrera (el modelo ya se está cargando). Se muestra el aviso y se deja la carga en curso.
+    if (errorMessage.startsWith(ERROR_CARGA_MODELO)) return
 
     // Clean up and re-initialize.
     viewModelScope.launch(Dispatchers.Default) {

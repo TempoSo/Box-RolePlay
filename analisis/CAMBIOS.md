@@ -40,6 +40,18 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-016: el primer mensaje espera al modelo recién seleccionado (sin "Session re-initialized")
+
+**Qué y por qué:** al cambiar de modelo GGUF/LiteRT el envío podía llegar antes de que acabara la inicialización: `model.instance` seguía apuntando al motor anterior mientras se liberaba/cargaba el nuevo, y `runInference` (llama.cpp) fallaba en seco con "llama.cpp engine not initialized", lo que disparaba `handleError` → cleanup + initialize + aviso "Session re-initialized". Se arreglan las dos vías: (A) `LlmChatViewModel.generateResponse` deja el mensaje encolado con el indicador "⏳ cargando modelo…" y consulta `runtimeHelper.isModelReady(model)` (que en GGUF exige motor cargado **y** instancia actual) hasta 180 s antes de armar el prompt e inferir; (B) `LlamaCppModelHelper.runInference` reintenta con un sleep acotado de 60 s en vez de fallar al primer intento. Si se agota el tiempo se muestra un error específico que `handleError` **no** trata como fallo del motor (no reinicia la sesión). `runAgain` ya no espera solo a `model.instance`.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/runtime/LlmModelHelper.kt` — nuevo `isModelReady(model)` con implementación por defecto (`model.instance != null`).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/runtime/LlamaCppModelHelper.kt` — override `isModelReady` (motor del mapa cargado + instancia vigente) y espera acotada (60 s) al inicio de `runInference`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` — espera encolada con estado "cargando modelo…" y timeout (180 s), salida anticipada en `handleError` para ese caso, `runAgain` sin espera obsoleta.
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — marca y registro.
+
+**Próxima prueba:** 4.2b. Cambiar varias veces entre GGUF y LiteRT y enviar el primer mensaje en cuanto se seleccione: debe responder sin "engine not initialized" ni "Session re-initialized"; el indicador "cargando modelo…" solo aparece durante la carga.
+
 ### 2026-11-17 — BUG-013: el diálogo de voz ve el árbol HF completo y usa un repo compatible con sherpa-onnx
 
 **Qué y por qué:** "Descargar de Hugging Face" siempre decía "No encontré ninguna carpeta…" porque el diálogo de voz pasaba por `HfClient.files()` → `HfApi.parseFiles()`, que solo deja pasar `.gguf`/`.litertlm` (filtro del navegador LLM) y descartaba todos los `.onnx`/`.json` del TTS. Se añade `HfApi.parseTreeFiles()` (mismo parseo, sin filtro de extensión) y `HfClient.treeFiles()`, y el diálogo usa esta última; `parseFiles` queda intacto para el navegador. Además el repo por defecto pasa de `KevinAHM/pocket-tts-onnx` a `haex-space/pocket-tts-sherpa-onnx`: los bundles v2 de KevinAHM exigen insertar `bos_before_voice.npy` y sherpa-onnx 2.0.1 no lo hace (ruido o audio de 0,2 s). Se retira el aviso de licencia específico de KevinAHM y se añaden tests del parseo.
