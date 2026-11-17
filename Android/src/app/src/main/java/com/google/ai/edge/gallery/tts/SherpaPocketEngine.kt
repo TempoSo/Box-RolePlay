@@ -90,11 +90,25 @@ class SherpaPocketEngine(private val files: PocketModelFiles, private val thread
     gen.set("numSteps", numSteps)
     gen.set("extra", mapOf("max_reference_audio_len" to "12"))
 
-    val callback: (FloatArray) -> Int = { samples -> if (onSamples(samples)) 1 else 0 }
+    val callback = ChunkCallback(onSamples)
     val method =
       engine.javaClass.methods.firstOrNull { it.name == "generateWithConfigAndCallback" && it.parameterCount == 3 }
         ?: error("sherpa-onnx: falta generateWithConfigAndCallback (¿versión de la librería antigua?)")
     method.invoke(engine, text, gen, callback)
+  }
+
+  /**
+   * BUG-026: el callback de muestras NO puede ser una lambda Kotlin. D8 la desazaúca en una
+   * clase sintética (`$$ExternalSyntheticLambda0`) cuyo `invoke` es ESTÁTICO cuando no captura
+   * nada, y el JNI de sherpa-onnx busca con GetMethodID un `invoke` de INSTANCIA con firma
+   * `([F)Ljava/lang/Integer;` (retorn boxed): NoSuchMethodError pendiente → SIGABRT en el
+   * siguiente NewFloatArray (crash 13:36/13:37 del 17/11). Una clase normal implementa
+   * Function1 con un invoke de instancia y firma exacta (`Int?` = Integer).
+   */
+  private class ChunkCallback(
+    private val onSamples: (FloatArray) -> Boolean,
+  ) : Function1<FloatArray, Int?> {
+    override fun invoke(samples: FloatArray): Int? = if (onSamples(samples)) 1 else 0
   }
 
   @Synchronized

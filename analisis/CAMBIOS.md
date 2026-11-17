@@ -40,6 +40,15 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — 2.5 VERIFICADO en ambos motores (BUG-002 cerrado); BUG-026: crash del TTS por callback JNI
+
+**Qué y por qué:** el humano verifica que "Absorber clústeres" ya funciona **sin crash ni timeout en GGUF y LiteRT** (BUG-002 cerrado tras 5 rondas; BUGS.md y PLAN_PRUEBAS.md actualizados). En los logs (15:20) quedan dos **SIGABRT nuevos (13:36:52 y 13:37:10)**, ambos del **TTS**, no de memoria: al generar voz, el JNI de sherpa-onnx busca con `GetMethodID` un `invoke` de **instancia** con firma `([F)Ljava/lang/Integer;` (retorn boxed), pero el callback se pasaba como lambda Kotlin `(FloatArray) -> Int`, que D8 desazaúca en una clase sintética con `invoke` **estático** → `NoSuchMethodError` pendiente → SIGABRT en el siguiente `NewFloatArray` (stack: `OfflineTts.generateWithConfigImpl` ← `SherpaPocketEngine.generate` ← `TtsManager.launchJob$lambda$2`). Fix (BUG-026): clase normal `ChunkCallback` que implementa `Function1<FloatArray, Int?>`; verificado con `javap` que emite `public java.lang.Integer invoke(float[])` — instancia y firma exacta. 177 tests en verde, `:app:assembleDebug` OK. Pendiente de re-prueba de voz en el dispositivo.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/SherpaPocketEngine.kt` — callback de muestras como clase `ChunkCallback` en vez de lambda (BUG-026).
+- `analisis/BUGS.md` — BUG-002 cerrado (verificado), BUG-026 nuevo con stack y causa raíz.
+- `analisis/PLAN_PRUEBAS.md` — 2.5 marcado OK en GGUF y LiteRT.
+
 ### 2026-11-17 — BUG-002 (5.ª ronda): watchdog por tope global + atasco + enfriamiento; BUG-025: crash al limpiar GGUF vía AgentChat
 
 **Qué y por qué:** re-prueba 2.5 con la 4.ª ronda: el límite fue **623 s** y se agotó. Los números encajan con **el tope de generación de la 4.ª ronda trabajando correctamente** (400 tok @ ~3 t/s ≈ 135 s) y un **prefill a ~2.4 t/s** (~1167 tokens ≈ 488 s): la térmica del SoC ralentiza el prefill a menos de la mitad en carga sostenida (por la mañana el mismo modelo iba a 5.8 t/s). Conclusión: estimar tiempos no sirve en este dispositivo (fallaron 180 s, 379 s y 623 s por la misma razón). Cambios en la absorción:
