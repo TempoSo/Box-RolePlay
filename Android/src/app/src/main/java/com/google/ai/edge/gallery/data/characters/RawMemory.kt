@@ -48,6 +48,12 @@ object RawMemoryJson {
 /** Prompt para que el modelo convierta notas sueltas en un recuerdo real, y limpieza de su salida. */
 object MemoryAbsorbPrompt {
     private const val MAX_NOTES_CHARS = 6000
+
+    /** BUG-002: tamaño máximo de cada tanda de notas (caracteres), holgado para el contexto. */
+    const val MAX_TANDA_CHARS = 3500
+
+    /** BUG-002: máximo de tandas por absorción; si hay más, se descartan las más viejas. */
+    const val MAX_TANDAS = 8
     private val THINK = Regex("(?s)<think>.*?</think>")
     private val TAGS = Regex("<[^>]{1,40}>")
 
@@ -81,5 +87,31 @@ object MemoryAbsorbPrompt {
             val end = c.lastIndexOfAny(charArrayOf('.', '!', '?'))
             if (end > 600) c.take(end + 1) else c
         }
+    }
+
+    /**
+     * BUG-002: reparte las notas (en orden cronológico, la más vieja primero) en tandas que
+     * caben holgadas en el contexto, para que la absorción no desborde el modelo (crash GGUF
+     * al deslizar la ventana / timeout LiteRT). Si salen más de [maxTandas] tandas, se
+     * descartan las más viejas (igual criterio que build()).
+     */
+    inline fun <T> tandas(
+        oldestFirst: List<T>,
+        maxChars: Int = MAX_TANDA_CHARS,
+        maxTandas: Int = MAX_TANDAS,
+        sizeOf: (T) -> Int,
+    ): List<List<T>> {
+        val out = mutableListOf<List<T>>()
+        var current = mutableListOf<T>()
+        var size = 0
+        for (item in oldestFirst) {
+            val s = sizeOf(item).coerceAtLeast(1)
+            if (current.isNotEmpty() && size + s > maxChars) {
+                out.add(current); current = mutableListOf(); size = 0
+            }
+            current.add(item); size += s
+        }
+        if (current.isNotEmpty()) out.add(current)
+        return if (out.size > maxTandas) out.takeLast(maxTandas) else out
     }
 }

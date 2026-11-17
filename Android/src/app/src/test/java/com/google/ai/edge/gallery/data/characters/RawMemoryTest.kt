@@ -22,4 +22,34 @@ class RawMemoryTest {
         assertEquals("Héctor habló de su entrevista de trabajo y Psi lo calmó.", c)
         assertNull(MemoryAbsorbPrompt.clean("ok"))
     }
+
+    @Test fun tandasSplitBySizeAndKeepChronology() {
+        val notas = listOf(
+            "una corta",
+            "b".repeat(3400),
+            "otra corta",
+            "c".repeat(3400),
+        )
+        val tandas = MemoryAbsorbPrompt.tandas(notas, sizeOf = { it.length })
+        // Todo cabe en tandas de 3500: 9+3400+10 = 3419 <= 3500; la última grande va sola.
+        assertEquals(2, tandas.size)
+        assertEquals(listOf("una corta", "b".repeat(3400), "otra corta"), tandas[0])
+        assertEquals(listOf("c".repeat(3400)), tandas[1])
+    }
+
+    @Test fun tandasDropsOldestWhenTooMany() {
+        val notas = (1..12).map { "nota $it" }
+        val tandas = MemoryAbsorbPrompt.tandas(
+            notas, maxChars = 10, maxTandas = 5, sizeOf = { it.length },
+        )
+        assertEquals(5, tandas.size)
+        // Se descartan las más viejas: la primera tanda empieza en la nota 8.
+        assertEquals("nota 8", tandas.first().first())
+        assertEquals("nota 12", tandas.last().last())
+    }
+
+    @Test fun singleNoteGoesInOneTanda() {
+        val tandas = MemoryAbsorbPrompt.tandas(listOf("solo"), sizeOf = { it.length })
+        assertEquals(listOf(listOf("solo")), tandas)
+    }
 }

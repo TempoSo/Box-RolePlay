@@ -7,14 +7,20 @@ import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.gallery.runtime.runtimeHelper
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Ejecuta UNA generación corta con el modelo elegido (sin tocar el chat): carga el modelo si hace
- * falta, resetea su conversación y devuelve el texto completo. Se usa para "Absorber clústeres".
+ * Ejecuta UNA o VARIAS generaciones cortas con el modelo elegido (sin tocar el chat): carga el
+ * modelo si hace falta, y por cada prompt resetea la conversación y devuelve el texto completo.
+ * Se usa para "Absorber clústeres".
+ *
+ * BUG-002: la absorción va por tandas (un prompt pequeño por llamada, ver MemoryAbsorbPrompt.
+ * tandas) para no desbordar el contexto: con GGUF un prompt enorme deslizaba la ventana y
+ * crasheaba (BUG-001) y con LiteRT agotaba el watchdog ("El modelo tardó demasiado").
  */
 class MemoryAbsorber(
     private val context: Context,
@@ -24,8 +30,18 @@ class MemoryAbsorber(
     @Volatile var running = false
         private set
 
-    fun run(preferredModel: String?, prompt: String, onResult: (String) -> Unit, onError: (String) -> Unit) {
+    /** Máximo que puede tardar cada tanda antes de darla por agotada. */
+    private val promptTimeoutMs = 180_000L
+
+    fun run(
+        preferredModel: String?,
+        prompts: List<String>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+        onResult: (List<String>) -> Unit,
+        onError: (String) -> Unit,
+    ) {
         if (running) return
+        if (prompts.isEmpty()) { onError("No hay notas para absorber."); return }
         val task = modelManager.getTaskById(BuiltInTaskId.LLM_CHAT)
         val downloaded = task?.models?.filter {
             modelManager.uiState.value.modelDownloadStatus[it.name]?.status ==
@@ -51,25 +67,36 @@ class MemoryAbsorber(
                 }
                 if (ready != true) { onError("El modelo no terminó de cargar."); return@launch }
 
-                model.runtimeHelper.resetConversation(model = model)
-                delay(300)
-                val out = StringBuilder()
-                val finished = kotlinx.coroutines.CompletableDeferred<String?>()
-                model.runtimeHelper.runInference(
-                    model = model,
-                    input = prompt,
-                    resultListener = { partial, done, _ ->
-                        out.append(partial)
-                        if (done) finished.complete(null)
-                    },
-                    cleanUpListener = { finished.complete(null) },
-                    onError = { msg -> finished.complete(msg) },
-                    coroutineScope = scope,
-                )
-                val error = withTimeoutOrNull(240_000) { finished.await() }
-                    ?: run { model.runtimeHelper.stopResponse(model); "El modelo tardó demasiado." }
-                if (error != null) onError(error) else onResult(out.toString())
-            } catch (e: Exception) {
+                val outputs = mutableListOf<String>()
+                for ((index, prompt) in prompts.withIndex()) {
+                    onProgress(index, prompts.size)
+                    // Cada tanda arranca limpia (sin historial de la anterior ni de un chat).
+                    model.runtimeHelper.resetConversation(model = model)
+                    delay(300)
+                    val out = StringBuilder()
+                    val finished = CompletableDeferred<String?>()
+                    model.runtimeHelper.runInference(
+                        model = model,
+                        input = prompt,
+                        resultListener = { partial, done, _ ->
+                            out.append(partial)
+                            if (done) finished.complete(null)
+                        },
+                        cleanUpListener = { finished.complete(null) },
+                        onError = { msg -> finished.complete(msg) },
+                        coroutineScope = scope,
+                    )
+                    val error = withTimeoutOrNull(promptTimeoutMs) { finished.await() }
+                        ?: run { model.runtimeHelper.stopResponse(model); "El modelo tardó demasiado (tanda ${index + 1} de ${prompts.size})." }
+                    if (error != null) {
+                        onError(error)
+                        return@launch
+                    }
+                    outputs.add(out.toString())
+                }
+                if (outputs.size < prompts.size) return@launch // ya se avisó del error de la tanda
+                onProgress(prompts.size, prompts.size)
+                onResult(outputs)            } catch (e: Exception) {
                 Log.e("MemoryAbsorber", "Fallo al absorber", e)
                 onError(e.message ?: "Error desconocido")
             } finally {

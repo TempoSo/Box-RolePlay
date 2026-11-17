@@ -77,21 +77,43 @@ class MemoryViewModel @Inject constructor(
   private fun refreshRaw() { _raw.value = rawStore.forCharacter(selectedId.value) }
   fun deleteRaw(id: String) { viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { rawStore.remove(setOf(id)); refreshRaw() } }
 
-  /** Absorber clústeres: el modelo resume las notas sin procesar en un recuerdo real. */
+  /** Absorber clústeres: el modelo resume las notas sin procesar en recuerdos reales, por tandas. */
   fun absorb(character: RoleplayCharacter, absorber: MemoryAbsorber, preferredModel: String?, onMessage: (String) -> Unit) {
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       val notes = rawStore.forCharacter(character.id)
       if (notes.isEmpty()) { onMessage("No hay recuerdos sin procesar."); return@launch }
       val userName = personaRepository.getActive()?.name ?: "User"
-      val prompt = MemoryAbsorbPrompt.build(userName, character.name, notes.asReversed().map { it.text })
-      absorber.run(preferredModel, prompt,
-        onResult = { out ->
-          val clean = MemoryAbsorbPrompt.clean(out)
-          if (clean == null) onMessage("El modelo no generó un resumen útil. Tus notas se conservan.")
-          else viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            memoryRepository.save(CharacterMemory(characterId = character.id, content = clean))
-            rawStore.remove(notes.map { it.id }.toSet()); refreshRaw()
-            onMessage("Listo: ${notes.size} notas absorbidas en un recuerdo.")
+      // BUG-002: la absorción va por tandas para que el prompt no desborde el contexto del
+      // modelo (crash GGUF al deslizar la ventana / timeout LiteRT). Cada tanda produce un
+      // recuerdo; si una tanda no rinde, sus notas no se borran.
+      val tandas = MemoryAbsorbPrompt.tandas(notes, sizeOf = { it.text.length })
+      val prompts = tandas.map { tanda -> MemoryAbsorbPrompt.build(userName, character.name, tanda.map { it.text }) }
+      absorber.run(preferredModel, prompts,
+        onProgress = { done, total ->
+          onMessage(if (total <= 1) "Absorbiendo…" else "Absorbiendo tanda ${done + 1} de $total…")
+        },
+        onResult = { outputs ->
+          val limpios = outputs.map { MemoryAbsorbPrompt.clean(it) }
+          if (limpios.all { it == null }) {
+            onMessage("El modelo no generó un resumen útil. Tus notas se conservan.")
+            return@run
+          }
+          viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val idsBorrados = mutableSetOf<String>()
+            var recuerdos = 0
+            limpios.forEachIndexed { i, clean ->
+              if (clean != null) {
+                memoryRepository.save(CharacterMemory(characterId = character.id, content = clean))
+                tandas.getOrNull(i)?.forEach { idsBorrados.add(it.id) }
+                recuerdos++
+              }
+            }
+            rawStore.remove(idsBorrados); refreshRaw()
+            val notas = idsBorrados.size
+            onMessage(
+              if (recuerdos == 1) "Listo: $notas notas absorbidas en un recuerdo."
+              else "Listo: $notas notas absorbidas en $recuerdos recuerdos (por tandas)."
+            )
           }
         },
         onError = { onMessage(it) })
