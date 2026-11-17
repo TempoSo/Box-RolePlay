@@ -7,7 +7,8 @@
 
 ## P0 — Críticos (bloquean el roleplay)
 
-### BUG-001 · ❌ Crash nativo GGUF al deslizar la ventana de contexto
+### BUG-001 · ✅ Crash nativo GGUF al deslizar la ventana de contexto *(arreglado 2026-11-17)*
+- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 2.4):** plantilla de turnos de Gemma 4 construida en Kotlin (`engine/GgufChatTemplate.kt`, nueva): el prompt llega al nativo ya formateado y `startCompletion` lo tokeniza tal cual, **saltándose `_applyContextWindow()` y el formateo nativo** (la ruta exacta del SIGSEGV). Además: no se siembran ni envían cadenas vacías al tokenizador (`LlamaCppEngine.seedConversation` filtra vacíos; `LlamaCppModelHelper.runInference` rechaza mensaje vacío sin imágenes) y el recorte del historial sigue haciéndolo la app (ContextWindowPlanner) antes de sembrar el turno. Arreglado junto con BUG-015 (misma zona). Los GGUF que no son Gemma 4 siguen la ruta nativa de siempre.
 - **Síntoma:** la app muere y la sesión se re-inicializa sola ("llama.cpp engine not initialized for …" + "Session re-initialized"). Pasó en escena y en chat largo.
 - **Stack (resumen):** `SIGSEGV` en `llama_vocab::impl::tokenize` ← `common_tokenize` ← `LLMInference::_applyContextWindow()` ← `LLMInference::startCompletion` ← JNI `SmolLM.startCompletion`. Libs: `libllama.so` + `libsmollm_v8_4_fp16_dotprod_i8mm_sve.so` del APK.
 - **Repro:** escena con prompt grande (contexto 25 %→34 %) enviando mensaje; también al "Absorber clústeres".
@@ -15,7 +16,8 @@
 - **Archivos:** `engine/LlamaCppEngine.kt` (sembrar historial y deslizamiento), `runtime/LlamaCppModelHelper.kt`, submódulo `Android/src/llama.cpp` (no editar a la ligera).
 - **Mitigación en Kotlin mientras tanto:** no dejar que el prompt llegue al límite (recortar historial antes de `startCompletion`), evitar tokenizar cadenas vacías, y limitar el tamaño del prompt de absorción.
 
-### BUG-002 · ❌ Absorber clústeres: crash con GGUF / timeout con LiteRT
+### BUG-002 · ✅ Absorber clústeres: crash con GGUF / timeout con LiteRT *(arreglado 2026-11-17)*
+- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 2.5):** absorción por tandas (`MemoryAbsorbPrompt.tandas`, máx. 3500 caracteres y 8 tandas; se descartan las más viejas). `MemoryAbsorber.run` acepta varios prompts, resetea la conversación por tanda y aplica watchdog **por tanda** (180 s) con progreso "Absorbiendo tanda X de Y…". Cada tanda produce su propio recuerdo; las notas de una tanda sin resumen útil no se borran. Archivos: `ui/memory/MemoryAbsorber.kt`, `ui/memory/MemoryScreen.kt` (MemoryViewModel), `data/characters/RawMemory.kt` (tandas), tests en `RawMemoryTest.kt`.
 - **Síntoma:** con GGUF crashea (mismo stack de BUG-001). Con LiteRT: mensaje "modelo tardó demasiado".
 - **Repro:** Memoria → personaje → "Absorber clústeres" con muchas notas.
 - **Causa probable:** el prompt de absorción (todas las notas juntas) es enorme → desliza ventana (crash) o agota un watchdog de tiempo.
@@ -58,11 +60,12 @@
 - **Fix:** fila de chips de etiquetas (selección + creación) igual que en el editor de personajes.
 - **Archivos:** `ui/roleplay/` (editor de escenas; copiar patrón del editor de personajes).
 
-### BUG-015 · ❌ GGUF: el prompt se envía sin plantilla de turnos (calidad inferior a Layla) *(recatalogado de P2 a P1: degrada el roleplay)*
+### BUG-015 · ✅ GGUF: el prompt se envía sin plantilla de turnos (calidad inferior a Layla) *(arreglado 2026-11-17)*
 - **Síntoma:** con el MISMO modelo GGUF (gemma-4-E4B PURE), mismo contexto (4096) y mismos parámetros, Box escribe peor que Layla: pregunta "cómo prefieres que te llame" pese a que la persona ("The User is Héctor") está en el prompt; seguimiento del personaje más flojo (capturas 20:49 Layla vs 20:50 Box). El usuario confirma que el problema solo se aprecia en GGUF.
 - **Evidencia (dumps de prompt):** Layla envuelve el contenido con los marcadores de turno del modelo (`<|turn>system … <turn|>`, `<|turn>user`, `<|turn>model`). Box lo manda como **texto crudo**, sin estructura de turnos. Gemma depende fuertemente de su chat template: sin turnos, el seguimiento de instrucciones se degrada notablemente.
 - **Diferencia secundaria:** Layla inyecta además "remembers previously: …" (resumen de memoria) dentro del system; en el ejemplo de Box la memoria estaba a 0 — no es parte de este bug, pero alimenta la comparación.
 - **Causa probable (verificada en código):** `LlamaCppEngine.seedConversation()` (línea ~235) solo llama `instance.addSystemPrompt()` / `instance.addChatMessage()` del JNI SmolLM (`com.jegly.offlineLLM.smollm`); el wrapper nativo concatena sin aplicar la plantilla de chat del modelo (no hay jinja ni `llama_chat_apply_template` en la app).
+- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 2.1b), vía Kotlin como se pedía:** nuevo `engine/GgufChatTemplate.kt` que construye el prompt con la plantilla canónica de Gemma 4 (`<|turn>system/user/model … <turn|>` + `<|turn>model\n` final, turno de usuario vacío si el saludo del personaje abre el historial, e inyección de `<|think|>` con thinking), replicando el formato de `chatfmt::formatGemma4` del nativo. `LlamaCppModelHelper.initialize` la activa cuando el nombre del modelo es de la familia Gemma 4 (mismos patrones que `ThinkingSplitter`). El nativo tokeniza el prompt tal cual. Incluye tests (`engine/GgufChatTemplateTest.kt`). No hizo falta tocar el JNI ni `llama_chat_apply_template` (vía nativa descartada; el nativo mantiene su ruta para otros GGUF). Arreglado de forma coordinada con BUG-001 (misma zona, mismo mecanismo).
 - **Fix propuesto:** aplicar la plantilla según la familia del modelo antes de `startCompletion` — opción A en Kotlin (envolver system/historial/user con los turnos de Gemma `<start_of_turn>`, `<bos>`, etc., leyendo la plantilla del GGUF o detectando la familia); opción B en nativo con `llama_chat_apply_template` (más correcto, toca JNI del submódulo). Coordinar con BUG-001: el recorte de `_applyContextWindow` debe respetar los turnos al deslizar la ventana.
 - **Archivos:** `engine/LlamaCppEngine.kt` (`seedConversation`, `generateResponse`), `runtime/LlamaCppModelHelper.kt`, submódulo `Android/src/llama.cpp` / JNI SmolLM (solo si va por la vía nativa).
 - **Repro:** mismo personaje + persona activa, mismo GGUF a 4096: "Hola, preséntate y dime mi nombre" → Box no usa el nombre; Layla sí.
@@ -73,7 +76,8 @@
 - **¿Es arreglable? Sí.** Dos vías complementarias: (A) en el ViewModel, no enviar mientras el modelo seleccionado está inicializando — deshabilitar enviar / mostrar "cargando modelo…" y encolar el primer mensaje hasta `isModelLoaded`; (B) en `runInference`, en vez de fallar al primer intento, esperar la inicialización con un timeout razonable antes de reportar error.
 - **Archivos:** `runtime/LlamaCppModelHelper.kt` (`runInference`), `ui/llmchat/LlmChatViewModel.kt` (`handleError`, flujo de envío).
 
-### BUG-021 · ❌ Rotar la pantalla recarga el modelo (GGUF y LiteRT) y, si está generando, crash nativo
+### BUG-021 · ✅ Rotar la pantalla recarga el modelo (GGUF y LiteRT) y, si está generando, crash nativo *(arreglado 2026-11-17)*
+- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 5.4b):** (a) `AndroidManifest.xml`: `configChanges="uiMode|orientation|screenSize"` → la rotación ya no destruye la Activity ni recarga el modelo; (b) al destruir/liberar el motor se cancela la generación y se espera al hilo nativo ANTES de cerrar: GGUF en `LlamaCppEngine.unloadModel`/`resetConversation` (espera + cierre en un hilo aparte, acotado a 60 s, y cierre sobre la instancia capturada) y LiteRT en `LlmChatModelHelper.cleanUp` (cancela, espera máx. 5 s al callback de fin y solo entonces cierra). (c) Verificado: el motor GGUF vive en el singleton `LlamaCppModelHelper` (proceso) y el de LiteRT en los `Model`, fuera del ciclo de la Activity.
 - **Síntoma (Bloque 5, prueba 5.4 · POCO duchamp):** al rotar, el modelo se recarga entero en **ambos** motores (no debería pasar). Si rota **mientras está escribiendo**, la app crashea: `SIGSEGV` en `liblitertlm_jni.so` (LiteRT; 4 frames del JNI + pthread, sin frames de la app).
 - **Causa verificada:** `AndroidManifest.xml` (línea ~78) declara solo `android:configChanges="uiMode"` → la rotación **destruye y recrea la Activity**, y con ella se re-inicializa el motor (por eso recarga). Si había generación en curso, el hilo nativo queda en marcha mientras se desmonta todo → SIGSEGV.
 - **Fix propuesto:** (a) añadir `orientation|screenSize` a `configChanges` (elimina de golpe la recarga y el crash); (b) además, al destruir, **cancelar la generación y esperar al hilo** antes de tocar/liberar el motor (refuerzo, igual para BUG-001); (c) verificar que los motores viven en scope Application/ViewModel, no Activity.

@@ -40,6 +40,48 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-001 + BUG-015 (coordinados): plantilla de turnos de Gemma 4 en Kotlin y cierre del crash nativo GGUF
+
+**Qué y por qué:** crash nativo (`SIGSEGV` en `llama_vocab::impl::tokenize` ← `common_tokenize` ← `LLMInference::_applyContextWindow()`) al deslizar la ventana en escena/chat largo y al absorber clústeres, y prompt GGUF sin plantilla de turnos (degradación de Gemma frente a Layla). Se arreglan juntos porque comparten zona y mecanismo: el prompt de Gemma 4 se construye ahora **en Kotlin** con la plantilla canónica y el nativo lo tokeniza tal cual (`startCompletion` detecta los marcadores y se salta el formateo nativo y `_applyContextWindow()` — la ruta exacta del crash). El recorte del historial lo sigue haciendo la app (ContextWindowPlanner) antes de sembrar el turno. Vía Kotlin, como pedía el plan; no se tocó el JNI ni el submódulo llama.cpp.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/GgufChatTemplate.kt` — **nuevo**: plantilla de Gemma 4 (`<|turn>…<turn|>`, turno de usuario vacío si el saludo abre el historial, `<|think|>` con thinking) y detección de familia por nombre.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — `useGemma4Template`/`thinkingEnabled`/`lastHistory`; `setGemma4Template()`; `setThinking` guarda el flag; `seedConversation` guarda el historial sin vacíos (BUG-001: no tokenizar cadenas vacías); `generateResponse` construye el prompt con `GgufChatTemplate.build` si la plantilla está activa; `resetConversation` limpia `lastHistory`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/runtime/LlamaCppModelHelper.kt` — `initialize` activa la plantilla si el modelo es Gemma 4; `runInference` rechaza mensaje vacío sin imágenes (BUG-001).
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/engine/GgufChatTemplateTest.kt` — **nuevo**: 7 tests del formato y la detección.
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — marcas y registro.
+
+**Nota:** los GGUF que no son Gemma 4 siguen la ruta nativa de siempre (allí `_applyContextWindow` sigue activa; el planner de la app ya recorta antes de sembrar).
+
+---
+
+### 2026-11-17 — BUG-002: "Absorber clústeres" por tandas con watchdog por tanda
+
+**Qué y por qué:** con GGUF el prompt de absorción desbordaba el contexto y deslizaba la ventana (crash, mismo stack que BUG-001); con LiteRT agotaba el watchdog ("El modelo tardó demasiado"). La absorción va ahora por tandas pequeñas y cada tanda genera su propio recuerdo.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/RawMemory.kt` — `MemoryAbsorbPrompt.tandas()`: reparte notas cronológicas en tandas (máx. 3500 caracteres, máx. 8 tandas; se descartan las más viejas).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryAbsorber.kt` — `run()` acepta una lista de prompts: resetea la conversación por tanda, watchdog **por tanda** (180 s), progreso "Absorbiendo tanda X de Y…" y devuelve los textos por tanda.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryScreen.kt` — `MemoryViewModel.absorb` usa tandas y guarda un recuerdo por tanda; solo borra las notas de las tandas con resumen útil; mensaje final con conteos.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/RawMemoryTest.kt` — 3 tests nuevos de `tandas()`.
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — marca y registro.
+
+---
+
+### 2026-11-17 — BUG-021: rotación sin recarga del modelo y cierre seguro de los dos motores
+
+**Qué y por qué:** la rotación destruía la Activity (manifiesto solo con `configChanges="uiMode"`), recargaba el modelo en ambos motores y, si estaba generando, acababa en `SIGSEGV` nativo. Ahora la rotación solo recompone la vista, y al liberar el motor se cancela la generación y se espera al hilo nativo antes de cerrarlo.
+
+**Archivos:**
+- `Android/src/app/src/main/AndroidManifest.xml` — `android:configChanges="uiMode|orientation|screenSize"` en `MainActivity`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — `unloadModel` y `resetConversation` cancelan la generación y **esperan al hilo** (unión acotada a 60 s, en un hilo aparte, sin bloquear al llamador; un prefill en marcha puede tardar más que un token) antes de `instance.close()`, sobre la instancia capturada.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatModelHelper.kt` — registro de generación pendiente por modelo (`pendingGenerations`); `cleanUp` cancela (`cancelProcess`), espera al callback de fin (máx. 5 s) y solo entonces cierra conversación y motor.
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — marca y registro.
+
+**Nota:** el motor GGUF vive en el singleton `LlamaCppModelHelper` (proceso) y el de LiteRT en los `Model` del ViewModel de gestión, fuera del ciclo de la Activity — verificado, no hizo falta mover nada.
+
+---
+
 ### 2026-11-17 — Subida del trabajo pendiente a `origin/fase1-rendimiento` (2 commits)
 
 **Qué y por qué:** el usuario pidió subir a GitHub todo el trabajo sin commitear de las últimas sesiones para que Claude trabaje desde ahí. Se agrupó en 2 commits:
