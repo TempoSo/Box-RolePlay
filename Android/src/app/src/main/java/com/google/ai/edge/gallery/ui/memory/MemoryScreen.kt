@@ -82,12 +82,23 @@ class MemoryViewModel @Inject constructor(
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       val notes = rawStore.forCharacter(character.id)
       if (notes.isEmpty()) { onMessage("No hay recuerdos sin procesar."); return@launch }
-      val userName = personaRepository.getActive()?.name ?: "User"
+      val persona = personaRepository.getActive()
+      val userName = persona?.name ?: "User"
       // BUG-002: la absorción va por tandas para que el prompt no desborde el contexto del
       // modelo (crash GGUF al deslizar la ventana / timeout LiteRT). Cada tanda produce un
       // recuerdo; si una tanda no rinde, sus notas no se borran.
       val tandas = MemoryAbsorbPrompt.tandas(notes, sizeOf = { it.text.length })
-      val prompts = tandas.map { tanda -> MemoryAbsorbPrompt.build(userName, character.name, tanda.map { it.text }) }
+      // Contexto del personaje por campos, como el "ingest" de Layla (archivista).
+      val prompts = tandas.map { tanda ->
+        MemoryAbsorbPrompt.build(
+          userName,
+          character.name,
+          tanda.map { it.text },
+          persona = persona?.description ?: "",
+          description = character.description,
+          personality = character.personality,
+        )
+      }
       absorber.run(preferredModel, prompts,
         onProgress = { done, total ->
           onMessage(if (total <= 1) "Absorbiendo…" else "Absorbiendo tanda ${done + 1} de $total…")

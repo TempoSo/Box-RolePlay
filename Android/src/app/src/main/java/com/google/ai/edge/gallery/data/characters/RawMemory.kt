@@ -57,25 +57,57 @@ object MemoryAbsorbPrompt {
     private val THINK = Regex("(?s)<think>.*?</think>")
     private val TAGS = Regex("<[^>]{1,40}>")
 
-    /** [oldestFirst]: notas de la más vieja a la más nueva. Si no caben, se descartan las más viejas. */
-    fun build(userName: String, charName: String, oldestFirst: List<String>): String {
+    /** Máximo de caracteres por campo de contexto del personaje (persona, descripción, etc.). */
+    private const val MAX_FIELD_CHARS = 600
+
+    /**
+     * Prompt archivista (estilo Layla): el modelo lee las notas con el contexto del personaje por
+     * campos y destila UN recuerdo. Las notas se sanitizan (sin etiquetas `<...>`), porque el
+     * tokenizador nativo parsea special tokens dentro del texto y una nota manual puede traerse
+     * uno pegado del chat (BUG-002).
+     *
+     * [oldestFirst]: notas de la más vieja a la más nueva. Si no caben, se descartan las más viejas.
+     * [persona]/[description]/[personality]: contexto del personaje y del usuario (vacío = se omite).
+     */
+    fun build(
+        userName: String,
+        charName: String,
+        oldestFirst: List<String>,
+        persona: String = "",
+        description: String = "",
+        personality: String = "",
+    ): String {
         val kept = ArrayDeque<String>()
         var size = 0
         for (n in oldestFirst.asReversed()) {
-            if (size + n.length > MAX_NOTES_CHARS && kept.isNotEmpty()) break
-            kept.addFirst(n.take(MAX_NOTES_CHARS)); size += n.length
+            val clean = sanitize(n).take(MAX_NOTES_CHARS)
+            if (clean.isBlank()) continue
+            if (size + clean.length > MAX_NOTES_CHARS && kept.isNotEmpty()) break
+            kept.addFirst(clean); size += clean.length
         }
         val user = userName.ifBlank { "User" }
         val char = charName.ifBlank { "Character" }
         return buildString {
-            append("Below are notes taken from conversations between $user and $char.\n")
-            append("Write ONE concise memory (3 to 6 sentences) from $char's point of view, in the third person, ")
+            append("You are a meticulous archivist of a character's inner life. Read the notes below, ")
+            append("taken from conversations between $user and $char, and distil one durable memory: ")
+            append("facts, feelings, relationships and turning points. Ignore small talk and meta-chatter.\n\n")
+            append("Character context:\n")
+            append("Character name: $char\n")
+            append("User name: $user\n")
+            if (persona.isNotBlank()) append("User persona: ").append(persona.take(MAX_FIELD_CHARS)).append('\n')
+            if (description.isNotBlank()) append("Character description: ").append(description.take(MAX_FIELD_CHARS)).append('\n')
+            if (personality.isNotBlank()) append("Character personality: ").append(personality.take(MAX_FIELD_CHARS)).append('\n')
+            append("\nWrite ONE concise memory (3 to 6 sentences) from $char's point of view, in the third person, ")
             append("in the same language as the notes. Keep names, facts, promises, plans and feelings. ")
             append("Do not invent anything that is not in the notes. Output only the memory text.\n\nNotes:\n")
             kept.forEach { append("- ").append(it.replace('\n', ' ')).append('\n') }
             append("\nMemory:")
         }
     }
+
+    /** Quita etiquetas `<...>` (incluidos special tokens como `<end_of_turn>` o `<turn|>`) y compacta espacios. */
+    private fun sanitize(text: String): String =
+        text.replace(TAGS, " ").replace(Regex("\\s+"), " ").trim()
 
     /** Quita razonamiento, etiquetas, markdown y prefijos; null si no quedó nada útil. */
     fun clean(output: String): String? {

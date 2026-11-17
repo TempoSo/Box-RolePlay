@@ -80,6 +80,16 @@ interface LlmModelHelper {
   )
 
   /**
+   * Prepara el motor para una inferencia auxiliar de una sola tirada (tareas internas como la
+   * absorción de memoria), dejándola aislada del chat actual. Por defecto delega en
+   * [resetConversation]; cada runtime puede dar una vía más ligera (BUG-002: en llama.cpp
+   * resetConversation cierra y reabre los pesos, que es lento y deja una ventana de carrera).
+   */
+  fun prepareForAuxInference(model: Model) {
+    resetConversation(model = model)
+  }
+
+  /**
    * Cleans up resources occupied by the model.
    *
    * @param model the model whose resources should be cleaned up.

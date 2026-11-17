@@ -205,6 +205,9 @@ class LlamaCppEngine {
             lastHistory = emptyList()
             val gen = generationJob
             val inst = instance
+            // BUG-002: mientras dura el close+reload, ninguna generacion debe poder entrar
+            // (antes seguia a true y una tanda podia arrancar contra un motor a medio cerrar).
+            isModelLoaded.set(false)
 
             CoroutineScope(Dispatchers.Default).launch {
                 try {
@@ -277,7 +280,10 @@ class LlamaCppEngine {
 
     fun seedConversation(systemPrompt: String, history: List<Pair<String, String>>) {
         stateLock.withLock {
-            if (!isModelLoaded.get() || isGenerating) return
+            if (!isModelLoaded.get() || isGenerating) {
+                Log.w("AGLlamaPerf", "seedConversation ignorado: modelo ocupado o no cargado")
+                return
+            }
             instance.resetChat()
             lastSystemPrompt = systemPrompt
             val seeded = mutableListOf<Pair<String, String>>()
@@ -335,6 +341,13 @@ class LlamaCppEngine {
                             if (useGemma4Template) {
                                 GgufChatTemplate.build(lastSystemPrompt, lastHistory, query, thinkingEnabled)
                             } else query
+                        // Diagnostico de crashes (BUG-002): estado del prompt justo antes de
+                        // tokenizar. Solo tamanos, nunca el contenido.
+                        Log.i(
+                            "AGLlamaPerf",
+                            "prompt: ${prompt.length} car. | plantilla=${useGemma4Template} | " +
+                                "sys=${lastSystemPrompt.length} car. | hist=${lastHistory.size} turnos",
+                        )
                         instance.getResponseAsFlow(prompt)
                             .takeWhile { !shouldStop }
                             .collect { piece ->

@@ -17,6 +17,37 @@ class RawMemoryTest {
         assertTrue(p.contains("nuevo final")); assertTrue(p.contains("medio")); assertTrue(!p.contains("viejo"))
         assertTrue(p.contains("Héctor") && p.endsWith("Memory:"))
     }
+
+    @Test fun promptIncludesCharacterContextLikeLayla() {
+        val p = MemoryAbsorbPrompt.build(
+            "Héctor", "Psi", listOf("nota"),
+            persona = "Ingeniero", description = "Psicóloga", personality = "Cálida",
+        )
+        assertTrue(p.contains("User name: Héctor"))
+        assertTrue(p.contains("Character name: Psi"))
+        assertTrue(p.contains("User persona: Ingeniero"))
+        assertTrue(p.contains("Character description: Psicóloga"))
+        assertTrue(p.contains("Character personality: Cálida"))
+    }
+
+    @Test fun promptOmitsBlankContextFields() {
+        val p = MemoryAbsorbPrompt.build("User", "Psi", listOf("nota"))
+        assertTrue(!p.contains("User persona:"))
+        assertTrue(!p.contains("Character description:"))
+        assertTrue(!p.contains("Character personality:"))
+    }
+
+    @Test fun promptSanitizesTagsInNotes() {
+        // BUG-002: una nota manual puede traer marcadores de turno pegados del chat; el
+        // tokenizador nativo los parsea como special tokens dentro del texto.
+        val p = MemoryAbsorbPrompt.build(
+            "User", "Psi", listOf("vimos  <end_of_turn> y  <|turn>user\n<y>  algo más"),
+        )
+        assertTrue(!p.contains("<end_of_turn>"))
+        assertTrue(!p.contains("<|turn>"))
+        assertTrue(!p.contains("<y>"))
+        assertTrue(p.contains("y user algo más"))
+    }
     @Test fun cleanStripsNoise() {
         val c = MemoryAbsorbPrompt.clean("<think>pensando</think>\nMemory: **Héctor** habló de su entrevista de trabajo y Psi lo calmó.")!!
         assertEquals("Héctor habló de su entrevista de trabajo y Psi lo calmó.", c)

@@ -85,7 +85,7 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 ### Bloque 2 — Re-pruebas tras corregir bugs (ver [`BUGS.md`](BUGS.md))
 - [x] ~~2.1 Chat 1 a 1~~ ✅ **OK ya** (re-prueba): usa tu persona, no habla por ti, GGUF y LiteRT.
 - [ ] 2.4 Escenas: instrucción de turno oculta (BUG-003), la IA habla SOLO por el personaje pedido (BUG-004), lista se refresca al guardar (BUG-005), chips de etiquetas en el editor (BUG-006), sin crash al deslizar ventana (BUG-001).
-- [ ] 2.5 Memoria: "Absorber clústeres" sin crash (GGUF) ni timeout (LiteRT) — absorción por tandas (BUG-002); editar recuerdos sin procesar (BUG-008); chat nuevo usa solo recuerdos procesados.
+- [ ] 2.5 Memoria: "Absorber clústeres" sin crash (GGUF) ni timeout (LiteRT) — absorción por tandas (BUG-002); **2.ª ronda pendiente de re-prueba** (17/11): sin close/reload por tanda (`prepareForAuxInference`, en GGUF `resetChat` nativo), `isModelLoaded` apagado durante el reset, notas sanitizadas y prompt archivista estilo Layla; editar recuerdos sin procesar (BUG-008); chat nuevo usa solo recuerdos procesados.
 - [ ] 2.6 Hamburguesa del inicio abre el cajón (BUG-009).
 - [ ] 2.2 Compartir ficha genera archivo/texto compartible (BUG-007).
 - [ ] 2.1b Calidad GGUF ≈ Layla: usa el nombre de tu persona y sigue el personaje con el mismo modelo (plantilla de turnos aplicada, BUG-015).

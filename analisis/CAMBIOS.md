@@ -40,6 +40,30 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-002 (2.ª ronda): sin close/reload por tanda + prompt archivista estilo Layla
+
+**Qué y por qué:** 2.5 seguía crasheando en GGUF (`SIGSEGV` en `llama_vocab::impl::tokenize` ← `common_tokenize` ← `LLMInference::startCompletion`, ahora por el branch de marcadores y **sin** pasar por `_applyContextWindow`). Descartado el contenido como detonante (las notas automáticas ya van sin etiquetas por `AutoMemory.clean` y la tanda es más corta que un turno normal), la única pieza exclusiva del flujo de absorción era la secuencia **reset→inferencia por tanda**: `resetConversation` en GGUF cierra y reabre los pesos de forma **asíncrona** y el Absorber solo esperaba 300 ms; además `isModelLoaded` seguía a `true` durante el cierre/recarga, así que la tanda podía arrancar contra un motor a medio cerrar (ventana de use-after-free → el mismo tipo de SIGSEGV en el tokenizador que BUG-001). Cambios:
+
+1. El reset por tanda ya no cierra ni recarga el modelo: nueva vía ligera `prepareForAuxInference()` en `LlmModelHelper` (por defecto delega en `resetConversation`, que es lo que ya hacía LiteRT); en llama.cpp hace `seedConversation("", vacío)` → `resetChat()` nativo (borra historial + KV sin tocar los pesos, síncrono).
+2. Defensa en el motor: `resetConversation` apaga `isModelLoaded` mientras dura el close/reload (ningún `generateResponse` entra durante la recarga). `seedConversation` avisa en el log si se ignora por modelo ocupado.
+3. Sanitizado de notas en el prompt (defensa por contenido: notas manuales pueden traer marcadores de turno pegados del chat).
+4. Prompt archivista estilo Layla para la absorción: contexto del personaje por campos (`{{char}}`, `{{user}}`, persona, descripción, personalidad; máx. 600 caracteres por campo).
+5. Logs de diagnóstico (`AGLlamaPerf`): tamaño del prompt, plantilla activa, system e historial justo antes de tokenizar, y tanda/modelo en el Absorber. Si volviera a crashear, el logcat dice el estado exacto.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/runtime/LlmModelHelper.kt` — nuevo método `prepareForAuxInference(model)` con implementación por defecto (`resetConversation`).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/runtime/LlamaCppModelHelper.kt` — override de `prepareForAuxInference`: `seedConversation("", emptyList())` sin close/reload.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryAbsorber.kt` — usa `prepareForAuxInference`; fuera el `delay(300)`; logs por tanda; comentario actualizado.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — `resetConversation` marca `isModelLoaded=false` durante el close/reload; `seedConversation` loggea si se ignora; `generateResponse` loggea estado del prompt (`AGLlamaPerf`).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/RawMemory.kt` — `MemoryAbsorbPrompt.build` con contexto del personaje (persona/description/personality) y sanitizado de notas (`sanitize`, quita etiquetas `<...>`).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryScreen.kt` — `MemoryViewModel.absorb` pasa persona + descripción + personalidad del personaje al prompt.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/RawMemoryTest.kt` — 4 tests nuevos (contexto estilo Layla, campos vacíos omitidos, sanitizado de etiquetas).
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — marca y registro.
+
+**Re-prueba:** 2.5 (Absorber con GGUF y varias notas). 2.4/2.1b/5.4b no deberían verse afectados (no se tocó la ruta de chat; el único cambio en la ruta normal es el log).
+
+---
+
 ### 2026-11-17 — BUG-001 + BUG-015 (coordinados): plantilla de turnos de Gemma 4 en Kotlin y cierre del crash nativo GGUF
 
 **Qué y por qué:** crash nativo (`SIGSEGV` en `llama_vocab::impl::tokenize` ← `common_tokenize` ← `LLMInference::_applyContextWindow()`) al deslizar la ventana en escena/chat largo y al absorber clústeres, y prompt GGUF sin plantilla de turnos (degradación de Gemma frente a Layla). Se arreglan juntos porque comparten zona y mecanismo: el prompt de Gemma 4 se construye ahora **en Kotlin** con la plantilla canónica y el nativo lo tokeniza tal cual (`startCompletion` detecta los marcadores y se salta el formateo nativo y `_applyContextWindow()` — la ruta exacta del crash). El recorte del historial lo sigue haciendo la app (ContextWindowPlanner) antes de sembrar el turno. Vía Kotlin, como pedía el plan; no se tocó el JNI ni el submódulo llama.cpp.

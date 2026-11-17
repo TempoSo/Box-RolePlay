@@ -148,6 +148,16 @@ object LlamaCppModelHelper : LlmModelHelper {
         engines[model.name]?.seedConversation(systemPrompt, history)
     }
 
+    /**
+     * BUG-002: inferencia auxiliar (absorción de memoria) sin cerrar ni recargar el modelo.
+     * resetConversation en llama.cpp hace close+reload (segundos, asíncrono) y la tanda siguiente
+     * podía arrancar contra un motor a medio cerrar (use-after-free, SIGSEGV en el tokenizador).
+     * Aquí basta un resetChat nativo: borra historial y KV sin tocar los pesos, y es síncrono.
+     */
+    override fun prepareForAuxInference(model: Model) {
+        engines[model.name]?.seedConversation("", emptyList())
+    }
+
     override fun resetConversation(
         model: Model,
         supportImage: Boolean,

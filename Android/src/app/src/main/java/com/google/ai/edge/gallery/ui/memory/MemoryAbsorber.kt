@@ -15,12 +15,16 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Ejecuta UNA o VARIAS generaciones cortas con el modelo elegido (sin tocar el chat): carga el
- * modelo si hace falta, y por cada prompt resetea la conversación y devuelve el texto completo.
+ * modelo si hace falta, y por cada prompt deja el motor limpio y devuelve el texto completo.
  * Se usa para "Absorber clústeres".
  *
  * BUG-002: la absorción va por tandas (un prompt pequeño por llamada, ver MemoryAbsorbPrompt.
  * tandas) para no desbordar el contexto: con GGUF un prompt enorme deslizaba la ventana y
  * crasheaba (BUG-001) y con LiteRT agotaba el watchdog ("El modelo tardó demasiado").
+ *
+ * BUG-002 (2.ª ronda): el reset por tanda ya no cierra/recarga el modelo (prepareForAuxInference);
+ * en GGUF resetConversation hacía close+reload asíncrono y la inferencia podía arrancar contra un
+ * motor a medio cerrar (use-after-free: SIGSEGV en llama_vocab::tokenize).
  */
 class MemoryAbsorber(
     private val context: Context,
@@ -70,9 +74,11 @@ class MemoryAbsorber(
                 val outputs = mutableListOf<String>()
                 for ((index, prompt) in prompts.withIndex()) {
                     onProgress(index, prompts.size)
+                    Log.i("MemoryAbsorber", "tanda ${index + 1}/${prompts.size} con modelo ${model.name} (${prompt.length} car.)")
                     // Cada tanda arranca limpia (sin historial de la anterior ni de un chat).
-                    model.runtimeHelper.resetConversation(model = model)
-                    delay(300)
+                    // BUG-002: via ligera, sin close/reload del modelo (en GGUF eso dejaba una
+                    // ventana de carrera con la inferencia de la tanda: SIGSEGV en el tokenizador).
+                    model.runtimeHelper.prepareForAuxInference(model = model)
                     val out = StringBuilder()
                     val finished = CompletableDeferred<String?>()
                     model.runtimeHelper.runInference(
