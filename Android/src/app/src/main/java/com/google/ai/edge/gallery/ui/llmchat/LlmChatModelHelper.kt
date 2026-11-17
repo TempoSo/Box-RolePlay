@@ -364,7 +364,16 @@ object LlmChatModelHelper : LlmModelHelper {
       return
     }
 
-    val instance = model.instance as LlmModelInstance
+    // BUG (12:44): la instancia puede no ser de LiteRT (p. ej. un GGUF cargado por otra tarea
+    // cuya limpieza llegó aquí de casualidad): el cast duro acababa en ClassCastException y
+    // crasheaba la app. Ante una instancia ajena, no se toca: se deja nula y se termina.
+    val instance = model.instance as? LlmModelInstance
+    if (instance == null) {
+      Log.w(TAG, "cleanUp: la instancia de ${model.name} no es de LiteRT; no se limpia aquí")
+      model.instance = null
+      onDone()
+      return
+    }
 
     // BUG-021: si hay una generación en marcha, cancelarla y esperar (acotado) a que el hilo
     // nativo termine antes de cerrar la conversación y el motor; si se cierra con un turno

@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
-import com.google.ai.edge.gallery.data.characters.LastEnginePerf
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.gallery.runtime.runtimeHelper
@@ -12,7 +11,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Ejecuta UNA o VARIAS generaciones cortas con el modelo elegido (sin tocar el chat): carga el
@@ -27,16 +25,19 @@ import kotlinx.coroutines.withTimeoutOrNull
  * en GGUF resetConversation hacía close+reload asíncrono y la inferencia podía arrancar contra un
  * motor a medio cerrar (use-after-free: SIGSEGV en llama_vocab::tokenize).
  *
- * BUG-002 (3.ª ronda): el timeout por tanda ya no es un fijo de 180 s (en un móvil con prefill
- * ~6.5 t/s, una tanda de ~1400 tokens necesita ~215 s solo de prefill: saltaba sin haber colgado),
- * sino que se estima con la velocidad real medida del dispositivo (LastEnginePerf). Y entre
- * tandas Gemma 4 conserva la KV (auxTandaBoundary): el preámbulo archivista, idéntico en todas
- * las tandas, solo se prefill una vez.
+ * BUG-002 (3.ª ronda): entre tandas Gemma 4 conserva la KV (auxTandaBoundary): el preámbulo
+ * archivista, idéntico en todas las tandas, solo se prefill una vez.
  *
- * BUG-002 (4.ª ronda): la re-prueba (379 s) reveló que el tiempo real lo disparaba una
- * GENERACIÓN desbocada (el resumen sin EOS pasaba de ~500 tokens con el tope nativo a -1).
- * Ahora cada tanda va con tope de [MAX_RESPONSE_TOKENS] tokens (setMaxResponse nativo,
- * restaurado al acabar) y el timeout da a la generación su presupuesto real.
+ * BUG-002 (4.ª ronda): cada tanda va con tope de generación de [MAX_RESPONSE_TOKENS] tokens
+ * (setMaxResponse nativo, restaurado al acabar): sin tope, un resumen desbocado (sin EOS)
+ * consumió el watchdog entero en la re-prueba (379 s).
+ *
+ * BUG-002 (5.ª ronda): las estimaciones de tiempo fallaron dos veces seguidas (180 s, 623 s)
+ * porque la térmica del SoC ralentiza el prefill a menos de la mitad en carga sostenida
+ * (medido: 5.8 t/s fresco → ~2.4 t/s caliente). Ahora el límite por tanda es un TOPE generoso
+ * anti-cuelgue ([TANDA_TIMEOUT_MS], 20 min) más un detector de atasco real en generación
+ * ([STALL_TIMEOUT_MS]: sin tokens nuevos, cuando llegan cada ~0.3 s), y hay una pausa de
+ * enfriamiento de [COOLDOWN_MS] entre tandas.
  */
 class MemoryAbsorber(
     private val context: Context,
@@ -74,15 +75,22 @@ class MemoryAbsorber(
                     modelManager.initializeModel(context, task, model)
                 }
                 // Espera (máx. 3 min) a que el motor esté listo.
-                val ready = withTimeoutOrNull(180_000) {
+                var ready = false
+                kotlinx.coroutines.withTimeoutOrNull(180_000) {
                     while (model.instance == null) delay(150)
-                    true
+                    ready = true
                 }
-                if (ready != true) { onError("El modelo no terminó de cargar."); return@launch }
+                if (!ready) { onError("El modelo no terminó de cargar."); return@launch }
 
                 val outputs = mutableListOf<String>()
                 for ((index, prompt) in prompts.withIndex()) {
                     onProgress(index, prompts.size)
+                    // Pausa de enfriamiento entre tandas: la térmica redujo el prefill a menos
+                    // de la mitad en las re-pruebas (5.8 -> ~2.4 t/s con carga sostenida).
+                    if (index > 0) {
+                        Log.i("MemoryAbsorber", "pausa de enfriamiento ${COOLDOWN_MS / 1000} s antes de la tanda ${index + 1}")
+                        delay(COOLDOWN_MS)
+                    }
                     // Cada tanda arranca limpia (sin historial de la anterior ni de un chat).
                     // BUG-002: via ligera, sin close/reload del modelo (en GGUF eso dejaba una
                     // ventana de carrera con la inferencia de la tanda: SIGSEGV en el tokenizador).
@@ -93,24 +101,27 @@ class MemoryAbsorber(
                     } else {
                         model.runtimeHelper.auxTandaBoundary(model = model)
                     }
-                    val timeoutMs = tandaTimeoutMs(prompt.length, LastEnginePerf.stats)
                     Log.i(
                         "MemoryAbsorber",
                         "tanda ${index + 1}/${prompts.size} con modelo ${model.name} " +
-                            "(${prompt.length} car., watchdog ${timeoutMs / 1000} s)",
+                            "(${prompt.length} car., tope $TANDA_TIMEOUT_MS ms, resumen ≤$MAX_RESPONSE_TOKENS tok)",
                     )
                     val out = StringBuilder()
                     val finished = CompletableDeferred<String?>()
-                    // BUG-002 (4.ª ronda): tope de 400 tokens generados en llama.cpp. Sin tope,
-                    // un resumen desbocado (sin EOS) consumió el watchdog entero de la tanda 1
-                    // en la re-prueba (379 s: ~240 s de prefill + ~140 s de generación sin fin).
-                    // En LiteRT no se envía: litertlm podría rechazar el kwarg desconocido.
+                    // Progreso visible para el detector de atasco (los partial llegan en el hilo
+                    // del motor; un AtomicLong evita leer el StringBuilder en carrera).
+                    val progress = java.util.concurrent.atomic.AtomicLong()
+                    // BUG-002 (4.ª ronda): tope de tokens generados en llama.cpp. Sin tope, un
+                    // resumen desbocado (sin EOS) consumió el watchdog entero de la tanda 1 en
+                    // la re-prueba (379 s). En LiteRT no se envía: litertlm podría rechazar el
+                    // kwarg desconocido.
                     val esGguf = model.runtimeHelper ==
                         com.google.ai.edge.gallery.runtime.LlamaCppModelHelper
                     model.runtimeHelper.runInference(
                         model = model,
                         input = prompt,
                         resultListener = { partial, done, _ ->
+                            if (partial.isNotEmpty()) progress.addAndGet(partial.length.toLong())
                             out.append(partial)
                             if (done) finished.complete(null)
                         },
@@ -120,12 +131,34 @@ class MemoryAbsorber(
                         extraContext =
                             if (esGguf) mapOf("max_response_tokens" to "$MAX_RESPONSE_TOKENS") else null,
                     )
-                    val error = withTimeoutOrNull(timeoutMs) { finished.await() }
-                        ?: run {
-                            model.runtimeHelper.stopResponse(model)
-                            "El modelo tardó demasiado en la tanda ${index + 1} de ${prompts.size} " +
-                                "(límite ${timeoutMs / 1000} s)."
+                    // Vigilancia por fases (5.ª ronda): mientras no llegue ningún token se está
+                    // en prefill (solo cuenta el tope global); tras el primero, un silencio de
+                    // [STALL_TIMEOUT_MS] es un cuelgue, no lentitud (los tokens llegan cada ~0.3 s).
+                    val started = System.nanoTime()
+                    var lastLen = 0L
+                    var lastProgress = started
+                    var gotToken = false
+                    var motivo: String? = null
+                    while (motivo == null) {
+                        if (finished.isCompleted) break
+                        val now = System.nanoTime()
+                        val len = progress.get()
+                        if (len != lastLen) { lastLen = len; lastProgress = now; gotToken = true }
+                        motivo = tandaAbortReason(
+                            elapsedMs = (now - started) / 1_000_000,
+                            idleMs = (now - lastProgress) / 1_000_000,
+                            gotToken = gotToken,
+                        )?.let { reason ->
+                            when (reason) {
+                                "stall" -> "La generación de la tanda ${index + 1} de ${prompts.size} se " +
+                                    "detuvo (sin tokens nuevos en ${STALL_TIMEOUT_MS / 1000} s)."
+                                else -> "La tanda ${index + 1} de ${prompts.size} superó el límite de " +
+                                    "${TANDA_TIMEOUT_MS / 1000} s."
+                            }
                         }
+                        if (motivo != null) model.runtimeHelper.stopResponse(model) else delay(250)
+                    }
+                    val error = motivo ?: finished.await()
                     if (error != null) {
                         onError(error)
                         return@launch
@@ -149,21 +182,27 @@ class MemoryAbsorber(
         const val MAX_RESPONSE_TOKENS = 400
 
         /**
-         * Timeout por tanda según la velocidad real del dispositivo (estadísticas de los últimos
-         * turnos del motor). Estimación: ~3.0 car./token (conservador); prefill a la velocidad
-         * medida y ~400 tokens de resumen (el tope real de [MAX_RESPONSE_TOKENS]) a la velocidad
-         * de generación medida, ambos ×2 de margen (el dispositivo se ralentiza por térmica en
-         * tandas largas). Sin estadísticas (primera tanda tras abrir la app) usa supuestos
-         * conservadores. Suelo 8 min, techo 30 min: es un límite anti-cuelgue, no un presupuesto
-         * de tiempo — la 3.ª ronda (límite 379 s en la re-prueba) se quedó corto.
+         * Tope total de una tanda (prefill + generación). NO es un presupuesto de tiempo: con la
+         * térmica el prefill de una tanda puede ir a ~2.4 t/s (~500 s) y aun así terminar bien;
+         * este límite solo existe para no esperar eternamente ante un cuelgue real.
          */
-        fun tandaTimeoutMs(promptChars: Int, stats: com.jegly.offlineLLM.smollm.SmolLM.PerfStats?): Long {
-            val promptTps = stats?.promptTokensPerSecond?.takeIf { it > 0.5f } ?: 5f
-            val genTps = stats?.generationTokensPerSecond?.takeIf { it > 0.5f } ?: 3f
-            val tokens = (promptChars / 3.0f).coerceAtLeast(1f)
-            val prefillMs = tokens / promptTps * 1000f * 2f
-            val genMs = MAX_RESPONSE_TOKENS / genTps * 1000f * 2f
-            return (prefillMs + genMs).toLong().coerceIn(480_000L, 1_800_000L)
+        const val TANDA_TIMEOUT_MS = 1_200_000L
+
+        /** Sin tokens nuevos tras el primero: cuelgue (los tokens llegan cada ~0.3 s). */
+        const val STALL_TIMEOUT_MS = 120_000L
+
+        /** Pausa de enfriamiento entre tandas (la térmica del SoC ralentiza el prefill a la mitad). */
+        const val COOLDOWN_MS = 30_000L
+
+        /**
+         * Decide si la tanda debe abortar. null = seguir; no null = motivo ("stall" o "timeout").
+         * El atasco ([STALL_TIMEOUT_MS]) solo aplica tras el primer token; en prefill no hay
+         * señal de progreso y manda el tope global ([TANDA_TIMEOUT_MS]).
+         */
+        fun tandaAbortReason(elapsedMs: Long, idleMs: Long, gotToken: Boolean): String? = when {
+            gotToken && idleMs > STALL_TIMEOUT_MS -> "stall"
+            elapsedMs > TANDA_TIMEOUT_MS -> "timeout"
+            else -> null
         }
     }
 }

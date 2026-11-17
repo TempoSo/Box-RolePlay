@@ -40,6 +40,25 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-002 (5.ª ronda): watchdog por tope global + atasco + enfriamiento; BUG-025: crash al limpiar GGUF vía AgentChat
+
+**Qué y por qué:** re-prueba 2.5 con la 4.ª ronda: el límite fue **623 s** y se agotó. Los números encajan con **el tope de generación de la 4.ª ronda trabajando correctamente** (400 tok @ ~3 t/s ≈ 135 s) y un **prefill a ~2.4 t/s** (~1167 tokens ≈ 488 s): la térmica del SoC ralentiza el prefill a menos de la mitad en carga sostenida (por la mañana el mismo modelo iba a 5.8 t/s). Conclusión: estimar tiempos no sirve en este dispositivo (fallaron 180 s, 379 s y 623 s por la misma razón). Cambios en la absorción:
+1. **Tope global por tanda de 20 min** (`MemoryAbsorber.TANDA_TIMEOUT_MS`): anti-cuelgue, no presupuesto.
+2. **Detector de atasco** (`tandaAbortReason` + `STALL_TIMEOUT_MS` = 120 s): solo tras el primer token (los tokens llegan cada ~0.3 s; un silencio de 2 min es un cuelgue). En prefill no hay señal de progreso y manda el tope global. El progreso se lee de un `AtomicLong` (los partial llegan en el hilo del motor).
+3. **Pausa de enfriamiento de 30 s** (`COOLDOWN_MS`) entre tandas, con log.
+4. Tests: 6 en `MemoryAbsorberTest.kt` reescritos (prefill no dispara atasco, stall real, bordes). 177 tests en verde; `:app:assembleDebug` OK; dex verificado (cadenas nuevas dentro del APK).
+
+Además, **BUG-025 (crash real hoy a las 12:44)**: `ClassCastException: LlamaCppEngine cannot be cast to LlmModelInstance` en `LlmChatModelHelper.cleanUp` vía `AgentChatTask.cleanUpModelFn` ← `cleanupModel` ← `setAppInForeground`. Causa: la limpieza de AgentChat estaba **fija a LiteRT** aunque el modelo cargado fuera GGUF; el cast duro explotaba al limpiar (mata la app en plena prueba; venía del 16/11, línea 359 del APK viejo). Fix: (1) `AgentChatTask.cleanUpModelFn` despacha vía `model.runtimeHelper.cleanUp`; (2) `LlmChatModelHelper.cleanUp` ya no hace cast duro (instancia no LiteRT: log, `instance = null`, `onDone`, sin crash).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryAbsorber.kt` — vigilancia por fases reescrita (tope global + atasco + pausa de enfriamiento), constantes y tests de decisión.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/ui/memory/MemoryAbsorberTest.kt` — reescrito a `tandaAbortReason`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/customtasks/agentchat/AgentChatTaskModule.kt` — limpieza despachada por runtime (BUG-025).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatModelHelper.kt` — cast duro eliminado en `cleanUp` (BUG-025).
+- `analisis/BUGS.md` — BUG-002 (5.ª ronda) y BUG-025 nuevos.
+
+**Próxima prueba:** 2.5 GGUF. Esperado: tanda 1 ~6-9 min con térmica (prefill lento + resumen ≤400 tok), pausa 30 s, siguientes tandas ~4-6 min. Mensajes de error posibles ahora: atasco real (raro) o tope de 20 min (cuelgue). El log `MemoryAbsorber` muestra por tanda el tope y las pausas; `AGLlamaPerf` las velocidades reales.
+
 ### 2026-11-17 — BUG-020: etiquetas de holgura del navegador HF coloreadas por nivel
 
 **Qué y por qué:** "cabe bien", "justo" y "demasiado grande" salían todas en el mismo gris (`onSurfaceVariant`), así que la estimación de RAM del navegador HF no se distinguía de un vistazo. La etiqueta se muestra ahora aparte con color: verde/terciario para GOOD, ámbar para TIGHT y `error` para TOO_BIG. No se tocan los umbrales de `HfApi.fit()` (45 % / 65 % de la RAM).
