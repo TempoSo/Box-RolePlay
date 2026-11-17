@@ -125,7 +125,8 @@
 - **Fix:** colorear según `HfFit` (GOOD verde/terciario, TIGHT ámbar, TOO_BIG error) y, si acaso, recalibrar umbrales con datos reales (POCO: 11 GB RAM).
 - **Archivos:** `ui/modelmanager/HfBrowserScreen.kt`, `data/characters/HfApi.kt`.
 
-### BUG-022 · ⚠️ "Exportar logs" tras un crash no incluye el crash (solo la sesión reabierta)
+### BUG-022 · ✅ "Exportar logs" tras un crash no incluye el crash (solo la sesión reabierta) *(arreglado 2026-11-17)*
+- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 5.5b):** sin tocar JNI, `LogExporter.buildReport` lee `logcat -b crash -d -t 6000`, filtra por `com.box.gallery` y conserva ±5/60 líneas alrededor de cada coincidencia (la tombstone no repite el paquete en el backtrace); lo adjunta como "Crash nativo (logcat -b crash)". El buffer del sistema persiste entre reinicios del proceso. `last_crash.txt` sigue capturando excepciones Java. Archivo: `data/characters/LogExporter.kt`.
 - **Síntoma (Bloque 5, prueba 5.5 · POCO):** tras un crash, el reporte exportado solo trae los logs de la app reabierta; el crash no aparece.
 - **Causa verificada:** el capturador Java existe y está conectado (`LogExporter.installCrashRecorder` en `GalleryApplication.kt:35`, escribe `last_crash.txt` que `buildReport` adjunta) — pero solo captura **excepciones Java** (`Thread.setDefaultUncaughtExceptionHandler`). Los crashes reales del proyecto son **nativos** (SIGSEGV en `libllama.so`/BUG-001 y `liblitertlm_jni.so`/BUG-021): el proceso muere por señal sin pasar por el handler de Java → `last_crash.txt` nunca se escribe.
 - **Fix propuesto:** captura de señales nativas (handler de SIGSEGV/SIGABRT que vuelque `last_crash.txt`, vía JNI propio o librería tipo xCrash) y/o al arrancar, recuperar el logcat/dropbox del proceso anterior y adjuntarlo al reporte.

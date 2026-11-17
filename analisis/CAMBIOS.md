@@ -40,6 +40,16 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-022: "Exportar logs" incluye los crashes nativos del buffer del sistema
+
+**Qué y por qué:** el reporte solo traía los logs de la sesión reabierta porque `installCrashRecorder` captura excepciones Java, pero los crashes del proyecto son señales nativas (SIGSEGV en `libllama.so` / `liblitertlm_jni.so`) que matan el proceso sin pasar por ese handler. Sin tocar JNI, `buildReport` lee ahora `logcat -b crash -d`, filtra por el paquete `com.box.gallery` y adjunta las líneas vecinas (el backtrace de tombstone no repite el nombre del paquete). Ese buffer del sistema sobrevive al reinicio del proceso. `last_crash.txt` se mantiene para las excepciones Java.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/LogExporter.kt` — nuevo `nativeCrashLog(context)` y sección "Crash nativo (logcat -b crash)" en `buildReport`.
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — marca y registro.
+
+**Próxima prueba:** 5.5b. Provocar un crash (p. ej. rotar mientras genera con BUG-021 sin arreglar), reabrir la app y "Exportar logs": el .txt debe incluir la tombstone con `>>> com.box.gallery <<<` y las líneas de `libllama.so`/`liblitertlm_jni.so`. Si el dispositivo no permite leer el buffer `crash`, el reporte indicará el motivo en lugar de fallar.
+
 ### 2026-11-17 — BUG-016: el primer mensaje espera al modelo recién seleccionado (sin "Session re-initialized")
 
 **Qué y por qué:** al cambiar de modelo GGUF/LiteRT el envío podía llegar antes de que acabara la inicialización: `model.instance` seguía apuntando al motor anterior mientras se liberaba/cargaba el nuevo, y `runInference` (llama.cpp) fallaba en seco con "llama.cpp engine not initialized", lo que disparaba `handleError` → cleanup + initialize + aviso "Session re-initialized". Se arreglan las dos vías: (A) `LlmChatViewModel.generateResponse` deja el mensaje encolado con el indicador "⏳ cargando modelo…" y consulta `runtimeHelper.isModelReady(model)` (que en GGUF exige motor cargado **y** instancia actual) hasta 180 s antes de armar el prompt e inferir; (B) `LlamaCppModelHelper.runInference` reintenta con un sleep acotado de 60 s en vez de fallar al primer intento. Si se agota el tiempo se muestra un error específico que `handleError` **no** trata como fallo del motor (no reinicia la sesión). `runAgain` ya no espera solo a `model.instance`.

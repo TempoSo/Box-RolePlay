@@ -32,6 +32,32 @@ object LogExporter {
         }
     }
 
+    /**
+     * BUG-022: los crashes reales del proyecto son nativos (SIGSEGV en libllama.so /
+     * liblitertlm_jni.so) y no pasan por el handler de Java, así que last_crash.txt nunca se
+     * escribe. El buffer `crash` de logcat persiste entre reinicios del proceso: se filtra por el
+     * paquete y se conserva el entorno de cada coincidencia porque el backtrace no repite el nombre.
+     */
+    private fun nativeCrashLog(context: Context): String {
+        val lines =
+            runCatching {
+                val p =
+                    ProcessBuilder(
+                        "logcat", "-b", "crash", "-d", "-v", "threadtime", "-t", MAX_LINES.toString()
+                    ).redirectErrorStream(true).start()
+                val text = p.inputStream.bufferedReader().readText()
+                p.destroy()
+                text.lineSequence().toList()
+            }.getOrElse { return "(no se pudo leer el buffer de crashes: ${it.message})" }
+        val keep = BooleanArray(lines.size)
+        lines.forEachIndexed { i, line ->
+            if (line.contains(context.packageName, ignoreCase = true)) {
+                for (j in (i - 5).coerceAtLeast(0)..(i + 60).coerceAtMost(lines.lastIndex)) keep[j] = true
+            }
+        }
+        return lines.filterIndexed { i, _ -> keep[i] }.joinToString("\n").take(20_000)
+    }
+
     /** Arma el texto completo del reporte. Puede tardar un par de segundos: llamar fuera del hilo principal. */
     fun buildReport(context: Context): String {
         val sb = StringBuilder()
@@ -54,6 +80,12 @@ object LogExporter {
         if (crash.exists()) {
             sb.appendLine("--- Último cierre inesperado ---")
             sb.appendLine(crash.readText().take(20_000))
+            sb.appendLine()
+        }
+        val nativeCrash = nativeCrashLog(context)
+        if (nativeCrash.isNotBlank()) {
+            sb.appendLine("--- Crash nativo (logcat -b crash) ---")
+            sb.appendLine(nativeCrash)
             sb.appendLine()
         }
         sb.appendLine("--- logcat (últimas líneas) ---")
