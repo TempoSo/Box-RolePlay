@@ -43,6 +43,14 @@ class LlamaCppEngine {
     var lastSystemPrompt: String = ""
         private set
 
+    // BUG-001/BUG-015: con la plantilla de Gemma 4 aplicada en Kotlin, el prompt se manda ya
+    // formateado y el nativo lo tokeniza tal cual (sin _applyContextWindow ni apply_template).
+    @Volatile private var useGemma4Template = false
+    @Volatile private var thinkingEnabled = false
+
+    /** Historial sembrado por seedConversation (sin vacios); se usa al construir el prompt. */
+    @Volatile private var lastHistory: List<Pair<String, String>> = emptyList()
+
     @Volatile
     private var generationJob: Job? = null
 
@@ -154,13 +162,27 @@ class LlamaCppEngine {
 
     fun unloadModel() {
         stateLock.withLock {
-            generationJob?.cancel()
+            val gen = generationJob
+            val inst = instance
             loadJob?.cancel()
+            gen?.cancel()
             isModelLoaded.set(false)
             isGenerating = false
-            try {
-                instance.close()
-            } catch (_: Exception) {}
+            lastHistory = emptyList()
+            // BUG-021: liberar el motor solo cuando el hilo de generación haya terminado. La
+            // cancelación surte efecto en el siguiente token (y un prefill en marcha puede
+            // tardar bastante más), así que la espera y el cierre van en un hilo aparte; este
+            // motor ya no es alcanzable (cleanUp lo saca del mapa antes de llamar aquí).
+            CoroutineScope(Dispatchers.Default).launch {
+                try {
+                    kotlinx.coroutines.withTimeoutOrNull(60_000) { gen?.join() }
+                } catch (_: Exception) {}
+                // Se cierra la instancia capturada: si mientras tanto el motor se hubiera
+                // recreado, no se toca la nueva.
+                try {
+                    inst.close()
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -179,12 +201,22 @@ class LlamaCppEngine {
         stateLock.withLock {
             generationJob?.cancel()
             isGenerating = false
+            // La conversacion nativa se borra; el historial sembrado para la plantilla tambien.
+            lastHistory = emptyList()
+            val gen = generationJob
+            val inst = instance
 
             CoroutineScope(Dispatchers.Default).launch {
                 try {
+                    // BUG-021: la generacion cancelada termina en el siguiente token (y un
+                    // prefill en marcha puede tardar bastante); esperarla aqui, fuera del hilo
+                    // llamador, antes de cerrar el contexto nativo.
+                    try {
+                        kotlinx.coroutines.withTimeoutOrNull(60_000) { gen?.join() }
+                    } catch (_: Exception) {}
                     // Close and reopen — this clears the KV cache and message history
                     // but the OS keeps model pages in memory so reload is fast
-                    instance.close()
+                    inst.close()
                     instance = SmolLM()
                     instance.load(modelPath, params)
                     instance.setContextWindow(CONTEXT_WINDOW_HIGH, CONTEXT_WINDOW_LOW)
@@ -226,10 +258,21 @@ class LlamaCppEngine {
     /** Roleplay: activa el razonamiento (canal de pensamiento de Gemma 4) en el siguiente turno. */
     fun setThinking(enabled: Boolean) {
         if (isGenerating) return
+        thinkingEnabled = enabled
         stateLock.withLock {
             if (!isModelLoaded.get()) return
             instance.setThinking(enabled)
         }
+    }
+
+    /**
+     * BUG-015: activa la plantilla de Gemma 4 en Kotlin ([GgufChatTemplate]). Se llama al cargar
+     * el modelo si su nombre es de la familia Gemma 4; el nativo solo la aplica si detecta los
+     * marcadores <|turn> en los metadatos del GGUF, que a veces no estan o su plantilla Jinja
+     * falla en llama.cpp y el prompt salia como texto crudo.
+     */
+    fun setGemma4Template(enabled: Boolean) {
+        useGemma4Template = enabled
     }
 
     fun seedConversation(systemPrompt: String, history: List<Pair<String, String>>) {
@@ -237,12 +280,18 @@ class LlamaCppEngine {
             if (!isModelLoaded.get() || isGenerating) return
             instance.resetChat()
             lastSystemPrompt = systemPrompt
+            val seeded = mutableListOf<Pair<String, String>>()
             if (systemPrompt.isNotBlank()) {
                 instance.addSystemPrompt(systemPrompt)
             }
             for ((role, content) in history) {
-                if (content.isNotBlank()) instance.addChatMessage(role, content)
+                // BUG-001: no sembrar cadenas vacias (el nativo acabaria tokenizandolas).
+                if (content.isNotBlank()) {
+                    instance.addChatMessage(role, content)
+                    seeded.add(role to content)
+                }
             }
+            lastHistory = seeded
         }
     }
 
@@ -278,7 +327,15 @@ class LlamaCppEngine {
                     var shouldStop = false
 
                     val duration = measureTime {
-                        instance.getResponseAsFlow(query)
+                        // BUG-015: con Gemma 4 el prompt llega ya con la plantilla de turnos
+                        // construida en Kotlin; el nativo la detecta y tokeniza tal cual, sin
+                        // pasar por el formateo nativo ni _applyContextWindow (ruta del crash
+                        // de BUG-001).
+                        val prompt =
+                            if (useGemma4Template) {
+                                GgufChatTemplate.build(lastSystemPrompt, lastHistory, query, thinkingEnabled)
+                            } else query
+                        instance.getResponseAsFlow(prompt)
                             .takeWhile { !shouldStop }
                             .collect { piece ->
                                 fullResponse += piece

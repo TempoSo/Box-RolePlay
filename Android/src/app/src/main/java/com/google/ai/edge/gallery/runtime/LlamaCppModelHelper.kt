@@ -48,6 +48,9 @@ object LlamaCppModelHelper : LlmModelHelper {
         Log.d(TAG, "Initializing llama.cpp engine for: $modelPath")
 
         val engine = LlamaCppEngine()
+        // BUG-015: si el modelo es Gemma 4 (por nombre), el prompt se construye en Kotlin con la
+        // plantilla de turnos canonica; el nativo la tokeniza tal cual.
+        engine.setGemma4Template(com.google.ai.edge.gallery.engine.GgufChatTemplate.isGemma4(model.name))
         engines[model.name] = engine
         appContext = context.applicationContext
 
@@ -200,6 +203,12 @@ object LlamaCppModelHelper : LlmModelHelper {
         val engine = engines[model.name]
         if (engine == null || !engine.isModelLoaded.get()) {
             onError("llama.cpp engine not initialized for ${model.name}")
+            return
+        }
+        // BUG-001: no mandar cadenas vacias al tokenizador nativo (con imágenes el texto puede
+        // ir vacío y solo van los marcadores).
+        if (input.isBlank() && images.isEmpty()) {
+            onError("No hay mensaje que enviar.")
             return
         }
 
