@@ -40,6 +40,16 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — Triaje del feedback: `.wab`, espaciado de 4.1, corte de voz con GGUF y crashes de los reportes
+
+**Qué y por qué:** el humano confirma que 3.1 (descarga HF) y 4.2 (cambio de GGUF/LiteRT) funcionan, y que 4.1 funciona aunque quiere mejorar el espaciado; aparecen tres síntomas nuevos y dos crashes en los reportes exportados. **No se tocó código de producción**: solo se documenta lo verificado en código y logs. Altas: BUG-027 (no existe soporte de `.wab`: `TtsFiles.importVoice` exige WAV vía `WavReader.parse` y `TtsSettingsDialog` muestra "Ese archivo no es un WAV legible"), BUG-028 (la etiqueta de holgura de `HfBrowserScreen` es un `Text` hermano de los metadatos con `weight(1f)`, por eso aparece pegada o lejos según la longitud), BUG-029 (corte de la voz en vivo con GGUF: bucle de `TtsManager` con 120 s sin frases, `t.stop()` antes de drenar el `AudioTrack` y texto final distinto del acumulado) y BUG-030 (`SIGABRT` de Scudo en `LLMInference::~LLMInference()` ← `SmolLM.close` ← `LlamaCppEngine.unloadModel` a las 15:23; presunto doble cierre con `resetConversation` o cierre con el hilo nativo vivo porque el `join` tiene timeout). Se añaden notas de verificación a BUG-013/016/020/022 y de reaparición a BUG-026 (callback JNI a las 15:27 y 15:30, con la build instalada aún por confirmar). Queda pendiente de aclaración con el humano: qué contiene un `.wab`, si "orden de las letras" significa orden alfabético o separación visual, y si "como las fotos" se refiere a BUG-017. Las capturas adjuntas no son visibles para este agente.
+
+**Archivos:**
+- `analisis/BUGS.md` — BUG-027, BUG-028, BUG-029 y BUG-030 nuevos; notas de verificación/reaparición en BUG-013, BUG-016, BUG-020, BUG-022 y BUG-026.
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Próximo paso (sin ejecutar sin confirmación):** arreglar los bugs en tandas separadas con commit local por bug; no hacer push. Para BUG-027 hace falta una muestra `.wab` o su formato; para BUG-028 y BUG-029 hace falta la aclaración del humano.
+
 ### 2026-11-17 — 2.5 VERIFICADO en ambos motores (BUG-002 cerrado); BUG-026: crash del TTS por callback JNI
 
 **Qué y por qué:** el humano verifica que "Absorber clústeres" ya funciona **sin crash ni timeout en GGUF y LiteRT** (BUG-002 cerrado tras 5 rondas; BUGS.md y PLAN_PRUEBAS.md actualizados). En los logs (15:20) quedan dos **SIGABRT nuevos (13:36:52 y 13:37:10)**, ambos del **TTS**, no de memoria: al generar voz, el JNI de sherpa-onnx busca con `GetMethodID` un `invoke` de **instancia** con firma `([F)Ljava/lang/Integer;` (retorn boxed), pero el callback se pasaba como lambda Kotlin `(FloatArray) -> Int`, que D8 desazaúca en una clase sintética con `invoke` **estático** → `NoSuchMethodError` pendiente → SIGABRT en el siguiente `NewFloatArray` (stack: `OfflineTts.generateWithConfigImpl` ← `SherpaPocketEngine.generate` ← `TtsManager.launchJob$lambda$2`). Fix (BUG-026): clase normal `ChunkCallback` que implementa `Function1<FloatArray, Int?>`; verificado con `javap` que emite `public java.lang.Integer invoke(float[])` — instancia y firma exacta. 177 tests en verde, `:app:assembleDebug` OK. Pendiente de re-prueba de voz en el dispositivo.
