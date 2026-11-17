@@ -39,6 +39,23 @@ class HfApiTest {
         assertEquals(HfFileKind.MODEL, HfApi.kind(f[1]))
         assertEquals(HfFileKind.SPLIT, HfApi.kind(f.last()))
     }
+    @Test fun parseTreeFilesKeepsEveryExtension() {
+        val json = """[
+          {"type":"file","path":"README.md","size":10},
+          {"type":"directory","path":"es"},
+          {"type":"file","path":"es/encoder.onnx","size":400,"lfs":{"size":9000}},
+          {"type":"file","path":"es/tokenizer.json","size":800},
+          {"type":"file","path":"es/vocab.json","size":200},
+          {"type":"file","path":"model.gguf","size":3000}]"""
+        assertEquals(
+            listOf("README.md", "es/vocab.json", "es/tokenizer.json", "model.gguf", "es/encoder.onnx"),
+            HfApi.parseTreeFiles(json).map { it.path },
+        )
+        assertEquals(9000L, HfApi.parseTreeFiles(json).first { it.name == "encoder.onnx" }.size)
+        // El navegador LLM conserva su filtro: solo .gguf/.litertlm.
+        assertEquals(listOf("model.gguf"), HfApi.parseFiles(json).map { it.path })
+        assertTrue(HfApi.parseTreeFiles("no json").isEmpty())
+    }
     @Test fun quantAndFit() {
         assertEquals("Q4_K_M", HfApi.quant("Llama-3.2-3B-Instruct-Q4_K_M.gguf"))
         assertEquals("IQ3_XS", HfApi.quant("model.IQ3_XS.gguf"))

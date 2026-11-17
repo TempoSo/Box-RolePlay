@@ -39,7 +39,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val DEFAULT_REPO = "KevinAHM/pocket-tts-onnx"
+// BUG-013: los bundles v2 de KevinAHM necesitan insertar bos_before_voice.npy, que sherpa-onnx
+// 2.0.1 no hace (audio de ruido o cortado a 0,2 s). Este repo ya trae el BOS en encoder.onnx.
+private const val DEFAULT_REPO = "haex-space/pocket-tts-sherpa-onnx"
 
 /**
  * Descarga el modelo Pocket TTS directo de Hugging Face. Se escribe el repo (o un enlace), se leen sus
@@ -62,7 +64,8 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
     if (repo == null) { status = "Escribe un repo como usuario/nombre o pega el enlace de huggingface.co"; return }
     busy = true; status = "Leyendo $repo…"; variants = emptyList(); picked = null
     scope.launch {
-      val res = withContext(Dispatchers.IO) { runCatching { PocketHfSelect.variants(HfClient.files(repo)) } }
+      // BUG-013: el TTS necesita el árbol sin filtrar; HfClient.files() solo ve .gguf/.litertlm.
+      val res = withContext(Dispatchers.IO) { runCatching { PocketHfSelect.variants(HfClient.treeFiles(repo)) } }
       busy = false
       res.onSuccess {
         variants = it
@@ -150,7 +153,7 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
         if (busy && progress > 0f) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
         Text(
-          "Revisa la licencia del modelo en su página (el de KevinAHM es de uso no comercial).",
+          "Revisa la licencia del modelo en su página antes de usarlo.",
           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }

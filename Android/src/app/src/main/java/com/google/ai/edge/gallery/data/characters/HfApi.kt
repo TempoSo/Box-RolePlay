@@ -64,14 +64,24 @@ object HfApi {
             ?: this["size"]?.jsonPrimitive?.longOrNull ?: 0L
 
     /** Archivos .gguf y .litertlm del repositorio (las carpetas y el resto se ignoran). */
-    fun parseFiles(json: String): List<HfFile> =
+    fun parseFiles(json: String): List<HfFile> = parseTree(json, MODEL_EXTENSIONS)
+
+    /**
+     * BUG-013: árbol completo del repo, sin filtro de extensión. El modelo de voz necesita ver
+     * .onnx/.json/.model; el navegador LLM sigue usando [parseFiles] tal cual.
+     */
+    fun parseTreeFiles(json: String): List<HfFile> = parseTree(json, extensions = null)
+
+    private val MODEL_EXTENSIONS = setOf(".gguf", ".litertlm")
+
+    private fun parseTree(json: String, extensions: Set<String>?): List<HfFile> =
         runCatching {
             Json.parseToJsonElement(json).jsonArray.mapNotNull { e ->
                 val o = e.jsonObject
                 if (o["type"]?.jsonPrimitive?.contentOrNull != "file") return@mapNotNull null
                 val path = o["path"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val lower = path.lowercase()
-                if (!lower.endsWith(".gguf") && !lower.endsWith(".litertlm")) return@mapNotNull null
+                if (extensions != null && extensions.none { lower.endsWith(it) }) return@mapNotNull null
                 HfFile(path, o.sizeOf())
             }.sortedBy { it.size }
         }.getOrDefault(emptyList())

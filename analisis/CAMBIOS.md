@@ -40,6 +40,19 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-013: el diálogo de voz ve el árbol HF completo y usa un repo compatible con sherpa-onnx
+
+**Qué y por qué:** "Descargar de Hugging Face" siempre decía "No encontré ninguna carpeta…" porque el diálogo de voz pasaba por `HfClient.files()` → `HfApi.parseFiles()`, que solo deja pasar `.gguf`/`.litertlm` (filtro del navegador LLM) y descartaba todos los `.onnx`/`.json` del TTS. Se añade `HfApi.parseTreeFiles()` (mismo parseo, sin filtro de extensión) y `HfClient.treeFiles()`, y el diálogo usa esta última; `parseFiles` queda intacto para el navegador. Además el repo por defecto pasa de `KevinAHM/pocket-tts-onnx` a `haex-space/pocket-tts-sherpa-onnx`: los bundles v2 de KevinAHM exigen insertar `bos_before_voice.npy` y sherpa-onnx 2.0.1 no lo hace (ruido o audio de 0,2 s). Se retira el aviso de licencia específico de KevinAHM y se añaden tests del parseo.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/HfApi.kt` — `parseTreeFiles()` y helper `parseTree()` compartido con `parseFiles()`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/HfClient.kt` — `treeFiles(repoId)` (árbol completo).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/TtsModelDownloadDialog.kt` — usa `HfClient.treeFiles`, `DEFAULT_REPO = haex-space/pocket-tts-sherpa-onnx`, texto de licencia genérico.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/HfApiTest.kt` — test del árbol sin filtro y de que `parseFiles` sigue filtrando.
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — marca y registro.
+
+**Próxima prueba:** 3.1 (listar carpetas de `haex-space/pocket-tts-sherpa-onnx`, descargar con reanudación) y la verificación del commit `2cec7db` con `TTSBard/kyutai-en-clone-onnx`: ahora debe listar "Principal" y bajar int8/normal ignorando q4.
+
 ### 2026-11-17 — BUG-002 (4.ª ronda): tope de generación por tanda (el 379 s lo consumió un resumen desbocado)
 
 **Qué y por qué:** re-prueba 2.5 con la 3.ª ronda: el crash sigue ausente, pero la tanda 1 agotó su límite de **379 s**. Ese límite corresponde a la fórmula con las stats del turno previo (6.5 t/s prefill / 4.33 t/s gen) y encaja con: **~240 s de prefill real + ~140 s de generación sin tope**. El nativo corre la absorción con `_maxResponse = -1` (sin tope), así que un resumen desbocado (el modelo no emite EOS y sigue) puede consumir el watchdog entero solo en generación. Cambios:

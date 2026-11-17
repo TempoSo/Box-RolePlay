@@ -51,6 +51,9 @@ object HfClient {
 
     fun files(repoId: String): List<HfFile> = HfApi.parseFiles(getText(HfApi.treeUrl(repoId)))
 
+    /** BUG-013: listado completo (sin filtro de extensión) para los repositorios de Pocket TTS. */
+    fun treeFiles(repoId: String): List<HfFile> = HfApi.parseTreeFiles(getText(HfApi.treeUrl(repoId)))
+
     /**
      * Descarga [url] en [dest] (reanudando si ya hay un .part). [onProgress] recibe (bytes, total).
      * Lanza IOException si falla, si se cancela o si el tamaño final no coincide con [expectedSize].

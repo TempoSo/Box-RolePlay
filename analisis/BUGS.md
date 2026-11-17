@@ -31,7 +31,8 @@
 
 ## P1 — Correctitud del roleplay
 
-### BUG-013 · ❌ Descarga HF del modelo de voz: nunca encuentra carpetas (bloquea el Bloque 3)
+### BUG-013 · ✅ Descarga HF del modelo de voz: nunca encuentra carpetas (bloquea el Bloque 3) *(arreglado 2026-11-17)*
+- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 3.1):** `HfApi.parseTreeFiles()` devuelve el árbol sin filtro de extensión y `HfClient.treeFiles()` lo expone; el diálogo de voz usa esa vía, dejando `parseFiles` intacto para el navegador LLM. `DEFAULT_REPO` ahora es `haex-space/pocket-tts-sherpa-onnx` (BOS ya integrado, compatible con sherpa-onnx 2.0.1); nunca volver a KevinAHM como repo por defecto. Tests en `HfApiTest.kt`.
 - **Síntoma:** en "Ajustes de voz → Descargar de Hugging Face", con cualquier repo (incluido el por defecto `KevinAHM/pocket-tts-onnx`), sale siempre "No encontré ninguna carpata con un modelo Pocket TTS completo en ese repositorio" y "Descargar" queda deshabilitado (captura 17:06).
 - **Causa raíz localizada:** `HfApi.parseFiles()` (`data/characters/HfApi.kt`, línea ~74) **solo devuelve archivos `.gguf`/`.litertlm`** — es el filtro del navegador de modelos LLM. `HfClient.files()` lo usa tal cual, así que el diálogo de voz recibe vacío antes de llegar a `PocketHfSelect.variants()`. El parseo del enlace pegado funciona bien (`parseRepoId` acepta URLs completas).
 - **Fix:** añadir un parseo del árbol sin filtro de extensión (p. ej. `parseTreeFiles()` o parámetro `extensions`) para el TTS, dejando `parseFiles` como está para el navegador LLM.
