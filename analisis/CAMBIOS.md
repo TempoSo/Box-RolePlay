@@ -40,6 +40,16 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-020: etiquetas de holgura del navegador HF coloreadas por nivel
+
+**Qué y por qué:** "cabe bien", "justo" y "demasiado grande" salían todas en el mismo gris (`onSurfaceVariant`), así que la estimación de RAM del navegador HF no se distinguía de un vistazo. La etiqueta se muestra ahora aparte con color: verde/terciario para GOOD, ámbar para TIGHT y `error` para TOO_BIG. No se tocan los umbrales de `HfApi.fit()` (45 % / 65 % de la RAM).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/modelmanager/HfBrowserScreen.kt` — etiqueta de holgura separada y coloreada según `HfFit` (import de `Color`).
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — marca y registro.
+
+**Próxima prueba:** 4.1b. En el navegador HF, comprobar que un modelo pequeño sale en verde, uno justo en ámbar y uno grande en rojo (los umbrales siguen siendo los mismos).
+
 ### 2026-11-17 — BUG-022: "Exportar logs" incluye los crashes nativos del buffer del sistema
 
 **Qué y por qué:** el reporte solo traía los logs de la sesión reabierta porque `installCrashRecorder` captura excepciones Java, pero los crashes del proyecto son señales nativas (SIGSEGV en `libllama.so` / `liblitertlm_jni.so`) que matan el proceso sin pasar por ese handler. Sin tocar JNI, `buildReport` lee ahora `logcat -b crash -d`, filtra por el paquete `com.box.gallery` y adjunta las líneas vecinas (el backtrace de tombstone no repite el nombre del paquete). Ese buffer del sistema sobrevive al reinicio del proceso. `last_crash.txt` se mantiene para las excepciones Java.

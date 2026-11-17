@@ -119,7 +119,8 @@
 - **Fix:** añadir los campos de rendimiento a `EnginePreset` (hilos, batch, flash, KV, imageMaxSide) con valores por defecto (migración tolerante) y aplicarlos al cargar el preset.
 - **Archivos:** `data/characters/EnginePreset.kt`, `data/characters/EnginePerfStore.kt`, `ui/modelmanager/EnginePerfDialog.kt`.
 
-### BUG-020 · ⚠️ Navegador HF: las etiquetas de holgura se ven todas en el mismo color
+### BUG-020 · ✅ Navegador HF: las etiquetas de holgura se ven todas en el mismo color *(arreglado 2026-11-17, solo color)*
+- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 4.1b):** la etiqueta de holgura se pinta aparte con color según `HfFit` (GOOD = terciario/verde, TIGHT = ámbar, TOO_BIG = `error`) en `ui/modelmanager/HfBrowserScreen.kt`. Los umbrales de `HfApi.fit()` no se tocan; la recalibración sigue siendo opcional tras la re-prueba.
 - **Síntoma (Bloque 4, prueba 4.1):** "cabe bien" / "justo" / "demasiado grande" aparecen en el mismo gris; no se distinguen de un vistazo. Además el umbral de "justo" resulta conservador (aparece con margen real de sobra).
 - **Causa verificada:** `ui/modelmanager/HfBrowserScreen.kt:142-150` pinta el label siempre con `onSurfaceVariant`, sin depender del nivel. Umbrales en `HfApi.fit()` (`data/characters/HfApi.kt:93-98`): GOOD ≤ 45 % de la RAM, TIGHT ≤ 65 %, TOO_BIG el resto.
 - **Fix:** colorear según `HfFit` (GOOD verde/terciario, TIGHT ámbar, TOO_BIG error) y, si acaso, recalibrar umbrales con datos reales (POCO: 11 GB RAM).

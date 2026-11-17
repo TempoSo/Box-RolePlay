@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -138,17 +139,28 @@ fun HfBrowserScreen(
                         HfFileKind.SPLIT -> "partido en varios archivos"
                         else -> null
                       },
-                      when (fit) {
-                        HfFit.GOOD -> if (kind == HfFileKind.MODEL) "✔ cabe bien" else null
-                        HfFit.TIGHT -> if (kind == HfFileKind.MODEL) "justo" else null
-                        HfFit.TOO_BIG -> if (kind == HfFileKind.MODEL) "demasiado grande" else null
-                        HfFit.UNKNOWN -> null
-                      },
+                      // BUG-020: la etiqueta de holgura se pinta aparte, con color según HfFit.
                     ).joinToString(" · "),
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
+                  if (fit != HfFit.UNKNOWN && kind == HfFileKind.MODEL) {
+                    Text(
+                      when (fit) {
+                        HfFit.GOOD -> "✔ cabe bien"
+                        HfFit.TIGHT -> "justo"
+                        else -> "demasiado grande"
+                      },
+                      style = MaterialTheme.typography.bodySmall,
+                      color =
+                        when (fit) {
+                          HfFit.GOOD -> MaterialTheme.colorScheme.tertiary
+                          HfFit.TIGHT -> Color(0xFFFFB300)
+                          else -> MaterialTheme.colorScheme.error
+                        },
+                    )
+                  }
                   if (progress == null) {
                     Button(
                       enabled = kind != HfFileKind.SPLIT,
