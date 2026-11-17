@@ -40,6 +40,23 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-002 (4.ª ronda): tope de generación por tanda (el 379 s lo consumió un resumen desbocado)
+
+**Qué y por qué:** re-prueba 2.5 con la 3.ª ronda: el crash sigue ausente, pero la tanda 1 agotó su límite de **379 s**. Ese límite corresponde a la fórmula con las stats del turno previo (6.5 t/s prefill / 4.33 t/s gen) y encaja con: **~240 s de prefill real + ~140 s de generación sin tope**. El nativo corre la absorción con `_maxResponse = -1` (sin tope), así que un resumen desbocado (el modelo no emite EOS y sigue) puede consumir el watchdog entero solo en generación. Cambios:
+
+1. **Tope de generación por tanda** (`MAX_RESPONSE_TOKENS = 400`): `MemoryAbsorber` envía `extraContext["max_response_tokens"]` **solo para llama.cpp** (comparación de identidad con `LlamaCppModelHelper`, para no arriesgar un kwarg desconocido en litertlm); `LlamaCppModelHelper.runInference` lo aplica vía `LlamaCppEngine.setMaxResponse` y lo **restaura** al tope del chat (`InferenceParams.maxResponse`, normalmente -1) en complete/cancel/error. El nativo corta limpio a los 400 tokens generados (`completionLoop` → EOG), y `MemoryAbsorbPrompt.clean` ya trunca el texto a 1200 car.
+2. **Timeout recalibrado** (`tandaTimeoutMs`): ~3.0 car./token (antes 3.5), margen ×2 (antes ×1.5, el dispositivo se ralentiza por térmica en tandas largas), presupuesto de generación = 400 tokens (el tope real). Suelo **8 min**, techo 30 min. Con las stats del dispositivo: ~10 min por tanda.
+3. Observación (no acción): tombstone viejo de las 07:18 en `liblitertlm_jni.so` (hilo `callback_thread`, null deref, 6 frames) en LiteRT — crash nativo del runtime de LiteRT, a diagnosticar aparte si reaparece.
+4. Tests actualizados a la fórmula nueva (6 en verde). Suite completa: 176 tests, 0 fallos. `:app:assembleDebug` OK.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryAbsorber.kt` — `MAX_RESPONSE_TOKENS`, `extraContext` condicionado a llama.cpp, fórmula del timeout recalibrada, KDoc.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/runtime/LlamaCppModelHelper.kt` — lectura de `max_response_tokens` en `runInference`, aplicar tope y restaurarlo en los tres finales de la generación.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — `setMaxResponse` / `restoreMaxResponse`.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/ui/memory/MemoryAbsorberTest.kt` — tests de la fórmula nueva.
+
+**Próxima prueba:** 2.5 GGUF. Esperado: tanda 1 ~4-5 min (prefill ~240 s + resumen ≤400 tok), tandas siguientes menos. Si alguna tanda se corta a 400 tokens, el resumen queda truncado pero útil (el texto se limpia a 1200 car.). Solo debería volver a salir "tardó demasiado" si hay un cuelgue real (o térmica extrema; el mensaje indica tanda y límite).
+
 ### 2026-11-17 — BUG-002 (3.ª ronda): timeout dinámico por tanda + reutilización de KV entre tandas (Gemma 4)
 
 **Qué y por qué:** el crash de 2.5 GGUF desapareció con la 2.ª ronda, pero el watchdog fijo de **180 s** por tanda saltaba siempre: el log del dispositivo muestra prefill a **6.5 t/s** y una tanda de ~1400 tokens (preámbulo archivista + notas) necesita ~215 s **solo de prefill**, más la generación — "El modelo tardó demasiado" sin que hubiera colga real. Además, el `resetChat()` nativo entre tandas hacía `llama_memory_clear`: la KV se tiraba en cada tanda y el preámbulo archivista (idéntico en todas) se re-prefilleaba entero, multiplicando el tiempo. Cambios:

@@ -331,6 +331,26 @@ class LlamaCppEngine {
         }
     }
 
+    /**
+     * BUG-002 (4.ª ronda): tope de tokens generados para las inferencias auxiliares (absorción).
+     * Sin tope, un resumen desbocado (el modelo que no emite EOS) puede consumir el watchdog
+     * entero solo en generación. Debe restaurarse con [restoreMaxResponse] al acabar la tanda.
+     */
+    fun setMaxResponse(tokens: Int) {
+        stateLock.withLock {
+            if (!isModelLoaded.get() || isGenerating) return
+            instance.setMaxResponse(tokens)
+        }
+    }
+
+    /** Devuelve el tope de generación al que tenía el chat (EngineOptions.maxResponse). */
+    fun restoreMaxResponse() {
+        stateLock.withLock {
+            if (!isModelLoaded.get() || isGenerating) return
+            instance.setMaxResponse(lastLoadParams?.engine?.maxResponse ?: -1)
+        }
+    }
+
     fun generateResponse(
         query: String,
         onToken: (String) -> Unit,

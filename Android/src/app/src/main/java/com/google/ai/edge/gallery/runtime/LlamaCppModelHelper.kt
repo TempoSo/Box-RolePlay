@@ -250,6 +250,16 @@ object LlamaCppModelHelper : LlmModelHelper {
         engine.setThinking(enableThinking)
         Log.i(TAG, "GGUF thinking=${enableThinking} (model=${model.name})")
 
+        // BUG-002 (4.ª ronda): las inferencias auxiliares (absorción) viajan con un tope de
+        // tokens generados (extraContext "max_response_tokens") para acotar su duración: sin
+        // tope, un resumen desbocado sin EOS consume el watchdog entero. Se restaura al tope
+        // del chat en cuanto la generación termina, se cancela o falla.
+        val maxResponse = extraContext?.get("max_response_tokens")?.toIntOrNull()?.coerceAtLeast(1)
+        if (maxResponse != null) {
+            engine.setMaxResponse(maxResponse)
+            Log.i(TAG, "GGUF maxResponse auxiliar=${maxResponse} tok (model=${model.name})")
+        }
+
         // Gemma 4: separa el razonamiento en voz alta de la respuesta (ver ThinkingSplitter).
         val splitter =
             if (com.google.ai.edge.gallery.data.characters.ThinkingSplitter.appliesTo(model.name))
@@ -269,15 +279,18 @@ object LlamaCppModelHelper : LlmModelHelper {
                 else emit(splitter.feed(partialResponse))
             },
             onComplete = { result ->
+                if (maxResponse != null) engine.restoreMaxResponse()
                 splitter?.let { emit(it.finish()) }
                 // Send the final delta (empty string) with done=true
                 resultListener("", true, null)
             },
             onCancelled = {
+                if (maxResponse != null) engine.restoreMaxResponse()
                 splitter?.let { emit(it.finish()) }
                 resultListener("", true, null)
             },
             onError = { e ->
+                if (maxResponse != null) engine.restoreMaxResponse()
                 Log.e(TAG, "Inference error", e)
                 onError(e.message ?: "Inference error")
             }

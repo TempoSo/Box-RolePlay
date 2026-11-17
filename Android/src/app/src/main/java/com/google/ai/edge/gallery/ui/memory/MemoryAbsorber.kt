@@ -32,6 +32,11 @@ import kotlinx.coroutines.withTimeoutOrNull
  * sino que se estima con la velocidad real medida del dispositivo (LastEnginePerf). Y entre
  * tandas Gemma 4 conserva la KV (auxTandaBoundary): el preámbulo archivista, idéntico en todas
  * las tandas, solo se prefill una vez.
+ *
+ * BUG-002 (4.ª ronda): la re-prueba (379 s) reveló que el tiempo real lo disparaba una
+ * GENERACIÓN desbocada (el resumen sin EOS pasaba de ~500 tokens con el tope nativo a -1).
+ * Ahora cada tanda va con tope de [MAX_RESPONSE_TOKENS] tokens (setMaxResponse nativo,
+ * restaurado al acabar) y el timeout da a la generación su presupuesto real.
  */
 class MemoryAbsorber(
     private val context: Context,
@@ -96,6 +101,12 @@ class MemoryAbsorber(
                     )
                     val out = StringBuilder()
                     val finished = CompletableDeferred<String?>()
+                    // BUG-002 (4.ª ronda): tope de 400 tokens generados en llama.cpp. Sin tope,
+                    // un resumen desbocado (sin EOS) consumió el watchdog entero de la tanda 1
+                    // en la re-prueba (379 s: ~240 s de prefill + ~140 s de generación sin fin).
+                    // En LiteRT no se envía: litertlm podría rechazar el kwarg desconocido.
+                    val esGguf = model.runtimeHelper ==
+                        com.google.ai.edge.gallery.runtime.LlamaCppModelHelper
                     model.runtimeHelper.runInference(
                         model = model,
                         input = prompt,
@@ -106,6 +117,8 @@ class MemoryAbsorber(
                         cleanUpListener = { finished.complete(null) },
                         onError = { msg -> finished.complete(msg) },
                         coroutineScope = scope,
+                        extraContext =
+                            if (esGguf) mapOf("max_response_tokens" to "$MAX_RESPONSE_TOKENS") else null,
                     )
                     val error = withTimeoutOrNull(timeoutMs) { finished.await() }
                         ?: run {
@@ -132,20 +145,25 @@ class MemoryAbsorber(
     }
 
     companion object {
+        /** Tope de tokens generados por tanda: acota la generación desbocada (sin EOS). */
+        const val MAX_RESPONSE_TOKENS = 400
+
         /**
          * Timeout por tanda según la velocidad real del dispositivo (estadísticas de los últimos
-         * turnos del motor). Estimación: ~3.5 car./token de media; prefill a la velocidad medida
-         * (x1.5 de margen) más ~300 tokens de resumen a la velocidad de generación medida (x1.5).
-         * Sin estadísticas (primera tanda tras abrir la app) usa supuestos conservadores.
-         * Suelo 4 min, techo 30 min: es un límite anti-cuelgue, no un presupuesto de tiempo.
+         * turnos del motor). Estimación: ~3.0 car./token (conservador); prefill a la velocidad
+         * medida y ~400 tokens de resumen (el tope real de [MAX_RESPONSE_TOKENS]) a la velocidad
+         * de generación medida, ambos ×2 de margen (el dispositivo se ralentiza por térmica en
+         * tandas largas). Sin estadísticas (primera tanda tras abrir la app) usa supuestos
+         * conservadores. Suelo 8 min, techo 30 min: es un límite anti-cuelgue, no un presupuesto
+         * de tiempo — la 3.ª ronda (límite 379 s en la re-prueba) se quedó corto.
          */
         fun tandaTimeoutMs(promptChars: Int, stats: com.jegly.offlineLLM.smollm.SmolLM.PerfStats?): Long {
             val promptTps = stats?.promptTokensPerSecond?.takeIf { it > 0.5f } ?: 5f
             val genTps = stats?.generationTokensPerSecond?.takeIf { it > 0.5f } ?: 3f
-            val tokens = (promptChars / 3.5f).coerceAtLeast(1f)
-            val prefillMs = tokens / promptTps * 1000f * 1.5f
-            val genMs = 300f / genTps * 1000f * 1.5f
-            return (prefillMs + genMs).toLong().coerceIn(240_000L, 1_800_000L)
+            val tokens = (promptChars / 3.0f).coerceAtLeast(1f)
+            val prefillMs = tokens / promptTps * 1000f * 2f
+            val genMs = MAX_RESPONSE_TOKENS / genTps * 1000f * 2f
+            return (prefillMs + genMs).toLong().coerceIn(480_000L, 1_800_000L)
         }
     }
 }
