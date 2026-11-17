@@ -40,6 +40,23 @@
 
 ## 📝 Registro
 
+### 2026-11-17 — BUG-002 (3.ª ronda): timeout dinámico por tanda + reutilización de KV entre tandas (Gemma 4)
+
+**Qué y por qué:** el crash de 2.5 GGUF desapareció con la 2.ª ronda, pero el watchdog fijo de **180 s** por tanda saltaba siempre: el log del dispositivo muestra prefill a **6.5 t/s** y una tanda de ~1400 tokens (preámbulo archivista + notas) necesita ~215 s **solo de prefill**, más la generación — "El modelo tardó demasiado" sin que hubiera colga real. Además, el `resetChat()` nativo entre tandas hacía `llama_memory_clear`: la KV se tiraba en cada tanda y el preámbulo archivista (idéntico en todas) se re-prefilleaba entero, multiplicando el tiempo. Cambios:
+
+1. **Timeout dinámico por tanda** (`MemoryAbsorber.tandaTimeoutMs`, en el companion, con tests): estima el prefill con la velocidad real medida del dispositivo (`LastEnginePerf.stats`: tok/s de prompt y de generación de los últimos turnos, incluidas las tandas ya hechas) ×1.5 de margen + ~300 tokens de resumen a la velocidad de generación medida ×1.5. Sin estadísticas usa supuestos conservadores (5 t/s / 3 t/s). Suelo 4 min, techo 30 min. El mensaje de error ahora indica la tanda y el límite aplicado. Log `MemoryAbsorber` por tanda con el watchdog elegido.
+2. **Límite ligero entre tandas** (solo Kotlin, sin tocar nativo): nueva vía `auxTandaBoundary` en `LlmModelHelper` (default = `prepareForAuxInference`, mismo comportamiento en LiteRT) y en `LlamaCppModelHelper` (delega en `LlamaCppEngine.prepareForAuxTanda`). En Gemma 4 (ruta de marcadores, donde `GgufChatTemplate` construye el prompt en Kotlin) ese reset **no tira la KV**: limpia `lastHistory`/`lastSystemPrompt` y resetea el sampler (`setSampler` recrea la cadena y olvida penalizaciones); el nativo ya reutiliza el prefijo común (`LLMInference::_prepareDecode` + `ctxwin::reusablePrefix`) y trunca los tokens generados con `seq_rm`. Resultado: el preámbulo se prefill UNA vez y cada tanda solo procesa sus notas. En modelos GGUF no Gemma 4 sigue `resetChat` completo (su prompt se forma con el historial nativo y debe seguir independiente). El reset a fondo (`prepareForAuxInference` → `seedConversation("")`) queda **solo antes de la primera tanda**.
+3. Tests: 6 nuevos en `MemoryAbsorberTest` (conservadores sin stats, dispositivo lento >180 s, suelo 4 min, stats degeneradas NaN, techo 30 min). Suite completa: 176 tests en verde. `:app:assembleDebug` OK.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryAbsorber.kt` — timeout dinámico por tanda (`tandaTimeoutMs`), reset a fondo solo en la primera tanda + `auxTandaBoundary` entre tandas, logs y mensaje de error con tanda/límite.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/runtime/LlmModelHelper.kt` — nueva vía `auxTandaBoundary(model)` (default = `prepareForAuxInference`).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/runtime/LlamaCppModelHelper.kt` — override `auxTandaBoundary` → `LlamaCppEngine.prepareForAuxTanda`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — `prepareForAuxTanda`: reset ligero que conserva la KV en Gemma 4; `resetChat` completo en el resto.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/ui/memory/MemoryAbsorberTest.kt` (nuevo) — 6 tests de `tandaTimeoutMs`.
+
+**Próxima prueba:** re-probar 2.5 "Absorber clústeres" en GGUF: ya no debe salir "El modelo tardó demasiado"; la primera tanda puede tardar ~4-5 min (prefill completo) y las siguientes menos (KV reutilizada). El log `AGLlamaPerf` debe mostrar `reusablePrefix` funcionando (tandas 2+ con prefill corto) y `MemoryAbsorber` el watchdog por tanda.
+
 ### 2026-11-17 — BUG-002 (2.ª ronda): sin close/reload por tanda + prompt archivista estilo Layla
 
 **Qué y por qué:** 2.5 seguía crasheando en GGUF (`SIGSEGV` en `llama_vocab::impl::tokenize` ← `common_tokenize` ← `LLMInference::startCompletion`, ahora por el branch de marcadores y **sin** pasar por `_applyContextWindow`). Descartado el contenido como detonante (las notas automáticas ya van sin etiquetas por `AutoMemory.clean` y la tanda es más corta que un turno normal), la única pieza exclusiva del flujo de absorción era la secuencia **reset→inferencia por tanda**: `resetConversation` en GGUF cierra y reabre los pesos de forma **asíncrona** y el Absorber solo esperaba 300 ms; además `isModelLoaded` seguía a `true` durante el cierre/recarga, así que la tanda podía arrancar contra un motor a medio cerrar (ventana de use-after-free → el mismo tipo de SIGSEGV en el tokenizador que BUG-001). Cambios:

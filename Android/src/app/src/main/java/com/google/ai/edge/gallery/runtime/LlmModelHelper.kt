@@ -90,6 +90,16 @@ interface LlmModelHelper {
   }
 
   /**
+   * BUG-002 (3.ª ronda): límite entre dos tandas consecutivas de absorción. Por defecto usa el
+   * mismo reset de [prepareForAuxInference]; cada runtime puede dar una vía aún más ligera
+   * (en llama.cpp Gemma 4 conserva la KV y solo limpia historial y sampler, para que la tanda
+   * siguiente reutilice el prefijo común del prompt archivista y no lo re-prefillee entero).
+   */
+  fun auxTandaBoundary(model: Model) {
+    prepareForAuxInference(model = model)
+  }
+
+  /**
    * Cleans up resources occupied by the model.
    *
    * @param model the model whose resources should be cleaned up.

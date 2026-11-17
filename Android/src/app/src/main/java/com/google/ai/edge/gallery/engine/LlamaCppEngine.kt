@@ -301,6 +301,36 @@ class LlamaCppEngine {
         }
     }
 
+    /**
+     * BUG-002 (3.ª ronda): límite entre tandas de absorción. En la ruta de marcadores (Gemma 4)
+     * NO tira la KV: el nativo (LLMInference::_prepareDecode + reusablePrefix) reutiliza el
+     * prefijo común —el preámbulo archivista es idéntico en todas las tandas— y solo prefill las
+     * notas nuevas. resetChat() haría llama_memory_clear y obligaría a re-prefill ~1400 tokens
+     * por tanda (con prefill ~6.5 t/s son más de 180 s por tanda: el watchdog saltaba siempre).
+     * En la ruta normal (prompt formado con el historial nativo) sí hace falta vaciar el chat.
+     */
+    fun prepareForAuxTanda() {
+        stateLock.withLock {
+            if (!isModelLoaded.get() || isGenerating) {
+                Log.w("AGLlamaPerf", "prepareForAuxTanda ignorado: modelo ocupado o no cargado")
+                return
+            }
+            lastHistory = emptyList()
+            lastSystemPrompt = ""
+            if (!useGemma4Template) {
+                // El prompt se forma con el historial nativo: hay que vaciarlo para que cada
+                // tanda sea independiente (y con él se va la KV, como hasta ahora).
+                instance.resetChat()
+                return
+            }
+            // El historial nativo acumula el resumen de cada tanda, pero en la ruta de marcadores
+            // no participa en la tokenización (el prompt lo construye GgufChatTemplate en Kotlin);
+            // prepareForAuxInference —antes de la primera tanda— lo limpia. Solo queda resetear el
+            // sampler: setSampler recrea la cadena y olvida las penalizaciones de la tanda previa.
+            samplerSettings?.let { instance.setSampler(it.toFloatArray()) }
+        }
+    }
+
     fun generateResponse(
         query: String,
         onToken: (String) -> Unit,

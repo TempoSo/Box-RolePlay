@@ -158,6 +158,15 @@ object LlamaCppModelHelper : LlmModelHelper {
         engines[model.name]?.seedConversation("", emptyList())
     }
 
+    /**
+     * BUG-002 (3.ª ronda): entre tandas de absorción. Gemma 4 (ruta de marcadores) usa el reset
+     * ligero que conserva la KV (prepareForAuxTanda); el resto de modelos GGUF mantiene el
+     * comportamiento anterior (resetChat completo, cada tanda independiente).
+     */
+    override fun auxTandaBoundary(model: Model) {
+        engines[model.name]?.prepareForAuxTanda()
+    }
+
     override fun resetConversation(
         model: Model,
         supportImage: Boolean,
