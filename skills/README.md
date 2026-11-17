@@ -1,5 +1,5 @@
 <!-- omit from toc -->
-# AI Edge Gallery Agent Skills
+# Box RolePlay — Agent Skills
 
 <!-- omit from toc -->
 ## Table of contents
@@ -16,7 +16,7 @@
   - [Returning a Webview](#returning-a-webview)
   - [Passing Secrets](#passing-secrets)
 - [Native Skills](#native-skills)
-- [How to Add Skills in the Gallery App](#how-to-add-skills-in-the-gallery-app)
+- [How to Add Skills in the App](#how-to-add-skills-in-the-app)
   - [Add from Community-Featured Skills](#add-from-community-featured-skills)
   - [Add from a URL](#add-from-a-url)
   - [Import from a Local File](#import-from-a-local-file)
@@ -29,7 +29,7 @@
 ## Introduction
 
 An Agent Skill is a modular set of capabilities that extends the functional reach of a
-Large Language Model (LLM) within the AI Edge Gallery app. By giving the LLM new
+Large Language Model (LLM) within the Box RolePlay app. By giving the LLM new
 capabilities and domain-specific knowledge, skills reduce the need for
 repetitive prompt instructions, and eliminate the barriers for LLMs to discover
 and integrate new tools dynamically.
@@ -47,7 +47,7 @@ Python scripts or CLI tools, on-device LLMs operate within a sandboxed mobile
 environment. They cannot easily execute arbitrary system commands or local
 scripts due to security and resource constraints.
 
-To overcome this, AI Edge Gallery adapts by focusing on two primary execution
+To overcome this, Box RolePlay adapts by focusing on two primary execution
 paths:
 
 1. **JavaScript Skills**: Running logic inside a lightweight, hidden webview,
@@ -111,7 +111,7 @@ loaded into the model's context to guide its behavior.
 ## JavaScript (JS) Skills
 
 Because Python is often unsuitable for on-device LLMs within mobile
-applications, the AI Edge Gallery uses JavaScript-based scripts housed in HTML
+applications, the app uses JavaScript-based scripts housed in HTML
 files to execute custom logic.
 
 ### How JS Skills Work
@@ -291,7 +291,7 @@ my-interactive-skill/
 ### Passing Secrets
 
 If your JS script requires an API key or token, do not pass it through the LLM
-prompt. Instead, the AI Edge Gallery app provides a secure mechanism: it will
+prompt. Instead, the app provides a secure mechanism: it will
 display a native dialog to the user to input the required secret when the JS
 skill is called, which is then passed directly to your script.
 
@@ -339,7 +339,7 @@ window['ai_edge_gallery_get_result'] = async (data, secret) => {
 
 ## Native Skills
 
-Native skills map instructions to predefined tools in the Gallery app, such as
+Native skills map instructions to predefined tools in the app, such as
 the `run_intent` tool. This allows the LLM to interact with the Android device
 natively to perform actions like sending emails or text messages.
 
@@ -382,7 +382,7 @@ Call the `run_intent` tool with the following exact parameters:
 > to see how existing intents are mapped and to learn how to register new custom
 > intents for the LLM to invoke.
 
-## How to Add Skills in the Gallery App
+## How to Add Skills in the App
 
 There are three ways to add a skill to the app:
 
@@ -419,7 +419,7 @@ to the app by using the skill url.
 >
 > A tip if you want to use GitHub Pages to serve your skills:
 > By default, GitHub Pages uses Jekyll to process files, which can automatically
-> convert .md files into .html. Because the AI Edge Gallery app requires access
+> convert .md files into .html. Because the app requires access
 > to the raw SKILL.md file to parse instructions, you must disable this
 > behavior:
 >
@@ -456,7 +456,7 @@ You can load skills directly from your Android device's file system.
 
 We've created a dedicated **GitHub Discussions** category for users to showcase
 their skills. Follow these steps to share your custom skills with the global
-AI Edge Gallery community:
+community (via the upstream Google AI Edge Gallery repository):
 
 1. Visit [Skills Discussion Category](https://github.com/google-ai-edge/gallery/discussions/categories/skills)
 

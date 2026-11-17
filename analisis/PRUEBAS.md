@@ -49,9 +49,9 @@ Marca cada punto y pásame el resultado (✅ / ❌ + captura o log). Filtra logc
 - [ ] Anota: segundos hasta que suena la primera frase, y si el español suena aceptable con tus archivos del modelo.
 
 ## Motor – prueba de velocidad
-- [ ] Con un GGUF cargado: Rendimiento del motor > "Probar velocidad del modelo cargado". Anota PP y TG (t/s).
-- [ ] Cambia hilos (ej. 4 → 5 → 6), vuelve a cargar y repite; dime cuál da mejor TG.
-- [ ] Prueba flash attention encendido/apagado y KV f16 vs q8. Después de la prueba, el chat sigue respondiendo normal.
+> **Actualización:** el botón "Probar velocidad del modelo cargado" se quitó de Rendimiento del motor; el bench sintético pasará a una app aparte dedicada al benchmark. Para comparar ajustes ahora: cambia un ajuste, recarga el modelo y compara el contador del chat (⚡ gen/prompt t/s).
+- [x] Con un GGUF cargado: carga 11 s, primer token 6 s. KV q8 funcionando; un crash al saturar RAM combinando cambios (con cambios menores, todo normal).
+- [x] Comparar hilos/batch/flash attention/KV con el contador del chat: velocidades variables, queda en ensayo y error.
 
 ## Copia de seguridad de personajes
 - [ ] Ajustes de Roleplay > "Copia de seguridad: exportar personajes (.zip)": se abre el menú de compartir con un zip (guárdalo en Drive o en archivos).
