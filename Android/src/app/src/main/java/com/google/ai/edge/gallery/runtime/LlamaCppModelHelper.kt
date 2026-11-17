@@ -133,6 +133,10 @@ object LlamaCppModelHelper : LlmModelHelper {
         return e.benchModel(pp = pp, tg = 48)
     }
 
+    /** Nombre del primer modelo GGUF cargado en esta sesión (null si no hay ninguno). */
+    fun loadedGgufModelName(): String? =
+        engines.entries.firstOrNull { it.value.isModelLoaded.get() }?.key
+
     /** Tamaño de contexto con el que se cargó el modelo (tokens), si está cargado. */
     fun contextSizeOf(model: Model): Int? = engines[model.name]?.lastLoadParams?.contextSize?.toInt()
 

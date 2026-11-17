@@ -74,7 +74,7 @@ fun BoxSettingsScreen(
       BoxActionCard(
         icon = Icons.Rounded.Speed,
         title = "Rendimiento del motor",
-        subtitle = "Hilos, batch, flash attention, visión y prueba de velocidad",
+        subtitle = "Hilos, batch, flash attention y visión",
         onClick = { showPerf = true },
       )
 

@@ -15,13 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.ui.home.BoxActionCard
 import com.google.ai.edge.gallery.ui.home.BoxScaffold
-import com.google.ai.edge.gallery.ui.roleplay.EnginePerfDialog
 
 /** App de pruebas de modelos: benchmark completo de Box y prueba rápida del motor GGUF. */
 @Composable
 fun BenchmarkAppScreen(onBack: () -> Unit, onOpenModelBenchmark: () -> Unit) {
-    var showPerf by remember { mutableStateOf(false) }
-    if (showPerf) EnginePerfDialog(onDismiss = { showPerf = false })
+    var showBench by remember { mutableStateOf(false) }
+    if (showBench) QuickBenchDialog(onDismiss = { showBench = false })
     BoxScaffold(title = "Benchmark de modelos", subtitle = "Mide la velocidad de tus modelos", onBack = onBack) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
             BoxActionCard(
@@ -33,8 +32,8 @@ fun BenchmarkAppScreen(onBack: () -> Unit, onOpenModelBenchmark: () -> Unit) {
             BoxActionCard(
                 icon = Icons.Rounded.Timer,
                 title = "Prueba rápida del motor GGUF",
-                subtitle = "Con un GGUF cargado: tokens/s de lectura y generación, y ajustes de hilos y batch",
-                onClick = { showPerf = true },
+                subtitle = "Con un GGUF cargado: tokens/s de lectura y generación (ajustes en Configuración → Rendimiento del motor)",
+                onClick = { showBench = true },
             )
         }
     }
