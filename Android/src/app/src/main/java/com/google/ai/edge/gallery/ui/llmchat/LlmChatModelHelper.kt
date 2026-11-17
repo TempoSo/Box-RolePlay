@@ -57,6 +57,14 @@ object LlmChatModelHelper : LlmModelHelper {
   // Indexed by model name.
   private val cleanUpListeners: MutableMap<String, CleanUpListener> = mutableMapOf()
 
+  /**
+   * BUG-021: generación en curso por modelo; se completa en onDone/onError del callback nativo.
+   * Al destruir el motor se cancela y se espera (acotado) antes de cerrar conversación y motor.
+   */
+  private val pendingGenerations:
+    MutableMap<String, java.util.concurrent.CompletableFuture<Unit>> =
+    java.util.concurrent.ConcurrentHashMap()
+
   @OptIn(ExperimentalApi::class) // opt-in experimental flags
   override fun initialize(
     context: Context,
@@ -358,6 +366,17 @@ object LlmChatModelHelper : LlmModelHelper {
 
     val instance = model.instance as LlmModelInstance
 
+    // BUG-021: si hay una generación en marcha, cancelarla y esperar (acotado) a que el hilo
+    // nativo termine antes de cerrar la conversación y el motor; si se cierra con un turno
+    // en marcha, la rotación/limpieza acaba en SIGSEGV en liblitertlm_jni.so.
+    val pending = pendingGenerations.remove(model.name)
+    try {
+      instance.conversation.cancelProcess()
+      pending?.get(5, java.util.concurrent.TimeUnit.SECONDS)
+    } catch (e: Exception) {
+      Log.w(TAG, "No se pudo esperar la generación al limpiar: ${e.message}")
+    }
+
     try {
       instance.conversation.close()
     } catch (e: Exception) {
@@ -409,6 +428,10 @@ object LlmChatModelHelper : LlmModelHelper {
 
     val conversation = instance.conversation
 
+    // BUG-021: registrar la generación para poder cancelarla y esperarla al limpiar el motor.
+    val pending = java.util.concurrent.CompletableFuture<Unit>()
+    pendingGenerations[model.name] = pending
+
     val contents = mutableListOf<Content>()
     for (image in images) {
       contents.add(Content.ImageBytes(image.toPngByteArray()))
@@ -429,10 +452,12 @@ object LlmChatModelHelper : LlmModelHelper {
         }
 
         override fun onDone() {
+          pending.complete(Unit)
           resultListener("", true, null)
         }
 
         override fun onError(throwable: Throwable) {
+          pending.complete(Unit)
           if (throwable is CancellationException) {
             Log.i(TAG, "The inference is cancelled.")
             resultListener("", true, null)
