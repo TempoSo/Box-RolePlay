@@ -87,7 +87,8 @@ class MemoryViewModel @Inject constructor(
       // BUG-002: la absorción va por tandas para que el prompt no desborde el contexto del
       // modelo (crash GGUF al deslizar la ventana / timeout LiteRT). Cada tanda produce un
       // recuerdo; si una tanda no rinde, sus notas no se borran.
-      val tandas = MemoryAbsorbPrompt.tandas(notes, sizeOf = { it.text.length })
+      // El almacén devuelve las notas de la más nueva a la más vieja: tandasFromNewestFirst las ordena.
+      val tandas = MemoryAbsorbPrompt.tandasFromNewestFirst(notes, sizeOf = { it.text.length })
       // Contexto del personaje por campos, como el "ingest" de Layla (archivista).
       val prompts = tandas.map { tanda ->
         MemoryAbsorbPrompt.build(

@@ -146,4 +146,17 @@ object MemoryAbsorbPrompt {
         if (current.isNotEmpty()) out.add(current)
         return if (out.size > maxTandas) out.takeLast(maxTandas) else out
     }
+
+    /**
+     * Igual que [tandas], pero para la lista tal como la devuelve `RawMemoryStore.forCharacter`:
+     * de la nota MÁS NUEVA a la más vieja. Se le da la vuelta antes de repartir, de modo que cada
+     * tanda va en orden cronológico y, si hay demasiadas, se descartan las más viejas (antes se
+     * pasaba la lista sin invertir y se perdían las más nuevas).
+     */
+    inline fun <T> tandasFromNewestFirst(
+        newestFirst: List<T>,
+        maxChars: Int = MAX_TANDA_CHARS,
+        maxTandas: Int = MAX_TANDAS,
+        sizeOf: (T) -> Int,
+    ): List<List<T>> = tandas(newestFirst.asReversed(), maxChars, maxTandas, sizeOf)
 }

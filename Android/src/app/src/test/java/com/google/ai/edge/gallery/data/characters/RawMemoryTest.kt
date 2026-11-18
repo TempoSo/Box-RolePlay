@@ -79,6 +79,20 @@ class RawMemoryTest {
         assertEquals("nota 12", tandas.last().last())
     }
 
+    @Test fun tandasFromNewestFirstReversesToChronologicalOrder() {
+        // La store devuelve la más nueva primero: "nota 12" ... "nota 1".
+        val nuevaPrimero = (12 downTo 1).map { "nota $it" }
+        val tandas = MemoryAbsorbPrompt.tandasFromNewestFirst(
+            nuevaPrimero, maxChars = 10, maxTandas = 5, sizeOf = { it.length },
+        )
+        assertEquals(5, tandas.size)
+        // Se descartan las MÁS VIEJAS (1-7), no las nuevas, y cada tanda va en orden cronológico.
+        assertEquals("nota 8", tandas.first().first())
+        assertEquals("nota 12", tandas.last().last())
+        val aplanado = tandas.flatten()
+        assertEquals((8..12).map { "nota $it" }, aplanado)
+    }
+
     @Test fun singleNoteGoesInOneTanda() {
         val tandas = MemoryAbsorbPrompt.tandas(listOf("solo"), sizeOf = { it.length })
         assertEquals(listOf(listOf("solo")), tandas)

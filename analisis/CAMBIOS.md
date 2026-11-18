@@ -40,6 +40,20 @@
 
 ## 📝 Registro
 
+### 2026-11-18 — Revisión de código: absorber respeta el orden cronológico de las notas (I-4, BUG-002)
+
+**Qué y por qué:** revisión de código de la Tanda 1+2 (hallazgo I-4, BUG-002). `RawMemoryStore.forCharacter()` devuelve las notas de la **más nueva a la más vieja**, y el código anterior a la Tanda 1 le daba la vuelta (`notes.asReversed()`) antes de armar el prompt de absorción. Al repartir en tandas, `MemoryScreen.absorb` pasaba la lista **sin invertir** a `MemoryAbsorbPrompt.tandas`, que asume orden cronológico: dentro de cada tanda las notas salían al revés y, con más de 8 tandas, `takeLast` descartaba las más NUEVAS en vez de las más viejas. Los tests no lo veían porque alimentaban la función ya en orden cronológico.
+
+Se añade `MemoryAbsorbPrompt.tandasFromNewestFirst()` (da la vuelta a la lista y delega en `tandas`) y `MemoryScreen` lo usa. Test nuevo con la lista en el orden real de la store (12 notas, 5 tandas máx.): se conservan las notas 8-12 y cada tanda va en orden cronológico.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/RawMemory.kt` — `tandasFromNewestFirst()`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryScreen.kt` — `absorb()` usa `tandasFromNewestFirst`.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/RawMemoryTest.kt` — test del orden real de la store (10 tests pasan).
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Pendiente de re-prueba en teléfono:** Memoria → "Absorber clústeres" con notas de distintas fechas: el recuerdo debe seguir el orden de los hechos.
+
 ### 2026-11-18 — Revisión de código: SmolLM.close() atómico (I-2, BUG-030)
 
 **Qué y por qué:** revisión de código de la Tanda 1+2 (hallazgo I-2). `SmolLM.close()` no era atómico: dos hilos podían leer `nativePtr != 0` a la vez y llamar dos veces al `close` nativo sobre el mismo `LLMInference`, lo que produce `Scudo ERROR: invalid chunk state` (BUG-030). Los dos candidatos a solaparse eran `LlamaCppEngine.unloadModel()` y `LlamaCppEngine.resetConversation()`, que capturan la misma instancia y la cierran en corrutinas distintas. Ahora `close()` es `@Synchronized` e idempotente, y pone `nativePtr = 0` **antes** de llamar al nativo (así cualquier otro método que llegue en ese instante falla limpio en `verifyHandle()` en vez de usar un puntero liberado). `nativePtr` pasa a `@Volatile`.
