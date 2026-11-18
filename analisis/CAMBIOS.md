@@ -40,6 +40,16 @@
 
 ## 📝 Registro
 
+### 2026-11-18 — Revisión de código: SmolLM.close() atómico (I-2, BUG-030)
+
+**Qué y por qué:** revisión de código de la Tanda 1+2 (hallazgo I-2). `SmolLM.close()` no era atómico: dos hilos podían leer `nativePtr != 0` a la vez y llamar dos veces al `close` nativo sobre el mismo `LLMInference`, lo que produce `Scudo ERROR: invalid chunk state` (BUG-030). Los dos candidatos a solaparse eran `LlamaCppEngine.unloadModel()` y `LlamaCppEngine.resetConversation()`, que capturan la misma instancia y la cierran en corrutinas distintas. Ahora `close()` es `@Synchronized` e idempotente, y pone `nativePtr = 0` **antes** de llamar al nativo (así cualquier otro método que llegue en ese instante falla limpio en `verifyHandle()` en vez de usar un puntero liberado). `nativePtr` pasa a `@Volatile`.
+
+**Archivos:**
+- `Android/src/smollm/src/main/java/com/jegly/offlineLLM/smollm/SmolLM.kt` — `close()` atómico e idempotente; `nativePtr` volátil.
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Pendiente de re-prueba en teléfono:** cambiar/descargar modelo GGUF varias veces seguidas (BUG-030 no debe reaparecer).
+
 ### 2026-11-17 — Evidencia de las capturas: causa probable de BUG-029 (`###` nativo) y BUG-028 acotado a la etiqueta de holgura
 
 **Qué y por qué:** el humano reenvía los dos logs (15:26 y 15:30) junto con **5 capturas**; los logs son **idénticos por hash** a los ya analizados, así que lo nuevo es la evidencia visual. **No se tocó código de producción**: solo se documenta lo verificado en código con esa evidencia. Con las capturas se cierra el diagnóstico de BUG-029: la respuesta escrita con GGUF se corta a los **98 tok** (`gemma-4-E4B…PURE.gguf`, 3.5 t/s, 40.7 s, contexto 5 %) y **63 tok** (`gemma-4-E…_K_M.gguf`, 4.1 t/s, 47.9 s, contexto 8 %), en ambos casos **justo antes de la lista o sección prometida**. La causa probable está en el wrapper nativo (`Android/src/smollm`, trackeado en el repo, **no** es submódulo): `LLMInference.cpp:577-594` corta en silencio si el texto acumulado contiene uno de los stop strings, entre ellos **`###`**, y descarta la pieza que contiene el stop; como los Gemma 4 instruct abren cada sección con `### Título`, la respuesta termina justo antes del encabezado sin dejar rastro. El motivo no llega a la app porque `SmolLM.getResponseAsFlow` (`SmolLM.kt:256-263`) se traga el `[EOG]`. Descartados: `maxResponse` (global, `-1` por defecto, y dos modelos cortaron a 98 y 63), los stops de la app en `LlamaCppEngine.kt:377-382` (el token de la línea 380 está verificado a nivel de bytes y no es un doble salto de línea), `cleanModelOutput(isFinal=true)` (el chat se arma con deltas) y `ThinkingSplitter` (libera lo retenido en `finish()`). BUG-028 queda acotado a la **etiqueta de holgura** de 4.1: sin hueco propio, aparece pegada sin separación cuando los metadatos son largos ("Q5_K_Sdemasiado grande"), lejos cuando son cortos y **recortada contra el botón Descargar**; el humano pidió **solo documentar**, sin arreglo por ahora. La prueba rápida para confirmar BUG-029 es pedir en el chat "responde en texto plano, sin encabezados ni `###`".

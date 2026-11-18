@@ -81,7 +81,7 @@ class SmolLM {
         private fun supportsArm64V8a(): Boolean = Build.SUPPORTED_ABIS[0] == "arm64-v8a"
     }
 
-    private var nativePtr = 0L
+    @Volatile private var nativePtr = 0L
 
     data class InferenceParams(
         val minP: Float = 0.1f,
@@ -282,10 +282,18 @@ class SmolLM {
         return benchModel(nativePtr, pp, tg, pl, nr)
     }
 
+    /**
+     * Libera el motor nativo. Es atómico (@Synchronized) y idempotente: si dos hilos lo llaman a
+     * la vez (p. ej. unloadModel y resetConversation sobre la misma instancia), solo el primero
+     * cierra; antes ambos leian nativePtr != 0 y llamaban dos veces al close nativo, lo que
+     * acaba en "Scudo ERROR: invalid chunk state" (BUG-030).
+     */
+    @Synchronized
     fun close() {
-        if (nativePtr != 0L) {
-            close(nativePtr)
+        val ptr = nativePtr
+        if (ptr != 0L) {
             nativePtr = 0L
+            close(ptr)
         }
     }
 
