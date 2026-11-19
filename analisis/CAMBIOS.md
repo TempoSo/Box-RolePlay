@@ -40,6 +40,15 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-028: hueco estable para la etiqueta de holgura del navegador HF
+
+**Qué y por qué:** la etiqueta ("✔ cabe bien" / "justo" / "demasiado grande") compartía fila con los metadatos y el botón Descargar, así que quedaba pegada al texto, lejos o recortada según la longitud de los metadatos. Ahora los metadatos se limitan a dos líneas con ellipsis y separación de 8 dp del botón, y la etiqueta va en su **propia línea** con 4 dp de separación superior y una sola línea; se conservan los colores de BUG-020 y no se tocan los umbrales de `HfApi.fit()`. Sin tests nuevos (cambio de UI); compila.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/modelmanager/HfBrowserScreen.kt` — etiqueta en línea propia y metadatos acotados.
+- `analisis/BUGS.md` — BUG-028 ✅.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — BUG-023: UI para restaurar una copia de personajes
 
 **Qué y por qué:** la exportación .zip funcionaba pero no había forma de restaurarla desde la app, aunque el backend (`CharacterRepository.importAnyFromUri()`, que detecta .zip y empareja `.json` con `.avatar.png`) ya existía. Se añade la tarjeta "Restaurar copia" en Configuración con `OpenDocument` para `.zip`, `.json` y `.png`, y un método `RoleplayViewModel.importFromSettings()` que devuelve el resultado sin usar el canal de mensajes de la biblioteca. El importador crea ids nuevos: por defecto **duplica** en vez de sobrescribir (opción segura). El texto no promete chats ni escenas porque el .zip solo contiene personajes y avatares. Sin tests nuevos (cambio de UI); compila.

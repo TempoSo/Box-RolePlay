@@ -129,7 +129,10 @@ fun HfBrowserScreen(
             Card(Modifier.fillMaxWidth()) {
               Column(Modifier.padding(12.dp)) {
                 Text(f.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                   Text(
                     listOfNotNull(
                       fmtSize(f.size),
@@ -139,28 +142,14 @@ fun HfBrowserScreen(
                         HfFileKind.SPLIT -> "partido en varios archivos"
                         else -> null
                       },
-                      // BUG-020: la etiqueta de holgura se pinta aparte, con color según HfFit.
+                      // BUG-020/BUG-028: la etiqueta de holgura se pinta aparte, con su color.
                     ).joinToString(" · "),
                     Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
-                  if (fit != HfFit.UNKNOWN && kind == HfFileKind.MODEL) {
-                    Text(
-                      when (fit) {
-                        HfFit.GOOD -> "✔ cabe bien"
-                        HfFit.TIGHT -> "justo"
-                        else -> "demasiado grande"
-                      },
-                      style = MaterialTheme.typography.bodySmall,
-                      color =
-                        when (fit) {
-                          HfFit.GOOD -> MaterialTheme.colorScheme.tertiary
-                          HfFit.TIGHT -> Color(0xFFFFB300)
-                          else -> MaterialTheme.colorScheme.error
-                        },
-                    )
-                  }
                   if (progress == null) {
                     Button(
                       enabled = kind != HfFileKind.SPLIT,
@@ -172,6 +161,26 @@ fun HfBrowserScreen(
                   } else {
                     TextButton(onClick = { viewModel.cancel(f) }) { Text("Cancelar") }
                   }
+                }
+                // BUG-028: hueco propio y separación fija bajo los metadatos. Nunca se pega al
+                // texto ni se recorta contra el botón, y conserva el color de BUG-020.
+                if (fit != HfFit.UNKNOWN && kind == HfFileKind.MODEL) {
+                  Text(
+                    when (fit) {
+                      HfFit.GOOD -> "✔ cabe bien"
+                      HfFit.TIGHT -> "justo"
+                      else -> "demasiado grande"
+                    },
+                    modifier = Modifier.padding(top = 4.dp),
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodySmall,
+                    color =
+                      when (fit) {
+                        HfFit.GOOD -> MaterialTheme.colorScheme.tertiary
+                        HfFit.TIGHT -> Color(0xFFFFB300)
+                        else -> MaterialTheme.colorScheme.error
+                      },
+                  )
                 }
                 if (progress != null) {
                   val frac = if (progress.total > 0) (progress.received.toFloat() / progress.total).coerceIn(0f, 1f) else 0f
