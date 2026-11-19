@@ -20,12 +20,11 @@ class CharacterPromptBuilderTest {
         postHistoryInstructions = "Mantén a {{char}} en personaje.",
     )
 
-    // BUG-011: fichas como Tohru usan llaves simples ({user}) y se veían crudas.
+    // Igual que SillyTavern: las llaves simples no son macros y se dejan tal cual.
     @Test
-    fun replacesSingleBraceMacros() {
-        assertEquals("Ana ve a Luis", CharacterPromptBuilder.applyMacros("{char} ve a {user}", "Ana", "Luis"))
-        assertEquals("Ana y Ana", CharacterPromptBuilder.applyMacros("{{bot}} y { Char }", "Ana", "Luis"))
-        // Lo que no es macro se deja tal cual (JSON, otros macros).
+    fun singleBracesAreNotMacros() {
+        assertEquals("{char} ve a {user}", CharacterPromptBuilder.applyMacros("{char} ve a {user}", "Ana", "Luis"))
+        assertEquals("Ana ve a Luis", CharacterPromptBuilder.applyMacros("{{char}} ve a {{user}}", "Ana", "Luis"))
         assertEquals("{\"a\": 1} {random}", CharacterPromptBuilder.applyMacros("{\"a\": 1} {random}", "Ana", "Luis"))
     }
 

@@ -26,17 +26,16 @@ object CharacterPromptBuilder {
         val greetings: List<String>,
     )
 
-    // BUG-011: además de {{char}}/{{user}} y <BOT>/<USER>, hay fichas (Tohru) que usan llaves
-    // simples ({user}, {char}); sin esto llegaban crudas a la ficha y al prompt.
-    private val MACRO =
-        Regex("""\{\{\s*(char|user|bot)\s*\}\}|\{\s*(char|user|bot)\s*\}|<(user|bot)>""", RegexOption.IGNORE_CASE)
+    // Sintaxis de SillyTavern: {{char}}/{{user}} y <BOT>/<USER>. Las llaves simples ({user}) NO son
+    // macros (decisión del 2026-11-19): así las fichas se comportan igual que en SillyTavern.
+    private val MACRO = Regex("""\{\{\s*(char|user)\s*\}\}|<(user|bot)>""", RegexOption.IGNORE_CASE)
     private val START_MARKER = Regex("""<START>""", RegexOption.IGNORE_CASE)
     private val ORIGINAL = Regex("""\{\{\s*original\s*\}\}""", RegexOption.IGNORE_CASE)
 
-    /** Reemplaza {{char}}/{{user}}, {char}/{user} (y <BOT>/<USER>). Cualquier otro macro se deja como está. */
+    /** Reemplaza {{char}}/{{user}} (y <BOT>/<USER>). Cualquier otro macro se deja como está. */
     fun applyMacros(text: String, charName: String, userName: String): String =
         MACRO.replace(text) { m ->
-            when ((m.groups[1]?.value ?: m.groups[2]?.value ?: m.groups[3]?.value ?: "").lowercase()) {
+            when ((m.groups[1]?.value ?: m.groups[2]?.value ?: "").lowercase()) {
                 "char", "bot" -> charName
                 "user" -> userName
                 else -> m.value

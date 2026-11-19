@@ -40,6 +40,15 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-011: macros solo con sintaxis SillyTavern (se revierten las llaves simples)
+
+**Qué y por qué:** decisión del humano: las macros siguen la sintaxis de SillyTavern, solo `{{char}}`/`{{user}}` (y `<BOT>`/`<USER>`). Se revierte el soporte de llaves simples (`{user}`) añadido antes en BUG-011; se mantiene la sustitución de macros al **mostrar** descripción, personalidad y escenario en la hoja de detalle y en la biblioteca. Una ficha con `{user}` lo muestra y lo envía literal (se corrige a mano en la ficha).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/CharacterPromptBuilder.kt` — `MACRO` vuelve a la sintaxis original.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/CharacterPromptBuilderTest.kt` — `replacesSingleBraceMacros` → `singleBracesAreNotMacros`.
+- `analisis/BUGS.md` — nota de BUG-011 corregida.
+
 ### 2026-11-19 — BUG-011: macros {user}/{char} (también con llaves simples) sustituidas en fichas, biblioteca y prompt
 
 **Qué y por qué:** BUG-011. Las macros de llaves simples (`{user}`, `{char}`, `{bot}`) que usan algunas fichas (Tohru) no se reconocían ni en la interfaz ni en el prompt, y la hoja de detalle y la biblioteca mostraban los textos sin sustituir macros.
