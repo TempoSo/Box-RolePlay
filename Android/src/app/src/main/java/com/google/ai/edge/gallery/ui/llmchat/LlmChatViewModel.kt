@@ -795,6 +795,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         val cleanUpListener: () -> Unit = {
           setInProgress(false)
           setPreparing(false)
+          clearWaitingPerfLine()
         }
 
         val errorListener: (String) -> Unit = { message ->
@@ -802,6 +803,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
           com.google.ai.edge.gallery.tts.TtsManager.liveCancel()
           setInProgress(false)
           setPreparing(false)
+          clearWaitingPerfLine()
           onError(message)
         }
 
@@ -841,6 +843,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         Log.e(TAG, "Error occurred while running inference", e)
         setInProgress(false)
         setPreparing(false)
+        clearWaitingPerfLine()
         onError(e.message ?: "")
       }
     }
@@ -851,10 +854,19 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     if (getLastMessage(model = model) is ChatMessageLoading) {
       removeLastMessage(model = model)
     }
+    // I-6: al cancelar se limpian también el indicador de preparación y el "⏳ cargando/procesando…";
+    // antes quedaban pegados y el chat parecía seguir ocupado ("cargando modelo…").
     setInProgress(false)
+    setPreparing(false)
+    clearWaitingPerfLine()
     com.google.ai.edge.gallery.tts.TtsManager.liveCancel()
     model.runtimeHelper.stopResponse(model)
     Log.d(TAG, "Done stopping response")
+  }
+
+  /** I-6: quita el "⏳ …" de estado si sigue en pantalla; no toca las métricas reales del turno. */
+  private fun clearWaitingPerfLine() {
+    if (_perfLine.value.startsWith("⏳")) _perfLine.value = ""
   }
 
   fun resetSession(

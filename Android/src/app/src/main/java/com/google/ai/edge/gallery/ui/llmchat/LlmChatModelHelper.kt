@@ -18,6 +18,8 @@ package com.google.ai.edge.gallery.ui.llmchat
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import com.google.ai.edge.gallery.common.cleanUpMediapipeTaskErrorMessage
 import com.google.ai.edge.gallery.data.Accelerator
@@ -47,9 +49,20 @@ import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ToolProvider
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CancellationException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 
 private const val TAG = "AGLlmChatModelHelper"
+
+/** I-6: espera máxima a que el hilo nativo termine el turno anterior antes de reutilizar el motor. */
+private const val AWAIT_GENERATION_MS = 10_000L
+
+/**
+ * I-6: una respuesta que termina antes de este tiempo y sin ningún fragmento es, en la práctica,
+ * el fallo conocido del turno cancelado (la conversación quedó inservible). Se trata como error.
+ */
+private const val EMPTY_RESPONSE_MS = 750L
 
 data class LlmModelInstance(val engine: Engine, var conversation: Conversation)
 
@@ -64,6 +77,41 @@ object LlmChatModelHelper : LlmModelHelper {
   private val pendingGenerations:
     MutableMap<String, java.util.concurrent.CompletableFuture<Unit>> =
     java.util.concurrent.ConcurrentHashMap()
+
+  /**
+   * I-6: candado por modelo, equivalente al `stateLock` de `engine/LlamaCppEngine.kt` (nativeGate).
+   * Serializa reset, envío, limpieza y recreación de la conversación para que nunca se cierre una
+   * conversación con un turno nativo en curso (era la causa de las respuestas vacías tras cancelar).
+   */
+  private val modelGates = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+  /** I-6: peticiones canceladas a mano por el usuario, para no confundir su final con un error. */
+  private val manualStops = java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean>()
+
+  /** I-6: evita dos limpiezas simultáneas del mismo modelo. */
+  private val cleaningUp = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+  /** I-6: la espera/cierre de la limpieza nunca debe correr en el hilo principal. */
+  private val cleanupExecutor =
+    java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+      Thread(r, "litert-cleanup").apply { isDaemon = true }
+    }
+
+  private fun gateFor(name: String): Any = modelGates.getOrPut(name) { Any() }
+
+  /**
+   * I-6: espera acotada a que el callback nativo cierre la generación anterior. Si el callback no
+   * llega (motor atascado), se sigue adelante para no bloquear el chat indefinidamente.
+   */
+  private fun awaitPreviousGeneration(name: String, timeoutMs: Long) {
+    val pending = pendingGenerations[name] ?: return
+    if (pending.isDone) return
+    try {
+      pending.get(timeoutMs, TimeUnit.MILLISECONDS)
+    } catch (e: Exception) {
+      Log.w(TAG, "La generación anterior de '$name' no terminó en ${timeoutMs} ms: ${e.message}")
+    }
+  }
 
   @OptIn(ExperimentalApi::class) // opt-in experimental flags
   override fun initialize(
@@ -251,46 +299,53 @@ object LlmChatModelHelper : LlmModelHelper {
     try {
       Log.d(TAG, "Resetting conversation for model '${model.name}'")
 
-      val instance = model.instance as LlmModelInstance? ?: return
-      instance.conversation.close()
+      // I-6: bajo el candado del modelo; si hay un turno en curso se cancela y se espera antes
+      // de cerrar la conversación (cerrarla con el hilo nativo vivo dejaba el motor inservible).
+      synchronized(gateFor(model.name)) {
+        val instance = model.instance as LlmModelInstance? ?: return
+        manualStops[model.name]?.set(true)
+        runCatching { instance.conversation.cancelProcess() }
+        awaitPreviousGeneration(model.name, AWAIT_GENERATION_MS)
+        runCatching { instance.conversation.close() }
 
-      val engine = instance.engine
-      val topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK)
-      val topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP)
-      val temperature =
-        model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE)
-      val shouldEnableImage = supportImage
-      val shouldEnableAudio = supportAudio
-      Log.d(TAG, "Enable image: $shouldEnableImage, enable audio: $shouldEnableAudio")
+        val engine = instance.engine
+        val topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK)
+        val topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP)
+        val temperature =
+          model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE)
+        val shouldEnableImage = supportImage
+        val shouldEnableAudio = supportAudio
+        Log.d(TAG, "Enable image: $shouldEnableImage, enable audio: $shouldEnableAudio")
 
-      val accelerator =
-        model.getStringConfigValue(
-          key = ConfigKeys.ACCELERATOR,
-          defaultValue = Accelerator.GPU.label,
-        )
-      ExperimentalFlags.enableConversationConstrainedDecoding =
-        enableConversationConstrainedDecoding
-      val newConversation =
-        engine.createConversation(
-          ConversationConfig(
-            samplerConfig =
-              if (accelerator == Accelerator.NPU.label) {
-                null
-              } else {
-                SamplerConfig(
-                  topK = topK,
-                  topP = topP.toDouble(),
-                  temperature = temperature.toDouble(),
-                )
-              },
-            systemInstruction = systemInstruction,
-            tools = tools,
+        val accelerator =
+          model.getStringConfigValue(
+            key = ConfigKeys.ACCELERATOR,
+            defaultValue = Accelerator.GPU.label,
           )
-        )
-      ExperimentalFlags.enableConversationConstrainedDecoding = false
-      instance.conversation = newConversation
+        ExperimentalFlags.enableConversationConstrainedDecoding =
+          enableConversationConstrainedDecoding
+        val newConversation =
+          engine.createConversation(
+            ConversationConfig(
+              samplerConfig =
+                if (accelerator == Accelerator.NPU.label) {
+                  null
+                } else {
+                  SamplerConfig(
+                    topK = topK,
+                    topP = topP.toDouble(),
+                    temperature = temperature.toDouble(),
+                  )
+                },
+              systemInstruction = systemInstruction,
+              tools = tools,
+            )
+          )
+        ExperimentalFlags.enableConversationConstrainedDecoding = false
+        instance.conversation = newConversation
 
-      Log.d(TAG, "Resetting done")
+        Log.d(TAG, "Resetting done")
+      }
     } catch (e: Exception) {
       Log.d(TAG, "Failed to reset conversation", e)
     }
@@ -311,49 +366,58 @@ object LlmChatModelHelper : LlmModelHelper {
   ) {
     try {
       Log.d(TAG, "Resetting conversation with ${history.size} messages for '${model.name}'")
-      val instance = model.instance as LlmModelInstance? ?: return
-      instance.conversation.close()
 
-      val topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK)
-      val topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP)
-      val temperature =
-        model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE)
-      val accelerator =
-        model.getStringConfigValue(
-          key = ConfigKeys.ACCELERATOR,
-          defaultValue = Accelerator.GPU.label,
-        )
+      // I-6: mismo candado que resetConversation. Este es el camino que usa el chat LiteRT al
+      // enviar tras cancelar; cerrar aquí la conversación con el turno anterior vivo dejaba todas
+      // las respuestas vacías (~500 ms) hasta reabrir la app.
+      synchronized(gateFor(model.name)) {
+        val instance = model.instance as LlmModelInstance? ?: return
+        manualStops[model.name]?.set(true)
+        runCatching { instance.conversation.cancelProcess() }
+        awaitPreviousGeneration(model.name, AWAIT_GENERATION_MS)
+        runCatching { instance.conversation.close() }
 
-      // Gemma pide que los turnos alternen empezando por el usuario. Si el historial empieza con
-      // el saludo del personaje (asistente), se antepone un turno de usuario neutro.
-      val messages = mutableListOf<Message>()
-      if (history.firstOrNull()?.first == "assistant") {
-        messages.add(Message.user("(The roleplay begins.)"))
-      }
-      for ((role, content) in history) {
-        if (content.isBlank()) continue
-        messages.add(if (role == "user") Message.user(content) else Message.model(content))
-      }
-
-      val newConversation =
-        instance.engine.createConversation(
-          ConversationConfig(
-            samplerConfig =
-              if (accelerator == Accelerator.NPU.label) {
-                null
-              } else {
-                SamplerConfig(
-                  topK = topK,
-                  topP = topP.toDouble(),
-                  temperature = temperature.toDouble(),
-                )
-              },
-            systemInstruction = systemInstruction,
-            initialMessages = messages,
+        val topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK)
+        val topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP)
+        val temperature =
+          model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE)
+        val accelerator =
+          model.getStringConfigValue(
+            key = ConfigKeys.ACCELERATOR,
+            defaultValue = Accelerator.GPU.label,
           )
-        )
-      instance.conversation = newConversation
-      Log.d(TAG, "Reset with history done")
+
+        // Gemma pide que los turnos alternen empezando por el usuario. Si el historial empieza con
+        // el saludo del personaje (asistente), se antepone un turno de usuario neutro.
+        val messages = mutableListOf<Message>()
+        if (history.firstOrNull()?.first == "assistant") {
+          messages.add(Message.user("(The roleplay begins.)"))
+        }
+        for ((role, content) in history) {
+          if (content.isBlank()) continue
+          messages.add(if (role == "user") Message.user(content) else Message.model(content))
+        }
+
+        val newConversation =
+          instance.engine.createConversation(
+            ConversationConfig(
+              samplerConfig =
+                if (accelerator == Accelerator.NPU.label) {
+                  null
+                } else {
+                  SamplerConfig(
+                    topK = topK,
+                    topP = topP.toDouble(),
+                    temperature = temperature.toDouble(),
+                  )
+                },
+              systemInstruction = systemInstruction,
+              initialMessages = messages,
+            )
+          )
+        instance.conversation = newConversation
+        Log.d(TAG, "Reset with history done")
+      }
     } catch (e: Exception) {
       Log.e(TAG, "Failed to reset conversation with history", e)
     }
@@ -364,51 +428,83 @@ object LlmChatModelHelper : LlmModelHelper {
       return
     }
 
-    // BUG (12:44): la instancia puede no ser de LiteRT (p. ej. un GGUF cargado por otra tarea
-    // cuya limpieza llegó aquí de casualidad): el cast duro acababa en ClassCastException y
-    // crasheaba la app. Ante una instancia ajena, no se toca: se deja nula y se termina.
-    val instance = model.instance as? LlmModelInstance
-    if (instance == null) {
-      Log.w(TAG, "cleanUp: la instancia de ${model.name} no es de LiteRT; no se limpia aquí")
-      model.instance = null
+    // I-6: la cancelación + espera del turno nativo puede tardar; nunca en el hilo principal.
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      cleanupExecutor.execute { cleanUpBlocking(model, onDone) }
+      return
+    }
+    cleanUpBlocking(model, onDone)
+  }
+
+  private fun cleanUpBlocking(model: Model, onDone: () -> Unit) {
+    if (!cleaningUp.add(model.name)) {
+      Log.d(TAG, "cleanUp: ya había una limpieza en curso para '${model.name}'")
       onDone()
       return
     }
-
-    // BUG-021: si hay una generación en marcha, cancelarla y esperar (acotado) a que el hilo
-    // nativo termine antes de cerrar la conversación y el motor; si se cierra con un turno
-    // en marcha, la rotación/limpieza acaba en SIGSEGV en liblitertlm_jni.so.
-    val pending = pendingGenerations.remove(model.name)
     try {
-      instance.conversation.cancelProcess()
-      pending?.get(5, java.util.concurrent.TimeUnit.SECONDS)
-    } catch (e: Exception) {
-      Log.w(TAG, "No se pudo esperar la generación al limpiar: ${e.message}")
-    }
+      // I-6: el mismo candado que reset y envío: no se cierra la conversación si otro camino la
+      // está recreando o mandando un turno.
+      synchronized(gateFor(model.name)) {
+        if (model.instance == null) {
+          onDone()
+          return
+        }
 
-    try {
-      instance.conversation.close()
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed to close the conversation: ${e.message}")
-    }
+        // BUG (12:44): la instancia puede no ser de LiteRT (p. ej. un GGUF cargado por otra tarea
+        // cuya limpieza llegó aquí de casualidad): el cast duro acababa en ClassCastException y
+        // crasheaba la app. Ante una instancia ajena, no se toca: se deja nula y se termina.
+        val instance = model.instance as? LlmModelInstance
+        if (instance == null) {
+          Log.w(TAG, "cleanUp: la instancia de ${model.name} no es de LiteRT; no se limpia aquí")
+          model.instance = null
+          onDone()
+          return
+        }
 
-    try {
-      instance.engine.close()
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed to close the engine: ${e.message}")
-    }
+        // BUG-021: si hay una generación en marcha, cancelarla y esperar (acotado) a que el hilo
+        // nativo termine antes de cerrar la conversación y el motor; si se cierra con un turno
+        // en marcha, la rotación/limpieza acaba en SIGSEGV en liblitertlm_jni.so.
+        val pending = pendingGenerations.remove(model.name)
+        manualStops[model.name]?.set(true)
+        try {
+          instance.conversation.cancelProcess()
+          pending?.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+          Log.w(TAG, "No se pudo esperar la generación al limpiar: ${e.message}")
+        }
 
-    val onCleanUp = cleanUpListeners.remove(model.name)
-    if (onCleanUp != null) {
-      onCleanUp()
-    }
-    model.instance = null
+        try {
+          instance.conversation.close()
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed to close the conversation: ${e.message}")
+        }
 
-    onDone()
-    Log.d(TAG, "Clean up done.")
+        try {
+          instance.engine.close()
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed to close the engine: ${e.message}")
+        }
+
+        val onCleanUp = cleanUpListeners.remove(model.name)
+        if (onCleanUp != null) {
+          onCleanUp()
+        }
+        model.instance = null
+
+        onDone()
+        Log.d(TAG, "Clean up done.")
+      }
+    } finally {
+      cleaningUp.remove(model.name)
+    }
   }
 
   override fun stopResponse(model: Model) {
+    // I-6: marcar la cancelación antes de avisar al nativo; así su final no se confunde con una
+    // respuesta vacía. No se toma el candado aquí a propósito: el botón de parar está en el hilo
+    // principal y no debe esperar a un reset en curso.
+    manualStops[model.name]?.set(true)
     val instance = model.instance as? LlmModelInstance ?: return
     instance.conversation.cancelProcess()
   }
@@ -424,60 +520,98 @@ object LlmChatModelHelper : LlmModelHelper {
     coroutineScope: CoroutineScope?,
     extraContext: Map<String, String>?,
   ) {
-    val instance = model.instance as? LlmModelInstance
-    if (instance == null) {
-      onError("LlmModelInstance is not initialized.")
-      return
-    }
+    // I-6: todo el envío va bajo el candado del modelo. Si el usuario canceló el turno anterior y
+    // envía otro, aquí se espera a que el hilo nativo lo suelte antes de mandar el nuevo (ese era
+    // el camino que dejaba todas las respuestas vacías).
+    synchronized(gateFor(model.name)) {
+      val instance = model.instance as? LlmModelInstance
+      if (instance == null) {
+        onError("LlmModelInstance is not initialized.")
+        return
+      }
 
-    // Set listener.
-    if (!cleanUpListeners.containsKey(model.name)) {
-      cleanUpListeners[model.name] = cleanUpListener
-    }
+      // Set listener.
+      if (!cleanUpListeners.containsKey(model.name)) {
+        cleanUpListeners[model.name] = cleanUpListener
+      }
 
-    val conversation = instance.conversation
+      awaitPreviousGeneration(model.name, AWAIT_GENERATION_MS)
 
-    // BUG-021: registrar la generación para poder cancelarla y esperarla al limpiar el motor.
-    val pending = java.util.concurrent.CompletableFuture<Unit>()
-    pendingGenerations[model.name] = pending
+      val conversation = instance.conversation
 
-    val contents = mutableListOf<Content>()
-    for (image in images) {
-      contents.add(Content.ImageBytes(image.toPngByteArray()))
-    }
-    for (audioClip in audioClips) {
-      contents.add(Content.AudioBytes(audioClip))
-    }
-    // add the text after image and audio for the accurate last token
-    if (input.trim().isNotEmpty()) {
-      contents.add(Content.Text(input))
-    }
+      // BUG-021: registrar la generación para poder cancelarla y esperarla al limpiar el motor.
+      // I-6: también se usa para saber si la respuesta vacía es una cancelación manual.
+      val pending = java.util.concurrent.CompletableFuture<Unit>()
+      pendingGenerations[model.name] = pending
+      val stopFlag = AtomicBoolean(false)
+      manualStops[model.name] = stopFlag
+      val startedAt = SystemClock.elapsedRealtime()
+      val delivered = AtomicBoolean(false)
 
-    conversation.sendMessageAsync(
-      Contents.of(contents),
-      object : MessageCallback {
-        override fun onMessage(message: Message) {
-          resultListener(message.toString(), false, message.channels["thought"])
-        }
+      val contents = mutableListOf<Content>()
+      for (image in images) {
+        contents.add(Content.ImageBytes(image.toPngByteArray()))
+      }
+      for (audioClip in audioClips) {
+        contents.add(Content.AudioBytes(audioClip))
+      }
+      // add the text after image and audio for the accurate last token
+      if (input.trim().isNotEmpty()) {
+        contents.add(Content.Text(input))
+      }
 
-        override fun onDone() {
-          pending.complete(Unit)
-          resultListener("", true, null)
-        }
-
-        override fun onError(throwable: Throwable) {
-          pending.complete(Unit)
-          if (throwable is CancellationException) {
+      fun finish(throwable: Throwable?) {
+        if (pendingGenerations[model.name] === pending) pendingGenerations.remove(model.name)
+        if (manualStops[model.name] === stopFlag) manualStops.remove(model.name)
+        pending.complete(Unit)
+        when {
+          throwable is CancellationException -> {
             Log.i(TAG, "The inference is cancelled.")
             resultListener("", true, null)
-          } else {
+          }
+          throwable != null -> {
             Log.e(TAG, "onError", throwable)
             onError("Error: ${throwable.message}")
           }
+          // I-6: tras cancelar, la conversación podía quedar inservible y el motor devolvía un
+          // "done" vacío en ~500 ms. Eso no es una respuesta: se trata como error para que el
+          // ViewModel limpie y reinitialice en vez de dejar el chat mudo.
+          !delivered.get() &&
+            !stopFlag.get() &&
+            SystemClock.elapsedRealtime() - startedAt < EMPTY_RESPONSE_MS -> {
+            Log.w(
+              TAG,
+              "Respuesta vacía de '${model.name}' en ${SystemClock.elapsedRealtime() - startedAt} ms; " +
+                "se trata como error",
+            )
+            onError(
+              "El modelo devolvió una respuesta vacía. Se reinicia la conversación; " +
+                "vuelve a enviar el mensaje."
+            )
+          }
+          else -> resultListener("", true, null)
         }
-      },
-      extraContext ?: emptyMap(),
-    )
+      }
+
+      conversation.sendMessageAsync(
+        Contents.of(contents),
+        object : MessageCallback {
+          override fun onMessage(message: Message) {
+            delivered.set(true)
+            resultListener(message.toString(), false, message.channels["thought"])
+          }
+
+          override fun onDone() {
+            finish(null)
+          }
+
+          override fun onError(throwable: Throwable) {
+            finish(throwable)
+          }
+        },
+        extraContext ?: emptyMap(),
+      )
+    }
   }
 
   private fun Bitmap.toPngByteArray(): ByteArray {
