@@ -40,6 +40,14 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-031 (refuerzo): liberar la petición si el envío falla en seco
+
+**Qué y por qué:** `LlmChatModelHelper.runInference` registra una `CompletableFuture` por turno para poder esperarlo al resetear/limpiar. Si `conversation.sendMessageAsync` lanzaba una excepción síncrona, la petición quedaba registrada para siempre y el turno siguiente esperaba los 10 s de `AWAIT_GENERATION_MS` antes de continuar. Ahora el envío va en `try/catch` y llama a `finish(e)`, que libera la petición y reporta el error por el camino normal.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatModelHelper.kt` — `sendMessageAsync` protegido; `finish(e)` si falla.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — I-6/BUG-031: candado del motor LiteRT, espera al turno cancelado y respuesta vacía como error
 
 **Qué y por qué:** con un modelo `.litertlm`, tras enviar, cancelar a mitad y reenviar, todas las respuestas salían vacías en ~500 ms y el indicador se quedaba en "⏳ cargando modelo…". Causa verificada: `LlmChatModelHelper.resetConversation()`/`resetConversationWithHistory()` cerraban la conversación sin cancelar ni esperar la generación en curso (el chat LiteRT la recrea justo antes de cada envío), y el motor quedaba inservible. Cambios, todo Kotlin:

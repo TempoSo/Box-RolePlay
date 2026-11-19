@@ -593,24 +593,30 @@ object LlmChatModelHelper : LlmModelHelper {
         }
       }
 
-      conversation.sendMessageAsync(
-        Contents.of(contents),
-        object : MessageCallback {
-          override fun onMessage(message: Message) {
-            delivered.set(true)
-            resultListener(message.toString(), false, message.channels["thought"])
-          }
+      try {
+        conversation.sendMessageAsync(
+          Contents.of(contents),
+          object : MessageCallback {
+            override fun onMessage(message: Message) {
+              delivered.set(true)
+              resultListener(message.toString(), false, message.channels["thought"])
+            }
 
-          override fun onDone() {
-            finish(null)
-          }
+            override fun onDone() {
+              finish(null)
+            }
 
-          override fun onError(throwable: Throwable) {
-            finish(throwable)
-          }
-        },
-        extraContext ?: emptyMap(),
-      )
+            override fun onError(throwable: Throwable) {
+              finish(throwable)
+            }
+          },
+          extraContext ?: emptyMap(),
+        )
+      } catch (e: Exception) {
+        // I-6: si el envío falla en seco, liberar la petición registrada; si no, el turno
+        // siguiente esperaría 10 s a una generación que nunca llegó a empezar.
+        finish(e)
+      }
     }
   }
 
