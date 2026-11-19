@@ -72,6 +72,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.data.characters.toJsonArrayString
 import com.google.ai.edge.gallery.data.characters.toStringList
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
+import com.google.ai.edge.gallery.ui.common.TagChips
 import java.io.File
 
 /** Lista de personajes: importar tarjeta (.json/.png), crear, editar, compartir, borrar y chatear. */
@@ -419,6 +420,13 @@ fun CharacterEditorScreen(
     viewModel: RoleplayViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
+    val characters by viewModel.characters.collectAsState()
+    val scenarios by viewModel.scenarios.collectAsState()
+    // BUG-006: mismos chips que en el editor de escenas, con las etiquetas ya usadas.
+    val tagSuggestions =
+        remember(characters, scenarios) {
+            TagChips.collect(characters.flatMap { it.tagsJson.toStringList() }, scenarios.flatMap { it.tags })
+        }
     var loaded by remember { mutableStateOf(characterId == "new") }
     var original by remember { mutableStateOf<RoleplayCharacter?>(null) }
 
@@ -528,6 +536,7 @@ fun CharacterEditorScreen(
                         BigField("Descripción", description, { description = it }, 6)
                         BigField("Personalidad", personality, { personality = it }, 4)
                         BigField("Escenario", scenario, { scenario = it }, 4)
+                        TagChips(suggestions = tagSuggestions, value = tags, onValueChange = { tags = it })
                         OutlinedTextField(
                             value = tags, onValueChange = { tags = it },
                             label = { Text("Etiquetas (separadas por coma)") },

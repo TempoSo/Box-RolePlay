@@ -77,7 +77,8 @@
 - **Fix propuesto:** que `ScenarioStore` exponga un `StateFlow`/Flow recargado tras cada `save`/`delete` y que `ScenariosViewModel` lo recoja (o refrescar al volver con `LifecycleResumeEffect`/`DisposableEffect` sobre la entrada de la lista).
 - **Archivos:** `ui/scenarios/ScenariosViewModel.kt`, `ui/scenarios/ScenarioScreens.kt`, `data/characters/ScenarioStore.kt`.
 
-### BUG-006 · ❌ Escenas: no se ven las etiquetas existentes
+### BUG-006 · ✅ Escenas: no se ven las etiquetas existentes *(arreglado 2026-11-19)*
+- **Fix aplicado (2026-11-19):** componente compartido `ui/common/TagChips.kt` con las etiquetas ya usadas (escenas + personajes, sin duplicados y ordenadas); al tocarlas se añaden/quitan del campo de texto libre. Se usa en el editor de escenas y también en el de personajes. Compilado y `TagChipsTest` en verde; pendiente de re-prueba en teléfono (2.4).
 - **Síntoma:** al crear/editar no hay chips de etiquetas como en Personajes; te olvidas de qué tags existen.
 - **Verificado (2026-11-19):** el editor de **personajes tampoco** tiene chips: usa un `OutlinedTextField` de texto separado por comas (`ui/roleplay/RoleplayScreens.kt:531-536`). En escenas pasa lo mismo (`ui/scenarios/ScenarioScreens.kt:180-186`, `tagText.split(",")` al guardar). Por tanto no hay patrón que copiar: hay que crear los chips.
 - **Fix propuesto:** encima del campo de texto, una fila de chips con las etiquetas ya usadas (escenas + personajes) que al tocarlas añadan/quiten la etiqueta del campo; mantener el texto libre para etiquetas nuevas.

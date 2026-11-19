@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.characters.CharacterCardException
 import com.google.ai.edge.gallery.data.characters.CharacterRepository
 import com.google.ai.edge.gallery.data.characters.PersonaRepository
+import com.google.ai.edge.gallery.data.characters.Scenario
+import com.google.ai.edge.gallery.data.characters.ScenarioStore
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
 import com.google.ai.edge.gallery.data.local.entities.UserPersona
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,7 +25,11 @@ class RoleplayViewModel @Inject constructor(
     private val repository: CharacterRepository,
     private val personaRepository: PersonaRepository,
     private val memoryRepository: com.google.ai.edge.gallery.data.characters.MemoryRepository,
+    scenarioStore: ScenarioStore,
 ) : ViewModel() {
+
+    /** BUG-006: etiquetas de escenas para los chips del editor de personajes. */
+    val scenarios: StateFlow<List<Scenario>> = scenarioStore.scenarios
 
     val characters: StateFlow<List<RoleplayCharacter>> = repository
         .observeAll()

@@ -40,6 +40,19 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-006: chips con las etiquetas ya usadas en escenas y personajes
+
+**Qué y por qué:** los editores de escena y de personaje solo tenían un campo de texto libre para las etiquetas, así que no se veían las ya existentes. Se añade un componente compartido `TagChips` (lógica pura + `FlowRow` de `FilterChip`) que muestra las etiquetas usadas en escenas y personajes, sin duplicados (ignorando mayúsculas) y en orden alfabético; al tocar una se añade o quita del campo, que sigue admitiendo texto nuevo. `RoleplayViewModel` expone las escenas del store singleton para alimentar los chips del editor de personajes. Tests de la lógica (`TagChipsTest`, 2 pasan).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/TagChips.kt` — nuevo componente compartido y funciones puras `collect`/`toggle`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/scenarios/ScenarioScreens.kt` — chips en el editor de escenas (etiquetas de escenas + personajes).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RoleplayScreens.kt` — chips en el editor de personajes.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RoleplayViewModel.kt` — expone `scenarios` del store para los chips.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/ui/common/TagChipsTest.kt` — nuevo test de la lógica de etiquetas.
+- `analisis/BUGS.md` — BUG-006 ✅.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — BUG-003 + BUG-004: instrucción de turno oculta y un solo hablante en escenas
 
 **Qué y por qué:** la instrucción `(Next message: write only as X.)` se creaba como un `ChatMessageText` de SIDE USER: se pintaba como burbuja y se guardaba en la base de datos (BUG-003). Además el system prompt solo pedía "Only write for the characters listed" y el modelo ignoraba la restricción, contestando como narrador + todos los personajes (BUG-004). Se arreglan juntos porque comparten el mismo flujo de envío. Ahora la instrucción viaja en `SendMessageTrigger.promptSuffix` y se concatena al `input` del motor **sin crear mensaje ni persistirlo**; el botón "🎲 Aleatorio" dispara un turno con mensaje vacío (solo el sufijo). Se añade una restricción fuerte de turno, un post-filtro de bloques `Nombre:` no permitidos aplicado durante el streaming (reemplazando el contenido, para que el texto pueda encoger) y se reutiliza la restricción al regenerar/swipe. `ScenarioTest` cubre el filtro con Narrator + KIP + Akiko, encabezados markdown, texto sin nombre y deducción del hablante desde una respuesta anterior.

@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.data.characters.Scenario
 import com.google.ai.edge.gallery.data.characters.RoleplayModelResolver
+import com.google.ai.edge.gallery.data.characters.toStringList
+import com.google.ai.edge.gallery.ui.common.TagChips
 import com.google.ai.edge.gallery.ui.home.BoxActionCard
 import com.google.ai.edge.gallery.ui.home.BoxScaffold
 import com.google.ai.edge.gallery.ui.home.BoxSectionLabel
@@ -145,6 +147,12 @@ fun ScenarioEditorScreen(
     viewModel: ScenariosViewModel = hiltViewModel(),
 ) {
     val characters by viewModel.characters.collectAsState()
+    val scenarios by viewModel.scenarios.collectAsState()
+    // BUG-006: etiquetas ya usadas en otras escenas y en personajes de la biblioteca.
+    val tagSuggestions =
+        remember(scenarios, characters) {
+            TagChips.collect(scenarios.flatMap { it.tags }, characters.flatMap { it.tagsJson.toStringList() })
+        }
     val existing = remember(scenarioId) { if (scenarioId == "new") null else viewModel.get(scenarioId) }
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var prompt by remember { mutableStateOf(existing?.prompt ?: "") }
@@ -175,6 +183,12 @@ fun ScenarioEditorScreen(
                 Text("Esto se muestra a la IA al inicio de cada conversación.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 BoxSectionLabel("Etiquetas")
+                Text(
+                    "Toca una etiqueta para añadirla o quitarla; también puedes escribir otras nuevas.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TagChips(suggestions = tagSuggestions, value = tagText, onValueChange = { tagText = it })
                 OutlinedTextField(
                     value = tagText, onValueChange = { tagText = it },
                     placeholder = { Text("fantasía, romance, ciencia ficción") },
