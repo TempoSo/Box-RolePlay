@@ -40,6 +40,18 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — Re-pruebas en teléfono de la Tanda 3 (2.4, 2.4b, 4.4b, 5.6b, 4.1c y BUG-007)
+
+**Qué y por qué:** se instaló el APK compilado tras el commit `6492a7f` (`Android/src/app/build/outputs/apk/debug/app-debug.apk`) en el Xiaomi 2311DRK48G (Android 16) mediante depuración inalámbrica (`adb pair` + `adb connect`, puerto de emparejamiento 33077) y se ejecutaron las re-pruebas pendientes. Resultados reales:
+
+- **2.4 / 2.4b (escenas):** al editar "El Final" aparecen los chips `#ai`, `#anime`, `#ciencia ficción`, `#fantasía`, `#femenino`, `#magia`, `#robot`; al tocar `#ai` y guardar, la lista se refresca sola mostrando `#fantasía #ciencia ficción #ai` (y al quitarlo, desaparece). Escribiendo como **Tohru**, el único mensaje de usuario visible fue `Tohru: Hola` (sin burbuja con la instrucción oculta) y la IA respondió solo como **Narrador, KIP y Akiko Fujimoto**, sin hablar por Tohru. "🎲 Aleatorio" con el campo vacío generó únicamente un bloque `KIP:` y ninguna burbuja de usuario. Al tocar las flechas de regeneración no hubo crash. El turno tardó 95.8 s hasta terminar (1.er token 36.5 s, ~4.3 frag/s, contexto 43 %).
+- **4.4b (presets):** se creó el motor guardado `PRUEBA` con 2 hilos, se cambió a 7 y al aplicar el preset volvió a 2; batch (64), ubatch (512), flash (Auto) y KV (f32) quedaron intactos. El perfil de prueba se borró y los hilos se restauraron a 0 (automático).
+- **5.6b (copia):** "Restaurar copia" abrió el selector del sistema, se importó `box-roleplay-prueba.zip` y apareció el aviso "Se restauraron 4 personajes": los 4 originales pasaron a ser 8. Los avatares se recrearon con ids nuevos (3 PNG nuevos con los mismos tamaños) y `box_chat.db-wal` se actualizó. Los 4 duplicados de prueba se borraron después, dejando los personajes originales.
+- **4.1c (HF):** en `google/gemma-4-E4B-it-qat-q4_0-gguf`, la etiqueta "✔ cabe bien" aparece en su **propia línea** bajo `4.80 GB · Q4_0`, sin pegarse a los metadatos ni al botón Descargar.
+- **BUG-007 (compartir):** el menú "Compartir" de una ficha abre el `ACTION_SEND` con el JSON `chara_card_v2`, el botón "Copiar texto" y el destino "Guardar en...". Queda confirmado en dispositivo: no hace falta pasar a `FileProvider`.
+
+**Archivos:** sin cambios de código. `analisis/CAMBIOS.md` — esta entrada; `analisis/BUGS.md` — estados ✅ con fecha de verificación; `analisis/PLAN_PRUEBAS.md` — casillas de re-prueba marcadas.
+
 ### 2026-11-19 — BUG-007: confirmado en código, sin cambios (queda re-prueba en dispositivo)
 
 **Qué y por qué:** se ha vuelto a revisar `ui/roleplay/RoleplayScreens.kt` (~185-192 y ~226-233): "Compartir" ya lanza `ACTION_SEND` con `type = "application/json"`, `EXTRA_TEXT` con el JSON de la tarjeta y `EXTRA_SUBJECT` con `<nombre>.json`, a través de `Intent.createChooser`. No hay diálogo propio ni texto no guardable en el código actual, así que **no se toca código**: la única duda (si el destino elegido permite guardar el archivo) solo se puede resolver en el teléfono. Si la prueba 4.1c/5.6 confirma que no se puede guardar, se cambiará a exportar `.json` en caché + `FileProvider`, como hace la copia `.zip`.

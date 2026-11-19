@@ -84,10 +84,10 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 
 ### Bloque 2 — Re-pruebas tras corregir bugs (ver [`BUGS.md`](BUGS.md))
 - [x] ~~2.1 Chat 1 a 1~~ ✅ **OK ya** (re-prueba): usa tu persona, no habla por ti, GGUF y LiteRT.
-- [ ] 2.4 Escenas: instrucción de turno oculta (BUG-003), la IA habla SOLO por el personaje pedido (BUG-004), lista se refresca al guardar (BUG-005), chips de etiquetas en el editor (BUG-006), sin crash al deslizar ventana (BUG-001).
+- [x] **2.4 Escenas — ✅ OK (19/11, en teléfono):** instrucción de turno oculta (BUG-003: solo se ve `Tohru: Hola`; "Aleatorio" no crea burbuja de usuario), la IA habla SOLO por los personajes permitidos (BUG-004: como Tohru respondió Narrador/KIP/Akiko; con Aleatorio solo KIP; regenerar sin crash), lista se refresca al guardar (BUG-005: `#ai` apareció al instante), chips de etiquetas en el editor (BUG-006: `#ai`, `#anime`, `#ciencia ficción`, `#fantasía`, `#femenino`, `#magia`, `#robot`), sin crash al deslizar ventana (BUG-001). Turno: 95.8 s totales, 1.er token 36.5 s, ~4.3 frag/s, contexto 43 %.
 - [x] **2.5 Memoria — ✅ OK (17/11, tras la 5.ª ronda):** "Absorber clústeres" funciona **sin crash ni timeout en GGUF y LiteRT** (verificado por el humano). Ruta final: tandas de 3500 car., reset a fondo solo antes de la primera, límite ligero entre tandas (Gemma 4 conserva la KV), tope de generación 400 tok, tope global de 20 min por tanda, atasco = 120 s sin tokens nuevos, pausa de enfriamiento de 30 s entre tandas. Pendiente en esta pantalla: editar recuerdos sin procesar (**BUG-008**); chat nuevo usa solo recuerdos procesados.
 - [ ] 2.6 Hamburguesa del inicio abre el cajón (BUG-009).
-- [ ] 2.2 Compartir ficha genera archivo/texto compartible (BUG-007).
+- [x] **2.2 Compartir ficha — ✅ OK (19/11, en teléfono, BUG-007):** "Más acciones → Compartir" abre el chooser con el JSON `chara_card_v2`, botón "Copiar texto" y destino "Guardar en...". No hace falta `FileProvider`.
 - [ ] 2.1b Calidad GGUF ≈ Layla: usa el nombre de tu persona y sigue el personaje con el mismo modelo (plantilla de turnos aplicada, BUG-015).
 
 ### Bloque 3 — Voz: re-pruebas tras cargar un modelo (desbloqueo: importar carpeta `es` de haex-space, ver arriba)
@@ -102,16 +102,16 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 - [ ] **Verificación del commit `2cec7db` (fix de Claude, tokenizer.json + q4):** buscar `TTSBard/kyutai-en-clone-onnx` → debe listar **"Principal"** (~130 MB, todo en raíz), bajar las piezas int8/normal **ignorando las q4**, y convertir solo el `tokenizer.json` a `vocab.json`/`token_scores.json`. ⚠️ **Mientras BUG-013 siga vivo (filtro de `parseFiles`) la búsqueda dará "No encontré ninguna carpeta…"** — este ítem solo se puede pasar después del fix del filtro.
 
 ### Bloque 4 — Re-pruebas tras corregir bugs
-- [ ] 4.1b Etiquetas de holgura con color por nivel (verde/ámbar/rojo, BUG-020) y umbral "justo" razonable.
+- [x] **4.1b/4.1c Etiquetas de holgura — ✅ OK (19/11, en teléfono, BUG-020/028):** en `google/gemma-4-E4B-it-qat-q4_0-gguf` la etiqueta "✔ cabe bien" aparece en su propia línea bajo `4.80 GB · Q4_0`, sin pegarse a metadatos ni al botón Descargar; maquetación y código de colores intactos, umbrales sin tocar. Matiz: el tono concreto (verde/ámbar/rojo) no se pudo confirmar con volcado de UI; requiere captura visual humana para cerrarlo del todo.
 - [ ] 4.2b Cambio de modelo: el primer mensaje entra siempre sin error ni "Session re-initialized" (BUG-016).
 - [ ] 4.3b Visión: tiempo con lado 256 y 512 tras las optimizaciones (BUG-017).
-- [ ] 4.4b Un preset restaura también hilos/batch/flash/KV/visión (BUG-018).
+- [x] **4.4b Presets — ✅ OK (19/11, en teléfono, BUG-018):** motor `PRUEBA` guardado con 2 hilos → cambiados a 7 → al aplicar el preset volvió a 2; batch 64, ubatch 512, Flash Attention Auto y KV f32 conservados. Perfil borrado y hilos restaurados a 0 (automático).
 
 ### Bloque 5 — Re-pruebas tras corregir bugs (la base ya está probada, ver resultados arriba)
 - [ ] 5.1b Benchmark de modelos → "Prueba rápida del motor GGUF" (requiere compilar el cambio pendiente): nombre del modelo y PP/TG; sin cargar → explica cómo proceder.
 - [ ] 5.4b Rotar con modelo cargado: sin recarga; rotar mientras genera: sin crash (BUG-021).
 - [ ] 5.5b Crash (puede provocarse con BUG-021) → "Exportar logs" incluye el crash nativo (BUG-022).
-- [ ] 5.6b Importar la copia .zip restaurando personajes con avatar y chats (BUG-023).
+- [x] **5.6b Restaurar copia — ✅ OK (19/11, en teléfono, BUG-023):** "Restaurar copia" abrió DocumentsUI; al importar `box-roleplay-prueba.zip` apareció "Se restauraron 4 personajes" (biblioteca 4 → 8), con avatares recreados con ids nuevos y `box_chat.db-wal` actualizado. Los 4 duplicados de prueba se borraron después, quedando los originales.
 - [ ] 5.9 RAM antes/después + micro-regresión (pendiente de la pasada anterior).
 
 ---
