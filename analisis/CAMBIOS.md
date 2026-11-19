@@ -40,6 +40,17 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — Revisión de la Tanda 2/3 y registro de la tanda final de roleplay (BUG-032 a BUG-040)
+
+**Qué y por qué:** revisión de los 16 commits de OpenCode (`1dda4fd`…`5995f15`: BUG-022 ampliado, BUG-031/I-6 LiteRT, BUG-003/004/005/006, BUG-018, BUG-023, BUG-028, BUG-007) y registro de las re-pruebas del humano del 19/11 como **"Tanda final — roleplay de grupo, copias y compartir"** (BUG-032 a BUG-040) en `analisis/BUGS.md`. No se toca código.
+
+**Revisión:** los cambios son coherentes con lo documentado. Observaciones, sin bloquear: (1) `LlmChatModelHelper.cleanUp` ahora ejecuta `onDone` en un hilo propio cuando se llama desde el principal (antes era síncrono); los llamadores solo actualizan estado, pero conviene vigilarlo si aparece algún fallo de hilos; (2) el filtro de escenas no reconoce `Narrador:` (solo `Narrator`) → BUG-037, comprobado con una prueba en JVM del `ScenePromptBuilder`; (3) las pruebas con el motor LiteRT y la interfaz solo se pueden confirmar en el teléfono (ya verificadas por el humano en 2.4/2.4b/4.4b/5.6b). No pude compilar con Gradle desde la nube.
+
+**Tanda final registrada:** Aleatorio sustituye en vez de añadir (BUG-032), el mensaje del usuario dispara respuesta de todos (BUG-033), enviar vacío con hablante elegido (BUG-034), persona opcional (BUG-035), solo nombre/descripción/personalidad (BUG-036), alias del Narrador (BUG-037), copia que fusiona y con selector (BUG-038), compartir como archivo `.json`/`.png` (BUG-039, reabre BUG-007) y botón de presets de rendimiento (BUG-040). Incluye el modelo objetivo del chat de escena y cómo lo resuelve SillyTavern (modo Manual + Swap).
+
+**Archivos:**
+- `analisis/BUGS.md` — nueva sección "Tanda final", notas en BUG-007 y BUG-023.
+
 ### 2026-11-19 — Re-pruebas en teléfono de la Tanda 3 (2.4, 2.4b, 4.4b, 5.6b, 4.1c y BUG-007)
 
 **Qué y por qué:** se instaló el APK compilado tras el commit `6492a7f` (`Android/src/app/build/outputs/apk/debug/app-debug.apk`) en el Xiaomi 2311DRK48G (Android 16) mediante depuración inalámbrica (`adb pair` + `adb connect`, puerto de emparejamiento 33077) y se ejecutaron las re-pruebas pendientes. Resultados reales:
