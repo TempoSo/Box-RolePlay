@@ -40,6 +40,31 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — I-6/BUG-031: candado del motor LiteRT, espera al turno cancelado y respuesta vacía como error
+
+**Qué y por qué:** con un modelo `.litertlm`, tras enviar, cancelar a mitad y reenviar, todas las respuestas salían vacías en ~500 ms y el indicador se quedaba en "⏳ cargando modelo…". Causa verificada: `LlmChatModelHelper.resetConversation()`/`resetConversationWithHistory()` cerraban la conversación sin cancelar ni esperar la generación en curso (el chat LiteRT la recrea justo antes de cada envío), y el motor quedaba inservible. Cambios, todo Kotlin:
+1. **Candado por modelo** en `LlmChatModelHelper` (equivalente al `nativeGate` de `LlamaCppEngine`): reset, envío y limpieza se serializan. Antes de cerrar se cancela, se espera el callback nativo (máx. 10 s) y solo entonces se recrea la conversación con el historial.
+2. **`cleanUp`** toma el candado, evita dobles limpiezas (`cleaningUp`) y se ejecuta en un hilo propio si lo llaman desde el principal, para que `pending.get(5 s)` no bloquee la UI.
+3. **Estados de la UI:** `stopResponse`, `errorListener`, `cleanUpListener` y el `catch` limpian `preparing` y la línea "⏳ cargando/procesando…" (antes quedaban pegados).
+4. **Respuesta vacía = error:** si el turno termina sin ningún fragmento en menos de 750 ms y no fue una cancelación manual, se reporta como error para que `handleError` limpie y reinicie la sesión, en vez de dejar el chat mudo.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatModelHelper.kt` — candado por modelo, `awaitPreviousGeneration`, reset/envío/limpieza serializados, `cleanUp` fuera del hilo principal, detección de respuesta vacía.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` — limpieza de `preparing` y del "⏳ …" al cancelar/terminar/fallar.
+- `analisis/BUGS.md` — BUG-031 nuevo (🟡 pendiente de re-prueba en teléfono).
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Pendiente:** re-prueba en el teléfono con `.litertlm` (enviar → cancelar → enviar). No probado en dispositivo.
+
+### 2026-11-19 — BUG-022: el reporte de logs añade `ApplicationExitInfo` como fuente de crashes nativos
+
+**Qué y por qué:** una app normal no puede leer `logcat -b crash` de forma fiable (`READ_LOGS` es privilegiado). `LogExporter.buildReport` incluye ahora un apartado **"Crash nativo (ApplicationExitInfo)"** con `ActivityManager.getHistoricalProcessExitReasons()`: últimas salidas anómalas (`REASON_CRASH_NATIVE`, `REASON_CRASH`, `REASON_ANR`, `REASON_SIGNALED`, `REASON_LOW_MEMORY`) con hora, motivo, estado, pid y descripción, más la traza (`getTraceInputStream`) en Android 12+. Comprobación de versión (`SDK_INT >= R` para la API y `>= S` para la traza) y `runCatching` en todo; no necesita el protobuf del tombstone. Se mantiene el buffer `logcat -b crash` como primera fuente. Antes de este cambio la rama se sincronizó con `origin/fase1-rendimiento` (`79eb6b4`, hallazgos I-1/I-2/I-3/I-4).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/LogExporter.kt` — `nativeExitReasons()` y sección nueva en `buildReport`.
+- `analisis/BUGS.md` — BUG-022 ampliado (traza pendiente de ver en el teléfono).
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-18 — Revisión de código: puerta única al nativo y unloadModel espera la carga (I-1, I-3, BUG-030/BUG-021)
 
 **Qué y por qué:** revisión de código (hallazgos I-1 e I-3, relacionados con BUG-030 y BUG-021). Ambos tocan el mismo archivo y se entregan en un solo commit.

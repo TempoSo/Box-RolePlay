@@ -1,5 +1,6 @@
 package com.google.ai.edge.gallery.data.characters
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -58,6 +59,64 @@ object LogExporter {
         return lines.filterIndexed { i, _ -> keep[i] }.joinToString("\n").take(20_000)
     }
 
+    /**
+     * BUG-022 (segunda fuente, 19/11): `ApplicationExitInfo` no necesita `READ_LOGS` ni el protobuf
+     * del tombstone. Devuelve las últimas salidas anómalas del proceso con su motivo, hora,
+     * descripción y, desde Android 12, la traza. Complementa el buffer `crash` de logcat, que una
+     * app normal no siempre puede leer.
+     */
+    private fun nativeExitReasons(context: Context): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return ""
+        return runCatching {
+            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val interesting =
+                setOf(
+                    android.app.ApplicationExitInfo.REASON_CRASH_NATIVE,
+                    android.app.ApplicationExitInfo.REASON_CRASH,
+                    android.app.ApplicationExitInfo.REASON_ANR,
+                    android.app.ApplicationExitInfo.REASON_SIGNALED,
+                    android.app.ApplicationExitInfo.REASON_LOW_MEMORY,
+                )
+            val records =
+                manager
+                    .getHistoricalProcessExitReasons(context.packageName, 0, 6)
+                    .filter { it.reason in interesting }
+            buildString {
+                records.forEach { info ->
+                    val stamp =
+                        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(info.timestamp))
+                    val reason =
+                        when (info.reason) {
+                            android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
+                            android.app.ApplicationExitInfo.REASON_CRASH -> "CRASH"
+                            android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
+                            android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+                            android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+                            else -> "motivo ${info.reason}"
+                        }
+                    appendLine("• $stamp · $reason · estado=${info.status} · pid=${info.pid}")
+                    info.description?.takeIf { it.isNotBlank() }?.let {
+                        appendLine("  descripción: ${it.take(2000)}")
+                    }
+                    // getTraceInputStream existe desde Android 11 (API 30); se limita a 12+ por
+                    // si el fabricante no la expone y se protege con runCatching.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        runCatching {
+                                info.traceInputStream?.bufferedReader()?.use { reader ->
+                                    val trace = reader.readText().take(8_000)
+                                    if (trace.isNotBlank()) {
+                                        appendLine("  traza:")
+                                        appendLine(trace)
+                                    }
+                                }
+                            }
+                            .onFailure { appendLine("  (traza no disponible: ${it.message})") }
+                    }
+                }
+            }
+        }.getOrElse { "(no se pudo leer ApplicationExitInfo: ${it.message})" }
+    }
+
     /** Arma el texto completo del reporte. Puede tardar un par de segundos: llamar fuera del hilo principal. */
     fun buildReport(context: Context): String {
         val sb = StringBuilder()
@@ -86,6 +145,12 @@ object LogExporter {
         if (nativeCrash.isNotBlank()) {
             sb.appendLine("--- Crash nativo (logcat -b crash) ---")
             sb.appendLine(nativeCrash)
+            sb.appendLine()
+        }
+        val exitReasons = nativeExitReasons(context)
+        if (exitReasons.isNotBlank()) {
+            sb.appendLine("--- Crash nativo (ApplicationExitInfo) ---")
+            sb.appendLine(exitReasons)
             sb.appendLine()
         }
         sb.appendLine("--- logcat (últimas líneas) ---")
