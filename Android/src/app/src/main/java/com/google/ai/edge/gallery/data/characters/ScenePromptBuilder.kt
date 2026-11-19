@@ -188,8 +188,17 @@ object ScenePromptBuilder {
         val match = HEADER.find(line.replace("*", "")) ?: return null
         val name = match.groupValues[1].trim()
         if (name.isEmpty()) return null
+        // BUG-037: el narrador se muestra como "Narrador" en la interfaz y el modelo suele responder
+        // así; internamente se llama NARRATOR. Se aceptan los alias en español y se devuelve el
+        // nombre canónico para que `filterReply` lo compare bien con los hablantes permitidos.
+        if (NARRATOR_ALIASES.any { it.equals(name, ignoreCase = true) } && known.contains(NARRATOR)) {
+            return NARRATOR
+        }
         return known.firstOrNull { it.equals(name, ignoreCase = true) }
     }
+
+    /** Variantes con las que el modelo (o el usuario) puede escribir el encabezado del narrador. */
+    private val NARRATOR_ALIASES = listOf("Narrator", "Narrador", "Narradora")
 
     /** `Nombre:` al principio de la línea, con `*` opcionales de markdown. */
     private val HEADER = Regex("^\\s*\\*{0,2}([\\p{L}\\p{N}][\\p{L}\\p{N}' ._-]{0,39})\\*{0,2}:(\\s|$)")

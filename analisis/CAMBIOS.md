@@ -40,6 +40,17 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-037: el filtro de escenas reconoce Narrador/Narradora
+
+**Qué y por qué:** BUG-037 (hallazgo de la revisión de código). La interfaz muestra "Narrador" y el modelo suele responder `Narrador:`, pero el filtro de escenas solo conocía `Narrator`, así que un bloque del narrador no permitido se colaba como si fuera del personaje anterior. Ahora `headerSpeaker` reconoce `Narrator`, `Narrador` y `Narradora` y devuelve el nombre canónico (solo si la escena tiene narrador).
+
+**Verificación:** test nuevo `filterRecognisesSpanishNarratorAlias`: falla con el código anterior y pasa con el nuevo (8 pruebas de `ScenarioTest` sin las de JSON, que dependen de Android). No compilado con Gradle.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/ScenePromptBuilder.kt` — alias del narrador en `headerSpeaker`.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/ScenarioTest.kt` — test nuevo.
+- `analisis/BUGS.md` — BUG-037 ✅.
+
 ### 2026-11-19 — BUG-027 descartado y BUG-041 (biblioteca de voces de Pocket TTS)
 
 **Qué y por qué:** el humano aclaró que las capturas de "Pocket TTS / Voces" eran de **Layla** (referencia de funcionalidad), no del fork. En el fork subir el `.wav` funciona; lo que falta es **guardar varias voces con nombre y etiquetas**. BUG-027 se descarta como fallo de importación y se abre BUG-041 (biblioteca de voces). No se toca código.

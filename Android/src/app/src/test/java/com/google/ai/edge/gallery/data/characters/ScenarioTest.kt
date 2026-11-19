@@ -84,4 +84,19 @@ class ScenarioTest {
         assertNotEquals(emptyList<Scenario>(), back)
         assertEquals(emptyList<Scenario>(), ScenarioJson.decode("no es json"))
     }
+
+    // BUG-037: el modelo escribe "Narrador:" aunque el nombre interno sea "Narrator".
+    @Test fun filterRecognisesSpanishNarratorAlias() {
+        val names = listOf("KIP", "Tohru")
+        val soloKip = ScenePromptBuilder.restriction(ScenePromptBuilder.Speaker.Character("KIP"), names)!!
+        // El bloque del narrador, que no está permitido, se elimina aunque venga en español.
+        assertEquals("KIP: hola", ScenePromptBuilder.filterReply("KIP: hola\nNarrador: se ríen\nse oye un ruido", soloKip))
+        assertEquals("KIP: hola", ScenePromptBuilder.filterReply("KIP: hola\nNarradora: se ríen", soloKip))
+        // Cuando el narrador sí está permitido, se conserva en cualquiera de sus formas.
+        val soloNarrador = ScenePromptBuilder.restriction(ScenePromptBuilder.Speaker.Narrator, names)!!
+        assertEquals("Narrador: llueve\nlejos truena", ScenePromptBuilder.filterReply("Narrador: llueve\nlejos truena\nKIP: hola", soloNarrador))
+        // Sin narrador en la escena, "Narrador:" no es un hablante conocido y no se recorta.
+        val sinNarrador = ScenePromptBuilder.TurnRestriction(allowed = listOf("KIP"), known = names, instruction = "")
+        assertEquals("KIP: hola\nNarrador: texto", ScenePromptBuilder.filterReply("KIP: hola\nNarrador: texto", sinNarrador))
+    }
 }

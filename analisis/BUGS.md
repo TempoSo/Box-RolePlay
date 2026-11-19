@@ -292,9 +292,10 @@
 - **Pista:** `ScenePromptBuilder.build()` (`data/characters/ScenePromptBuilder.kt`, líneas ~30-60) arma el prompt por personaje con `CharacterPromptBuilder.applyMacros`; revisar qué campos mete hoy (escenario, saludo, ejemplos, system prompt) y recortarlos. Valorar un interruptor "Usar ficha completa" por escena.
 - **Observación relacionada (captura 17:00, "Political Pundits"):** dos personajes distintos (The Conservative / The Libertarian) devolvieron **el mismo texto en inglés**, una acotación de escenario (`[The studio lights are bright…]`) que parece venir del escenario/saludo de la escena y no de su personalidad; recortar los campos extra debería evitarlo. Comprobar también que el idioma de respuesta sigue al usuario (español).
 
-### BUG-037 · ❌ Filtro de escenas: el Narrador en español no se reconoce (`Narrador:` ≠ `Narrator`)
+### BUG-037 · ✅ Filtro de escenas: el Narrador en español no se reconoce (`Narrador:` ≠ `Narrator`)
 - **Hallazgo de la revisión de código (2026-11-19):** `ScenePromptBuilder.NARRATOR = "Narrator"` pero la barra muestra "Narrador" y el modelo suele responder `Narrador:`. `headerSpeaker` no lo reconoce como encabezado conocido, así que `filterReply` deja pasar ese bloque en turnos que no lo permiten (comprobado con una prueba en JVM: con el hablante `KIP` fijo se descarta Tohru, pero un `Narrador:` justo detrás de KIP se conserva como si fuera de KIP).
 - **Fix:** aceptar ambos alias (`Narrator`, `Narrador`, y `Narradora`) en `headerSpeaker`, y añadir test en `ScenarioTest.kt`.
+- **Fix aplicado (2026-11-19):** `ScenePromptBuilder.headerSpeaker` acepta `Narrator`, `Narrador` y `Narradora` (sin distinguir mayúsculas) y devuelve el nombre canónico `NARRATOR`, solo si el narrador forma parte de la escena. Test `filterRecognisesSpanishNarratorAlias` en `ScenarioTest.kt` (falla con el código anterior, pasa con el nuevo; compilado con kotlinc, pendiente de Gradle). Archivos: `data/characters/ScenePromptBuilder.kt`, `test/.../ScenarioTest.kt`.
 
 ### BUG-038 · ❌ Copia de seguridad: duplica en vez de fusionar, y no incluye todo ni permite elegir qué restaurar
 - **Estado (5.6b, probado por el humano 2026-11-19):** "Restaurar copia" funciona, pero al restaurar el `.zip` **duplica** los personajes existentes en lugar de sobrescribirlos, y el `.zip` contiene **solo personajes** (BUG-023).
