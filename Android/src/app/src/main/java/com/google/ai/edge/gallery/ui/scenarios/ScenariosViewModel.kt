@@ -1,6 +1,5 @@
 package com.google.ai.edge.gallery.ui.scenarios
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.characters.CharacterRepository
@@ -11,7 +10,6 @@ import com.google.ai.edge.gallery.data.characters.ScenePromptBuilder
 import com.google.ai.edge.gallery.data.local.ChatRepository
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,15 +23,16 @@ import kotlinx.coroutines.withContext
 /** Escenas de roleplay con varios personajes: lista, edición y apertura del chat de la escena. */
 @HiltViewModel
 class ScenariosViewModel @Inject constructor(
-    @ApplicationContext context: Context,
+    private val store: ScenarioStore,
     characterRepository: CharacterRepository,
     private val personaRepository: PersonaRepository,
     private val chatRepository: ChatRepository,
 ) : ViewModel() {
-    private val store = ScenarioStore(context)
-
-    private val _scenarios = MutableStateFlow(store.all())
-    val scenarios: StateFlow<List<Scenario>> = _scenarios.asStateFlow()
+    /**
+     * BUG-005: la lista y el editor son destinos distintos, pero comparten este store singleton.
+     * Al guardar desde el editor, [ScenarioStore.scenarios] cambia y la lista se repinta sola.
+     */
+    val scenarios: StateFlow<List<Scenario>> = store.scenarios
 
     val characters: StateFlow<List<RoleplayCharacter>> =
         characterRepository.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -42,16 +41,14 @@ class ScenariosViewModel @Inject constructor(
     val message: StateFlow<String?> = _message.asStateFlow()
     fun clearMessage() { _message.value = null }
 
-    private fun refresh() { _scenarios.value = store.all() }
-
     fun get(id: String): Scenario? = store.get(id)
 
     fun save(s: Scenario) {
-        viewModelScope.launch(Dispatchers.IO) { store.save(s); refresh() }
+        viewModelScope.launch(Dispatchers.IO) { store.save(s) }
     }
 
     fun delete(id: String) {
-        viewModelScope.launch(Dispatchers.IO) { store.delete(id); refresh() }
+        viewModelScope.launch(Dispatchers.IO) { store.delete(id) }
     }
 
     /** Crea el chat de la escena y devuelve el id de la conversación. */

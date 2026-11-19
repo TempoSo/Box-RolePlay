@@ -7,6 +7,7 @@ import com.google.ai.edge.gallery.data.characters.AutoMemory
 import com.google.ai.edge.gallery.data.characters.RawMemory
 import com.google.ai.edge.gallery.data.characters.RawMemoryStore
 import com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore
+import com.google.ai.edge.gallery.data.characters.ScenarioStore
 import com.google.ai.edge.gallery.data.local.dao.ConversationDao
 import com.google.ai.edge.gallery.data.local.dao.PersonaDao
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -27,14 +28,14 @@ class ChatRepository @Inject constructor(
     private val messageDao: MessageDao,
     private val characterDao: CharacterDao,
     private val personaDao: PersonaDao,
+    private val scenarioStore: ScenarioStore,
     @ApplicationContext private val context: Context,
 ) {
     /** Nombres de los personajes de una escena ("scene:<id>"), o lista vacía si no es una escena. */
     suspend fun sceneMemberNames(conversationId: String): List<String> {
         val cid = conversationDao.getConversationById(conversationId)?.characterId ?: return emptyList()
         if (!cid.startsWith("scene:")) return emptyList()
-        val scenario = com.google.ai.edge.gallery.data.characters.ScenarioStore(context).get(cid.removePrefix("scene:"))
-            ?: return emptyList()
+        val scenario = scenarioStore.get(cid.removePrefix("scene:")) ?: return emptyList()
         return scenario.participantIds.mapNotNull { characterDao.getById(it)?.name }
     }
 

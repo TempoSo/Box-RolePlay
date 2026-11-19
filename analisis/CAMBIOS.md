@@ -40,6 +40,17 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-005: una sola fuente observable para las escenas (la lista se refresca al guardar)
+
+**Qué y por qué:** guardar una escena en el editor no refrescaba la lista: son destinos de navegación distintos y cada uno recibía su propia instancia de `ScenariosViewModel`, con su propio `MutableStateFlow` cargado una sola vez. El guardado escribía bien `scenarios.json`, pero el `refresh()` ocurría en la instancia del editor. Ahora `ScenarioStore` es un **singleton de Hilt** y la **única fuente observable**: mantiene una caché en memoria y publica `scenarios: StateFlow<List<Scenario>>`, que se recarga tras cada `save`/`delete` (y en el arranque). `ScenariosViewModel` ya no tiene estado propio de escenas: expone el `StateFlow` del store. `ChatRepository.sceneMemberNames()` también recibe el store por inyección (antes creaba una instancia suelta).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/ScenarioStore.kt` — `@Singleton @Inject`, caché + `StateFlow` `scenarios`, `reload()` tras cada escritura.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/scenarios/ScenariosViewModel.kt` — recibe `ScenarioStore` por inyección y expone su `StateFlow` (sin `_scenarios` propio).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/local/ChatRepository.kt` — `ScenarioStore` inyectado en el constructor.
+- `analisis/BUGS.md` — BUG-005 ✅.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — Revisión de cara a la Tanda 3: causas verificadas de BUG-005, 006, 023 y anclas de 003/004/007/018
 
 **Qué y por qué:** antes de abrir el chat de la Tanda 3 se revisó el estado real (`150516b`, árbol limpio, local y GitHub sincronizados) y el código de los bugs que toca esa tanda. **No se tocó código de producción**: solo se afinan las entradas de `analisis/BUGS.md` con lo verificado, para que el siguiente chat no rediagnostique ni invente.

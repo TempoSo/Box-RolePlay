@@ -1,11 +1,16 @@
 package com.google.ai.edge.gallery.data.characters
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonArray
@@ -68,26 +73,57 @@ object ScenarioJson {
         }.getOrDefault(emptyList())
 }
 
-/** Guarda las escenas en un archivo privado de la app. */
-class ScenarioStore(context: Context) {
+/**
+ * Guarda las escenas en un archivo privado de la app.
+ *
+ * BUG-005: la lista y el editor son destinos de navegación distintos y cada uno recibe su propio
+ * ViewModel, así que el estado no puede vivir en un `MutableStateFlow` de cada ViewModel. Este
+ * store es un singleton de Hilt y es la única fuente observable: [scenarios] se recarga tras cada
+ * `save`/`delete`, de modo que la lista se entera aunque el guardado lo haga el editor.
+ */
+@Singleton
+class ScenarioStore @Inject constructor(@ApplicationContext context: Context) {
     private val file = File(context.filesDir, "scenarios.json")
+    private val lock = Any()
 
-    @Synchronized
-    fun all(): List<Scenario> =
-        (if (file.exists()) ScenarioJson.decode(file.readText()) else emptyList())
-            .sortedByDescending { it.updatedAt }
+    @Volatile private var cached: List<Scenario> = emptyList()
 
-    @Synchronized
-    fun get(id: String): Scenario? = all().firstOrNull { it.id == id }
+    private val _scenarios = MutableStateFlow<List<Scenario>>(emptyList())
 
-    @Synchronized
-    fun save(s: Scenario) {
-        val next = all().filterNot { it.id == s.id } + s.copy(updatedAt = System.currentTimeMillis())
-        file.writeText(ScenarioJson.encode(next))
+    /** Todas las escenas (más recientes primero). Se actualiza tras cada escritura. */
+    val scenarios: StateFlow<List<Scenario>> = _scenarios.asStateFlow()
+
+    init {
+        reload()
     }
 
-    @Synchronized
+    fun all(): List<Scenario> = cached
+
+    fun get(id: String): Scenario? = all().firstOrNull { it.id == id }
+
+    fun save(s: Scenario) {
+        synchronized(lock) {
+            val next = all().filterNot { it.id == s.id } + s.copy(updatedAt = System.currentTimeMillis())
+            file.writeText(ScenarioJson.encode(next))
+        }
+        reload()
+    }
+
     fun delete(id: String) {
-        file.writeText(ScenarioJson.encode(all().filterNot { it.id == id }))
+        synchronized(lock) {
+            file.writeText(ScenarioJson.encode(all().filterNot { it.id == id }))
+        }
+        reload()
+    }
+
+    /** Vuelve a leer el archivo y publica el resultado en [scenarios]. */
+    fun reload() {
+        val list =
+            synchronized(lock) {
+                (if (file.exists()) ScenarioJson.decode(file.readText()) else emptyList())
+                    .sortedByDescending { it.updatedAt }
+            }
+        cached = list
+        _scenarios.value = list
     }
 }
