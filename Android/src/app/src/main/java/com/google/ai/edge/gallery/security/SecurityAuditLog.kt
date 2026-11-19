@@ -2,8 +2,6 @@ package com.google.ai.edge.gallery.security
 
 import android.content.Context
 import android.util.Log
-import androidx.security.crypto.EncryptedFile
-import androidx.security.crypto.MasterKeys
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date

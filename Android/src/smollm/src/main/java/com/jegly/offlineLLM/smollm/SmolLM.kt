@@ -1,7 +1,6 @@
 package com.jegly.offlineLLM.smollm
 
 import android.os.Build
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

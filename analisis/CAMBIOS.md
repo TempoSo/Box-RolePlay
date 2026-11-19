@@ -40,6 +40,37 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — Limpieza: 56 imports sin uso en 25 archivos
+
+**Qué y por qué:** limpieza de código: se quitan **56 imports sin uso en 25 archivos** (`app/src/main`, `app/src/test` y `smollm/src/main`). Solo se eliminan líneas `import`; no cambia ningún comportamiento. Criterio conservador: se borra un import solo si su nombre no aparece **en ningún sitio** del resto del archivo (ni en código ni en comentarios/KDoc), se excluyen los imports de operadores y delegados que se usan sin nombrarlos (`getValue`, `setValue`, `provideDelegate`, `invoke`…) y los comodín. **No compilado con Gradle** (la nube no puede): si algún import faltara, el compilador lo señalará y se restaura esa línea.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/box/gallery/MainActivity.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/customtasks/agentchat/SkillManagerBottomSheet.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/customtasks/mobileactions/MobileActionsViewModel.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/HfApi.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/RawMemory.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/security/AppLockManager.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/security/SecurityAuditLog.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/security/SecurityUtils.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/BoxApps.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/benchmark/BenchmarkResultsViewer.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/BoxSettingsScreen.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/HomeScreen.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/imagegen/ImageGenViewModel.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatScreen.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryScreen.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/modelmanager/ModelImportDialog.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/modelmanager/ModelManagerViewModel.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/navigation/GalleryNavGraph.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterDetailSheet.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterLibrary.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RoleplayScreens.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/scenarios/ScenarioScreens.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/whisper/WhisperScreen.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/whisper/WhisperViewModel.kt`
+- `Android/src/smollm/src/main/java/com/jegly/offlineLLM/smollm/SmolLM.kt`
+
 ### 2026-11-19 — BUG-011: macros solo con sintaxis SillyTavern (se revierten las llaves simples)
 
 **Qué y por qué:** decisión del humano: las macros siguen la sintaxis de SillyTavern, solo `{{char}}`/`{{user}}` (y `<BOT>`/`<USER>`). Se revierte el soporte de llaves simples (`{user}`) añadido antes en BUG-011; se mantiene la sustitución de macros al **mostrar** descripción, personalidad y escenario en la hoja de detalle y en la biblioteca. Una ficha con `{user}` lo muestra y lo envía literal (se corrige a mano en la ficha).
