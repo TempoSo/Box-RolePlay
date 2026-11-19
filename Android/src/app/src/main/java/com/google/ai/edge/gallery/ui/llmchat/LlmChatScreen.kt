@@ -240,6 +240,20 @@ fun ChatViewWrapper(
     viewModel = viewModel,
     modelManagerViewModel = modelManagerViewModel,
     onSendMessage = { model, rawMessages ->
+      // BUG-003: "Aleatorio" viaja en el trigger (instrucción oculta) y no crea mensajes visibles.
+      val trigger = localTrigger?.takeIf { it.model.name == model.name }
+      if (trigger != null) localTrigger = null
+      // BUG-003/004: si escribes como el narrador o un personaje, la IA contesta como los demás.
+      // La restricción se inyecta al prompt del turno, nunca como mensaje ni se persiste.
+      val restriction =
+        trigger?.restriction
+          ?: if (sceneNames.isEmpty()) null
+          else
+            com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.userTurnRestriction(
+              speaker = sceneSpeaker,
+              names = sceneNames,
+            )
+      val promptSuffix = trigger?.promptSuffix ?: restriction?.instruction
       // Escena: si escribes como el narrador o un personaje, tu texto lleva su nombre delante.
       val speakerPrefix =
         sceneSpeaker?.let { if (it == com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.NARRATOR) "Narrator: " else "$it: " }
@@ -270,7 +284,7 @@ fun ChatViewWrapper(
           audioMessages.add(message)
         }
       }
-      if ((text.isNotEmpty() && chatMessageText != null) || audioMessages.isNotEmpty()) {
+      if ((text.isNotEmpty() && chatMessageText != null) || audioMessages.isNotEmpty() || trigger != null) {
         if (text.isNotEmpty()) {
           modelManagerViewModel.addTextInputHistory(text)
         }
@@ -291,6 +305,9 @@ fun ChatViewWrapper(
             )
           },
           allowThinking = allowThinking,
+          // Con "Aleatorio" no hay texto: el sufijo es todo el prompt del turno.
+          promptSuffix = promptSuffix,
+          sceneRestriction = restriction,
         )
 
         firebaseAnalytics?.logEvent(
@@ -354,15 +371,21 @@ fun ChatViewWrapper(
               com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.pickRandom(pool, lastRandomSpeaker)
             if (pick != null) {
               lastRandomSpeaker = pick
+              // BUG-003/004: turno sin mensaje visible; la instrucción y el filtro van al motor.
+              val restriction =
+                com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.restriction(
+                  speaker =
+                    com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.Speaker.Character(
+                      pick
+                    ),
+                  names = sceneNames,
+                )
               localTrigger =
                 SendMessageTrigger(
-                  model,
-                  listOf(
-                    ChatMessageText(
-                      content = "(Next message: write only as $pick.)",
-                      side = com.google.ai.edge.gallery.ui.common.chat.ChatSide.USER,
-                    )
-                  ),
+                  model = model,
+                  messages = emptyList(),
+                  promptSuffix = restriction?.instruction,
+                  restriction = restriction,
                 )
             }
           },

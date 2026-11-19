@@ -79,6 +79,30 @@ open class LlmChatViewModelBase() : ChatViewModel() {
   // Para regenerar con los mismos ajustes del último envío.
   private var lastAllowThinking = false
 
+  /** BUG-003/004: nombres de la escena abierta (vacío = chat 1 a 1 o normal). */
+  @Volatile private var currentSceneNames: List<String> = emptyList()
+
+  /** Última restricción de turno aplicada; se reutiliza al regenerar. */
+  @Volatile
+  private var lastTurnRestriction: com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? =
+    null
+
+  /**
+   * Restricción para regenerar: se reutiliza la del último turno (así el swipe no cambia de
+   * personaje). Si no hay ninguna en memoria (app reabierta), se deduce del primer `Nombre:` de la
+   * respuesta anterior.
+   */
+  private fun turnRestrictionFor(
+    clue: String? = null,
+  ): com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? {
+    val names = currentSceneNames
+    val derived =
+      clue?.takeIf { names.isNotEmpty() }?.let {
+        com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.restrictionForReply(it, names)
+      }
+    return lastTurnRestriction ?: derived
+  }
+
   override fun refreshMessageTools() {
     val convId = currentConversationId ?: return
     val repo = chatRepository ?: return
@@ -104,6 +128,12 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     val userIndex = lastUserTextIndex(model)
     if (userIndex < 0) return // Solo hay saludo: no hay nada que regenerar.
     val userMessage = messages[userIndex] as? ChatMessageText ?: return
+    // BUG-003: al regenerar se vuelve a aplicar la restricción del turno (nunca como mensaje).
+    val restriction =
+      turnRestrictionFor(
+        (messages.drop(userIndex + 1).lastOrNull { it is ChatMessageText && it.side == ChatSide.AGENT } as? ChatMessageText)
+          ?.content
+      )
     // Quita todo lo que vino después del último mensaje del usuario (respuesta, pensamiento, errores).
     while ((uiState.value.messagesByModel[model.name]?.size ?: 0) > userIndex + 1) {
       removeLastMessage(model = model)
@@ -117,6 +147,8 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       allowThinking = lastAllowThinking,
       persistInput = false,
       regenerate = true,
+      promptSuffix = restriction?.instruction,
+      sceneRestriction = restriction,
     )
   }
 
@@ -446,8 +478,11 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     }
   }
 
-  suspend fun sceneMemberNames(conversationId: String): List<String> =
-    chatRepository.sceneMemberNames(conversationId)
+  suspend fun sceneMemberNames(conversationId: String): List<String> {
+    val names = chatRepository.sceneMemberNames(conversationId)
+    currentSceneNames = names
+    return names
+  }
 
   suspend fun getConversationById(conversationId: String) =
     chatRepository.getConversationById(conversationId)
@@ -607,7 +642,20 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     // Regenerar: el mensaje del usuario ya existe (no se guarda otra vez) y la respuesta es un swipe.
     persistInput: Boolean = true,
     regenerate: Boolean = false,
+    // BUG-003: instrucción oculta del turno de escena. Se concatena al prompt del motor y no crea
+    // mensaje ni se persiste. Si [input] viene vacío (botón "Aleatorio"), es lo único que se envía.
+    promptSuffix: String? = null,
+    // BUG-004: filtro defensivo de hablantes no permitidos en la respuesta de una escena.
+    sceneRestriction: com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? = null,
   ) {
+    val engineInput =
+      when {
+        promptSuffix.isNullOrBlank() -> input
+        input.isBlank() -> promptSuffix
+        else -> "$input\n\n$promptSuffix"
+      }
+    // Se recuerda el turno para que regenerar/swipe mantenga el mismo hablante (BUG-004).
+    lastTurnRestriction = sceneRestriction
     val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
     lastAllowThinking = allowThinking
     // Si la voz sigue leyendo la respuesta anterior, se corta al enviar o regenerar.
@@ -640,6 +688,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       val liveText = StringBuilder()
       var liveTried = false
       var liveOn = false
+      // BUG-004: texto crudo del motor para poder filtrar bloques de otros hablantes sobre el total.
+      val rawAssistant = StringBuilder()
+      val sceneFilter = sceneRestriction
 
       try {
         val resultListener: (String, Boolean, String?) -> Unit =
@@ -658,7 +709,14 @@ open class LlmChatViewModelBase() : ChatViewModel() {
                 }
                 if (liveOn) {
                   liveText.append(partialResult)
-                  com.google.ai.edge.gallery.tts.TtsManager.liveFeed(liveText.toString())
+                  val speak =
+                    if (sceneFilter != null)
+                      com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.filterReply(
+                        liveText.toString(),
+                        sceneFilter,
+                      )
+                    else liveText.toString()
+                  com.google.ai.edge.gallery.tts.TtsManager.liveFeed(speak)
                 }
               }
               if (done) {
@@ -744,7 +802,23 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
                 // Incrementally update the streamed partial results.
                 val latencyMs: Long = if (done) System.currentTimeMillis() - start else -1
-                if (partialResult.isNotEmpty() || wasLoading || done) {
+                if (sceneFilter != null) {
+                  // BUG-004: se guarda el texto crudo y se pinta el filtrado. Como el bloque de un
+                  // hablante no permitido desaparece, el mensaje visible puede encoger: se reemplaza
+                  // su contenido en vez de concatenar.
+                  if (partialResult.isNotEmpty()) rawAssistant.append(partialResult)
+                  if (partialResult.isNotEmpty() || wasLoading || done) {
+                    setLastTextMessageContent(
+                      model = model,
+                      content =
+                        com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.filterReply(
+                          rawAssistant.toString(),
+                          sceneFilter,
+                        ),
+                      latencyMs = latencyMs.toFloat(),
+                    )
+                  }
+                } else if (partialResult.isNotEmpty() || wasLoading || done) {
                   updateLastTextMessageContentIncrementally(
                     model = model,
                     partialContent = partialResult,
@@ -836,11 +910,11 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         // "⏳ cargando modelo…" durante toda la generación (no se actualiza hasta el `done`).
         _perfLine.value = "⏳ procesando…"
         delay(500)
-        applySystemPromptIfNeeded(model, input)
+        applySystemPromptIfNeeded(model, engineInput)
 
         model.runtimeHelper.runInference(
           model = model,
-          input = input,
+          input = engineInput,
           images = images,
           audioClips = audioClips,
           resultListener = resultListener,
@@ -927,12 +1001,16 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       // Clone the clicked message and add it.
       addMessage(model = model, message = message.clone())
 
+      // BUG-003/004: se reaplica la restricción de escena del último turno, sin crear mensajes.
+      val restriction = turnRestrictionFor()
       // Run inference.
       generateResponse(
         model = model,
         input = message.content,
         onError = onError,
         allowThinking = allowThinking,
+        promptSuffix = restriction?.instruction,
+        sceneRestriction = restriction,
       )
     }
   }

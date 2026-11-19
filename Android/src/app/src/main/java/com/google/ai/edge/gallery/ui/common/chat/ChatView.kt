@@ -76,7 +76,16 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AGChatView"
 
-data class SendMessageTrigger(val model: Model, val messages: List<ChatMessage>)
+/**
+ * Un disparo de envío programático. [promptSuffix] y [restriction] viajan solo al motor (BUG-003):
+ * no se crean mensajes visibles ni se persisten.
+ */
+data class SendMessageTrigger(
+  val model: Model,
+  val messages: List<ChatMessage>,
+  val promptSuffix: String? = null,
+  val restriction: com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? = null,
+)
 
 /**
  * A composable that displays a chat interface, allowing users to interact with different models

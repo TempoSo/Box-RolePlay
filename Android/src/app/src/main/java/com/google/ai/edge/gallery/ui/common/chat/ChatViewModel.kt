@@ -198,6 +198,34 @@ abstract class ChatViewModel : ViewModel() {
     _uiState.update { newUiState }
   }
 
+  /**
+   * Reemplaza el contenido del último mensaje de texto (no lo concatena). Lo usa el filtro de
+   * escenas (BUG-004): al descartar un bloque de otro hablante el texto visible puede encogerse,
+   * y con el acumulador incremental se quedaría pegado lo ya pintado.
+   */
+  fun setLastTextMessageContent(model: Model, content: String, latencyMs: Float) {
+    val newMessagesByModel = _uiState.value.messagesByModel.toMutableMap()
+    val newMessages = newMessagesByModel[model.name]?.toMutableList() ?: mutableListOf()
+    if (newMessages.isNotEmpty()) {
+      val lastMessage = newMessages.last()
+      if (lastMessage is ChatMessageText) {
+        val newLastMessage =
+          ChatMessageText(
+            content = processLlmResponse(response = content),
+            side = lastMessage.side,
+            latencyMs = latencyMs,
+            accelerator = lastMessage.accelerator,
+            hideSenderLabel = lastMessage.hideSenderLabel,
+          )
+        newMessages.removeAt(newMessages.size - 1)
+        newMessages.add(newLastMessage)
+      }
+    }
+    newMessagesByModel[model.name] = newMessages
+    val newUiState = _uiState.value.copy(messagesByModel = newMessagesByModel)
+    _uiState.update { newUiState }
+  }
+
   fun updateLastTextMessageLlmBenchmarkResult(
     model: Model,
     llmBenchmarkResult: ChatMessageBenchmarkLlmResult,

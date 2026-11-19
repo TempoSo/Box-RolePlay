@@ -54,13 +54,15 @@
 - **Fix recomendado:** no dar soporte v2 crudo a la importación (aunque se renombrara, los bundles KevinAHM necesitan el fix BOS de BUG-013); en su lugar, apuntar a repos compatibles sherpa-onnx y **mejorar el mensaje de error** de la importación con la lista exacta de archivos esperados (hoy es genérico y confunde).
 - **Archivos:** `tts/PocketModelFiles.kt`, `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt` (mensaje y texto de ayuda).
 
-### BUG-003 · ❌ Escenas: la instrucción "(Next message: write only as X.)" se envía como mensaje visible
+### BUG-003 · ✅ Escenas: la instrucción "(Next message: write only as X.)" se envía como mensaje visible *(arreglado 2026-11-19)*
+- **Fix aplicado (2026-11-19):** la instrucción viaja en `SendMessageTrigger.promptSuffix` y `generateResponse()` la concatena al `input` del motor (`engineInput`) sin crear mensaje ni persistirlo. "🎲 Aleatorio" dispara un turno con `messages = emptyList()` y ese sufijo como único prompt. Compilado y tests de `ScenarioTest` en verde; pendiente de re-prueba en teléfono (2.4).
 - **Síntoma:** aparece como burbuja tuya verde en el chat (captura 16:22). En **Layla esa instrucción va oculta** (se inyecta al prompt sin crear mensaje) — es el comportamiento esperado.
 - **Archivos:** `ui/llmchat/LlmChatScreen.kt` (línea ~362 crea el mensaje visible; ~227 lógica del speaker), `data/characters/ScenePromptBuilder.kt` (`turnInstruction()` ya la genera; falta inyectarla oculta).
 - **Fix:** inyectar la instrucción al prompt sin añadir mensaje a la conversación (o añadirlo marcado `hidden` que no persiste ni renderiza).
 - **Verificado (2026-11-19):** el envío se hace con `SendMessageTrigger(model, messages)` (`ui/common/chat/ChatView.kt:79`) y `LlmChatScreen.kt:358-365` mete la instrucción como `ChatMessageText` de lado USER, que es lo que se pinta y se guarda. No existe ningún soporte de mensajes ocultos. Dos vías: (a) añadir a `SendMessageTrigger` un `promptSuffix: String?` que `generateResponse` concatene al prompt del turno sin tocar la lista de mensajes; (b) `ChatMessageText` con marca `hidden` que no se persista ni renderice (más invasivo).
 
-### BUG-004 · ❌ Escenas: la IA habla por TODOS los personajes pese a "write only as X"
+### BUG-004 · ✅ Escenas: la IA habla por TODOS los personajes pese a "write only as X" *(arreglado 2026-11-19)*
+- **Fix aplicado (2026-11-19):** instrucción de turno reforzada + `TurnRestriction` que se inyecta al prompt y filtra los bloques `Nombre:` de hablantes no permitidos durante el streaming (`setLastTextMessageContent`, el texto puede encoger). Al escribir como un personaje/narrador, la IA se queda con los demás; con "Aleatorio", solo con el elegido. La restricción se conserva al regenerar/swipe. Compilado y tests de `ScenarioTest` en verde; pendiente de re-prueba en teléfono (2.4b).
 - **Síntoma:** pediste "write only as Akiko" y respondió Narrator + KIP + Akiko (captura 16:22).
 - **Causa:** el system prompt ya lo prohíbe (`ScenePromptBuilder.build()` líneas 52-58) pero el modelo lo ignora; la instrucción de turno es débil y encima visible (BUG-003).
 - **Fix propuesto:** al construir el prompt del turno, añadir restricción fuerte ("This turn: write ONLY as $X. One block. No other characters, no narrator.") y/o filtrar en post-procesado las líneas `Nombre:` prohibidas.

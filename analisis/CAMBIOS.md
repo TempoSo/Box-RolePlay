@@ -40,6 +40,20 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-003 + BUG-004: instrucción de turno oculta y un solo hablante en escenas
+
+**Qué y por qué:** la instrucción `(Next message: write only as X.)` se creaba como un `ChatMessageText` de SIDE USER: se pintaba como burbuja y se guardaba en la base de datos (BUG-003). Además el system prompt solo pedía "Only write for the characters listed" y el modelo ignoraba la restricción, contestando como narrador + todos los personajes (BUG-004). Se arreglan juntos porque comparten el mismo flujo de envío. Ahora la instrucción viaja en `SendMessageTrigger.promptSuffix` y se concatena al `input` del motor **sin crear mensaje ni persistirlo**; el botón "🎲 Aleatorio" dispara un turno con mensaje vacío (solo el sufijo). Se añade una restricción fuerte de turno, un post-filtro de bloques `Nombre:` no permitidos aplicado durante el streaming (reemplazando el contenido, para que el texto pueda encoger) y se reutiliza la restricción al regenerar/swipe. `ScenarioTest` cubre el filtro con Narrator + KIP + Akiko, encabezados markdown, texto sin nombre y deducción del hablante desde una respuesta anterior.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/ScenePromptBuilder.kt` — `TurnRestriction`, `restriction()`, `userTurnRestriction()`, `restrictionForReply()`, `filterReply()` e instrucción de turno reforzada.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatView.kt` — `SendMessageTrigger` con `promptSuffix` y `restriction`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatViewModel.kt` — `setLastTextMessageContent()` (reemplazo, no concatenación).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` — `generateResponse(promptSuffix, sceneRestriction)`, `engineInput` para prompt y motor, filtro en streaming, `runAgain`/`regenerateLast` con la misma restricción.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatScreen.kt` — Aleatorio sin mensaje visible y restricción según el hablante elegido.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/ScenarioTest.kt` — nuevos tests de restricción y filtro (8 pasan).
+- `analisis/BUGS.md` — BUG-003 y BUG-004 ✅.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — BUG-005: una sola fuente observable para las escenas (la lista se refresca al guardar)
 
 **Qué y por qué:** guardar una escena en el editor no refrescaba la lista: son destinos de navegación distintos y cada uno recibía su propia instancia de `ScenariosViewModel`, con su propio `MutableStateFlow` cargado una sola vez. El guardado escribía bien `scenarios.json`, pero el `refresh()` ocurría en la instancia del editor. Ahora `ScenarioStore` es un **singleton de Hilt** y la **única fuente observable**: mantiene una caché en memoria y publica `scenarios: StateFlow<List<Scenario>>`, que se recarga tras cada `save`/`delete` (y en el arranque). `ScenariosViewModel` ya no tiene estado propio de escenas: expone el `StateFlow` del store. `ChatRepository.sceneMemberNames()` también recibe el store por inyección (antes creaba una instancia suelta).
