@@ -832,6 +832,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
           }
           delay(100)
         }
+        // I-6: terminada la espera, la línea de estado vuelve a "procesando…"; antes se quedaba en
+        // "⏳ cargando modelo…" durante toda la generación (no se actualiza hasta el `done`).
+        _perfLine.value = "⏳ procesando…"
         delay(500)
         applySystemPromptIfNeeded(model, input)
 

@@ -40,6 +40,15 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-031 y BUG-022 verificados en el teléfono; la línea de estado deja de decir "cargando modelo…" al generar
+
+**Qué y por qué:** el humano confirma que BUG-031 ya funciona con normalidad en el teléfono (varias respuestas cortadas a mitad seguidas de respuestas correctas). Se marcan como verificados BUG-031 y BUG-022 en `analisis/BUGS.md`. Además, en la captura de las 10:51 se ve `⏳ cargando modelo…` **mientras el modelo está generando**: `generateResponse` escribe "⏳ cargando modelo…" antes del bucle de espera y no lo restaura al salir, así que la etiqueta se quedaba hasta el `done`. Se vuelve a poner "⏳ procesando…" justo después del bucle.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` — línea de estado tras la espera al modelo.
+- `analisis/BUGS.md` — BUG-031 ✅ (verificado 19/11) y BUG-022 ✅ (verificado 19/11) con la evidencia.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — BUG-022: nombres completos de motivo en `ApplicationExitInfo`
 
 **Qué y por qué:** el reporte `box-log-20261119-093634.txt` ya trae la sección nueva y **detecta el force-stop** (`2026-11-19 09:02:03 · USER_REQUESTED (cierre forzado) · descripción: [FORCE STOP] stop com.box.gallery due to from process:com.miui.securitycenter`), pero dos entradas salían como `motivo 16`. Verificado con `javap` sobre `android-37.0/android.jar`: `16 = REASON_PACKAGE_UPDATED` (las instalaciones del APK a las 09:00:33 y 09:34:57). Se añaden también `REASON_DEPENDENCY_DIED` (12), `REASON_FREEZER` (14) y `REASON_PACKAGE_STATE_CHANGE` (15) para no dejarlos como número.
