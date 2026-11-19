@@ -58,21 +58,26 @@
 - **Síntoma:** aparece como burbuja tuya verde en el chat (captura 16:22). En **Layla esa instrucción va oculta** (se inyecta al prompt sin crear mensaje) — es el comportamiento esperado.
 - **Archivos:** `ui/llmchat/LlmChatScreen.kt` (línea ~362 crea el mensaje visible; ~227 lógica del speaker), `data/characters/ScenePromptBuilder.kt` (`turnInstruction()` ya la genera; falta inyectarla oculta).
 - **Fix:** inyectar la instrucción al prompt sin añadir mensaje a la conversación (o añadirlo marcado `hidden` que no persiste ni renderiza).
+- **Verificado (2026-11-19):** el envío se hace con `SendMessageTrigger(model, messages)` (`ui/common/chat/ChatView.kt:79`) y `LlmChatScreen.kt:358-365` mete la instrucción como `ChatMessageText` de lado USER, que es lo que se pinta y se guarda. No existe ningún soporte de mensajes ocultos. Dos vías: (a) añadir a `SendMessageTrigger` un `promptSuffix: String?` que `generateResponse` concatene al prompt del turno sin tocar la lista de mensajes; (b) `ChatMessageText` con marca `hidden` que no se persista ni renderice (más invasivo).
 
 ### BUG-004 · ❌ Escenas: la IA habla por TODOS los personajes pese a "write only as X"
 - **Síntoma:** pediste "write only as Akiko" y respondió Narrator + KIP + Akiko (captura 16:22).
 - **Causa:** el system prompt ya lo prohíbe (`ScenePromptBuilder.build()` líneas 52-58) pero el modelo lo ignora; la instrucción de turno es débil y encima visible (BUG-003).
 - **Fix propuesto:** al construir el prompt del turno, añadir restricción fuerte ("This turn: write ONLY as $X. One block. No other characters, no narrator.") y/o filtrar en post-procesado las líneas `Nombre:` prohibidas.
 - **Archivos:** `data/characters/ScenePromptBuilder.kt`, `ui/llmchat/LlmChatScreen.kt`.
+- **Verificado (2026-11-19):** el único freno del system es "Only write for the characters listed…" (`ScenePromptBuilder.build()`, líneas ~52-58) y la instrucción de turno es un paréntesis suave (`turnInstruction()`, líneas ~73-78). El post-filtrado es viable porque todas las respuestas siguen el formato `Nombre: texto` (`NARRATOR` y `SceneSpeakerBar` usan esa convención): se pueden quitar las líneas que empiecen por `Nombre:` de personajes no permitidos, siempre que no estén dentro de un párrafo de otro hablante.
 
 ### BUG-005 · ❌ Escenas: la lista no se refresca al guardar
 - **Síntoma:** guardas el escenario y no aparece; hay que salir al inicio y volver.
-- **Archivos:** pantalla/editor de escenas en `ui/roleplay/` (lista debe observar el Flow de Room o recargar al volver del editor).
+- **Causa verificada (2026-11-19):** las escenas viven en `ui/scenarios/` (`ScenarioStore` sobre `scenarios.json`, sin Room). `ScenariosScreen` y `ScenarioEditorScreen` llaman cada una a `hiltViewModel()` y son **destinos de navegación distintos**, así que tienen **dos instancias** de `ScenariosViewModel`: el editor refresca su propio `_scenarios` y la lista (otra instancia) nunca se entera. `save()` sí escribe el archivo y `refresh()` sí se llama, pero sobre la instancia equivocada.
+- **Fix propuesto:** que `ScenarioStore` exponga un `StateFlow`/Flow recargado tras cada `save`/`delete` y que `ScenariosViewModel` lo recoja (o refrescar al volver con `LifecycleResumeEffect`/`DisposableEffect` sobre la entrada de la lista).
+- **Archivos:** `ui/scenarios/ScenariosViewModel.kt`, `ui/scenarios/ScenarioScreens.kt`, `data/characters/ScenarioStore.kt`.
 
 ### BUG-006 · ❌ Escenas: no se ven las etiquetas existentes
 - **Síntoma:** al crear/editar no hay chips de etiquetas como en Personajes; te olvidas de qué tags existen.
-- **Fix:** fila de chips de etiquetas (selección + creación) igual que en el editor de personajes.
-- **Archivos:** `ui/roleplay/` (editor de escenas; copiar patrón del editor de personajes).
+- **Verificado (2026-11-19):** el editor de **personajes tampoco** tiene chips: usa un `OutlinedTextField` de texto separado por comas (`ui/roleplay/RoleplayScreens.kt:531-536`). En escenas pasa lo mismo (`ui/scenarios/ScenarioScreens.kt:180-186`, `tagText.split(",")` al guardar). Por tanto no hay patrón que copiar: hay que crear los chips.
+- **Fix propuesto:** encima del campo de texto, una fila de chips con las etiquetas ya usadas (escenas + personajes) que al tocarlas añadan/quiten la etiqueta del campo; mantener el texto libre para etiquetas nuevas.
+- **Archivos:** `ui/scenarios/ScenarioScreens.kt`, opcionalmente `ui/roleplay/RoleplayScreens.kt` (mismo componente para los dos editores).
 
 ### BUG-015 · ✅ GGUF: el prompt se envía sin plantilla de turnos (calidad inferior a Layla) *(arreglado 2026-11-17)*
 - **Síntoma:** con el MISMO modelo GGUF (gemma-4-E4B PURE), mismo contexto (4096) y mismos parámetros, Box escribe peor que Layla: pregunta "cómo prefieres que te llame" pese a que la persona ("The User is Héctor") está en el prompt; seguimiento del personaje más flojo (capturas 20:49 Layla vs 20:50 Box). El usuario confirma que el problema solo se aprecia en GGUF.
@@ -126,6 +131,7 @@
 
 ### BUG-007 · ❌ Ficha: "Compartir" genera un texto no guardable
 - **Síntoma:** diálogo de texto sin opción de guardar/archivo.
+- **Estado verificado (2026-11-19):** el código ya no abre un diálogo propio: `ui/roleplay/RoleplayScreens.kt:185-191` y `:225-231` hacen `ACTION_SEND` tipo `application/json` con el JSON en `EXTRA_TEXT` y el nombre en `EXTRA_SUBJECT`. Falta confirmar en dispositivo que el destino permite guardarlo como archivo; si no, exportar a caché + `FileProvider` (como la copia .zip).
 - **Fix:** compartir de verdad: `ACTION_SEND` con texto plano o exportar `.json` a caché + `FileProvider` (como hace la copia de seguridad .zip).
 - **Archivos:** `ui/roleplay/CharacterDetailSheet.kt`, `data/characters/CharacterRepository.kt`.
 
@@ -148,6 +154,7 @@
 ### BUG-018 · ⚠️ Presets de motor: no guardan rendimiento (hilos, batch, flash, KV, visión)
 - **Síntoma (Bloque 4, prueba 4.4):** el preset guarda modelo, mmproj, persona y muestreo, pero NO los ajustes de rendimiento: al aplicarlo no se restauran hilos, batch, flash attention, KV ni el lado máximo de imagen.
 - **Causa verificada:** `data/characters/EnginePreset.kt` solo serializa `id/name/model/mmproj/personaId/samplerMode/samplerCustom` — el rendimiento vive en `EnginePerfStore` y no se incluye en el preset.
+- **Campos exactos a añadir (verificados en `data/characters/EnginePerfSettings.kt:11-29`):** `threads`, `nBatch`, `nUBatch`, `flashAttn`, `kvType`, `noMmap`, `repack`, `contextLength`, `maxResponse`, `imageMaxSide`. El `mmproj` ya está en el preset; el contexto y el tope de respuesta conviene guardarlos también aunque la prueba 4.4 no los mencione.
 - **Fix:** añadir los campos de rendimiento a `EnginePreset` (hilos, batch, flash, KV, imageMaxSide) con valores por defecto (migración tolerante) y aplicarlos al cargar el preset.
 - **Archivos:** `data/characters/EnginePreset.kt`, `data/characters/EnginePerfStore.kt`, `ui/modelmanager/EnginePerfDialog.kt`.
 
@@ -177,8 +184,8 @@
 
 ### BUG-023 · ⚠️ Copia de seguridad: se exporta, pero no hay forma de importarla
 - **Síntoma (Bloque 5, prueba 5.6 · POCO):** la exportación .zip funciona (comparte el archivo), pero no existe UI para **restaurar** esa copia.
-- **Contexto verificado:** la exportación vive en `ui/home/BoxSettingsScreen.kt:83-103` (`backupZip()` + share). Hay importación de **personaje individual** (`data/characters/CharacterRepository.kt:42-135`, `importFromUri`/`importFromBytes`), pero ninguna ruta restaura la copia completa (varios personajes + avatares + chats).
-- **Fix propuesto:** botón "Restaurar copia" que pida el .zip y recorra sus personajes vía el importador existente, eligiendo sobrescribir u omitir si ya existe.
+- **Contexto verificado (2026-11-19):** la exportación vive en `ui/home/BoxSettingsScreen.kt:83-103` (`RoleplayViewModel.backupZip()` → `CharacterRepository.exportBackupZip()`), y el .zip contiene **solo personajes** (`NNN-nombre.json` chara_card_v2 + `NNN-nombre.avatar.png`); **no incluye chats, escenas ni personas** (la línea anterior decía "+ chats": era incorrecta). Además el backend de restauración **ya existe**: `CharacterRepository.importAnyFromUri()` detecta el .zip, empareja cada `.json` con su `.avatar.png` e importa todos los personajes; `RoleplayViewModel.import(uri)` lo expone y avisa cuántos se importaron. Lo que falta es **solo la UI**.
+- **Fix propuesto:** tarjeta "Restaurar copia" en Configuración con `OpenDocument` (`application/zip`, `application/json`, `image/png`) que llame al importador y muestre el resultado. Ojo: el mensaje de `RoleplayViewModel.import` lo consume la biblioteca de personajes, así que Configuración debe llevar su **propio** `status`. `importFromBytes` siempre genera un id nuevo: decidir con el humano si sobrescribir por nombre o dejar duplicados (por defecto, duplicar es lo seguro).
 - **Archivos:** `ui/home/BoxSettingsScreen.kt`, `data/characters/CharacterRepository.kt`, `ui/roleplay/RoleplayViewModel.kt`.
 
 ### BUG-025 · ✅ Crash al limpiar un modelo GGUF cargado por AgentChat: ClassCastException en LlmChatModelHelper.cleanUp *(arreglado 2026-11-17)*

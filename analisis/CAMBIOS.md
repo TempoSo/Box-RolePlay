@@ -40,6 +40,23 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — Revisión de cara a la Tanda 3: causas verificadas de BUG-005, 006, 023 y anclas de 003/004/007/018
+
+**Qué y por qué:** antes de abrir el chat de la Tanda 3 se revisó el estado real (`150516b`, árbol limpio, local y GitHub sincronizados) y el código de los bugs que toca esa tanda. **No se tocó código de producción**: solo se afinan las entradas de `analisis/BUGS.md` con lo verificado, para que el siguiente chat no rediagnostique ni invente.
+
+**Hallazgos de la revisión:**
+- **BUG-005** (causa localizada): `ScenariosScreen` y `ScenarioEditorScreen` son destinos de navegación distintos y cada uno crea su propia instancia de `ScenariosViewModel`; el editor refresca su `_scenarios` y la lista nunca se entera, aunque `store.save()` y `refresh()` funcionan.
+- **BUG-006**: el editor de **personajes tampoco** tiene chips de etiquetas (solo un campo de texto separado por comas), así que no hay patrón que copiar: hay que crear el componente de chips.
+- **BUG-023**: el backend de restauración **ya existe** (`CharacterRepository.importAnyFromUri` detecta el .zip y empareja avatares; `RoleplayViewModel.import(uri)` lo expone). Falta **solo la UI**. Corregido además el alcance del .zip: contiene **personajes y avatares, no chats** (la entrada decía "+ chats").
+- **BUG-003**: el mecanismo es `SendMessageTrigger` + `ChatMessageText` visible; no hay soporte de mensajes ocultos. Se documentan las dos vías (sufijo de prompt en el trigger o mensaje `hidden`).
+- **BUG-004**: se confirma que el system solo pide "Only write for the characters listed" y que el post-filtrado por líneas `Nombre:` es viable.
+- **BUG-007**: el código actual ya usa `ACTION_SEND` con JSON; queda confirmar en dispositivo si el destino permite guardarlo como archivo.
+- **BUG-018**: se listan los campos exactos de `EnginePerfSettings` que faltan en el preset.
+
+**Archivos:**
+- `analisis/BUGS.md` — notas de verificación en BUG-003, BUG-004, BUG-005, BUG-006, BUG-007, BUG-018 y BUG-023.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — BUG-031 y BUG-022 verificados en el teléfono; la línea de estado deja de decir "cargando modelo…" al generar
 
 **Qué y por qué:** el humano confirma que BUG-031 ya funciona con normalidad en el teléfono (varias respuestas cortadas a mitad seguidas de respuestas correctas). Se marcan como verificados BUG-031 y BUG-022 en `analisis/BUGS.md`. Además, en la captura de las 10:51 se ve `⏳ cargando modelo…` **mientras el modelo está generando**: `generateResponse` escribe "⏳ cargando modelo…" antes del bucle de espera y no lo restaura al salir, así que la etiqueta se quedaba hasta el `done`. Se vuelve a poner "⏳ procesando…" justo después del bucle.
