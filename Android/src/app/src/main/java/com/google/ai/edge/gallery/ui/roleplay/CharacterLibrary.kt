@@ -193,7 +193,12 @@ private fun CharacterTile(
             }
             Column(Modifier.padding(10.dp)) {
                 Text(character.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val sub = character.description.ifBlank { character.personality }.ifBlank { "Sin descripción" }
+                // BUG-011: macros sustituidas también en la vista previa de la biblioteca.
+                val sub = com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder.applyMacros(
+                    character.description.ifBlank { character.personality }.ifBlank { "Sin descripción" },
+                    character.name,
+                    com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder.DEFAULT_USER_NAME,
+                )
                 Text(
                     sub,
                     style = MaterialTheme.typography.bodySmall,

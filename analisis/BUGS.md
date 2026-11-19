@@ -157,10 +157,13 @@
 - **Decisión pendiente:** renombrar a "Sin personaje" u ocultarlos/moverlos a "Chat libre".
 - **Archivos:** `ui/home/` (cajón) + `data/local/` (consulta de chats agrupados).
 
-### BUG-011 · ⚠️ Macros `{user}`/`{{char}}` sin sustituir en fichas y previews
+### BUG-011 · ✅ Macros `{user}`/`{{char}}` sin sustituir en fichas y previews *(arreglado 2026-11-19, pendiente de re-prueba en el teléfono)*
 - **Síntoma:** "Psicólogo Digital" muestra `{{char}}`/`{{user}}` crudos en la biblioteca; Tohru muestra `{user}` crudo en la ficha.
 - **Verificar también:** que el prompt final SÍ las sustituya (y soportar ambas sintaxis y alias de tarjeta tipo SillyTavern).
 - **Archivos:** `data/characters/CharacterPromptBuilder.kt` (`applyMacros`), `ui/roleplay/CharacterDetailSheet.kt`, `ui/roleplay/CharacterLibrary.kt`.
+- **Causa verificada (2026-11-19):** (1) `CharacterPromptBuilder.MACRO` solo reconocía `{{char}}`/`{{user}}` y `<BOT>`/`<USER>`; fichas como Tohru escriben `{user}` con llaves simples y pasaba crudo **también al prompt**. (2) La hoja de detalle y la vista previa de la biblioteca mostraban `description`/`personality`/`scenario` sin pasar por `applyMacros` (el prompt final sí lo hacía).
+- **Fix aplicado:** `MACRO` acepta además `{char}`, `{user}`, `{bot}` y `{{bot}}`; `CharacterDetailSheet` y `CharacterLibrary` sustituyen las macros al mostrar (con el nombre de la ficha y `User`). Test `replacesSingleBraceMacros` en `CharacterPromptBuilderTest.kt` (16 pruebas OK con kotlinc; pendiente de Gradle). Archivos: `data/characters/CharacterPromptBuilder.kt`, `ui/roleplay/CharacterDetailSheet.kt`, `ui/roleplay/CharacterLibrary.kt`.
+- **Re-prueba (teléfono):** abrir la ficha de Tohru y la de Psicólogo Digital: ya no deben verse `{user}` ni `{{char}}` crudos ni en la hoja de detalle ni en la biblioteca; y en un chat, el modelo debe llamar por su nombre al usuario.
 
 ### BUG-018 · ✅ Presets de motor: no guardan rendimiento (hilos, batch, flash, KV, visión) *(arreglado 2026-11-19)*
 - **Fix aplicado (2026-11-19):** `EnginePreset` incorpora los diez campos de rendimiento como anulables (migración tolerante); `BoxInferenceScreen` los guarda y `EngineApply.applyBasics()` los restaura junto a visión y muestreo, usando la misma vía para presets generales y de personaje. Tests en `EnginePresetTest` en verde. Nota: el archivo real es `EnginePerfSettings.kt`, no `EnginePerfStore.kt`.

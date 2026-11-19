@@ -40,6 +40,17 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-011: macros {user}/{char} (también con llaves simples) sustituidas en fichas, biblioteca y prompt
+
+**Qué y por qué:** BUG-011. Las macros de llaves simples (`{user}`, `{char}`, `{bot}`) que usan algunas fichas (Tohru) no se reconocían ni en la interfaz ni en el prompt, y la hoja de detalle y la biblioteca mostraban los textos sin sustituir macros.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/CharacterPromptBuilder.kt` — `MACRO` acepta llaves simples y `{{bot}}`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterDetailSheet.kt` — descripción, personalidad y escenario con macros sustituidas.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterLibrary.kt` — vista previa con macros sustituidas.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/CharacterPromptBuilderTest.kt` — test `replacesSingleBraceMacros`.
+- `analisis/BUGS.md` — BUG-011 ✅.
+
 ### 2026-11-19 — BUG-037: el filtro de escenas reconoce Narrador/Narradora
 
 **Qué y por qué:** BUG-037 (hallazgo de la revisión de código). La interfaz muestra "Narrador" y el modelo suele responder `Narrador:`, pero el filtro de escenas solo conocía `Narrator`, así que un bloque del narrador no permitido se colaba como si fuera del personaje anterior. Ahora `headerSpeaker` reconoce `Narrator`, `Narrador` y `Narradora` y devuelve el nombre canónico (solo si la escena tiene narrador).

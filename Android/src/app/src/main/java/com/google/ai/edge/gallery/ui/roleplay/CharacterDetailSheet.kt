@@ -51,6 +51,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
 import java.io.File
 
@@ -156,9 +157,11 @@ fun CharacterDetailSheet(
                     }
                 }
 
-                ExpandableBlock("Descripción", character.description)
-                ExpandableBlock("Personalidad", character.personality)
-                ExpandableBlock("Escenario actual", character.scenario, emptyText = "No hay escenario establecido.")
+                // BUG-011: la ficha muestra las macros ya sustituidas ({{char}}, {{user}}, {user}…).
+                val shown = { t: String -> CharacterPromptBuilder.applyMacros(t, character.name, CharacterPromptBuilder.DEFAULT_USER_NAME) }
+                ExpandableBlock("Descripción", shown(character.description))
+                ExpandableBlock("Personalidad", shown(character.personality))
+                ExpandableBlock("Escenario actual", shown(character.scenario), emptyText = "No hay escenario establecido.")
 
                 if (greetings.isNotEmpty()) {
                     Text("SELECCIONAR SALUDO", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
