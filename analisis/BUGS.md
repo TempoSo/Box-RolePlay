@@ -156,7 +156,8 @@
 - **Verificar también:** que el prompt final SÍ las sustituya (y soportar ambas sintaxis y alias de tarjeta tipo SillyTavern).
 - **Archivos:** `data/characters/CharacterPromptBuilder.kt` (`applyMacros`), `ui/roleplay/CharacterDetailSheet.kt`, `ui/roleplay/CharacterLibrary.kt`.
 
-### BUG-018 · ⚠️ Presets de motor: no guardan rendimiento (hilos, batch, flash, KV, visión)
+### BUG-018 · ✅ Presets de motor: no guardan rendimiento (hilos, batch, flash, KV, visión) *(arreglado 2026-11-19)*
+- **Fix aplicado (2026-11-19):** `EnginePreset` incorpora los diez campos de rendimiento como anulables (migración tolerante); `BoxInferenceScreen` los guarda y `EngineApply.applyBasics()` los restaura junto a visión y muestreo, usando la misma vía para presets generales y de personaje. Tests en `EnginePresetTest` en verde; pendiente de re-prueba en teléfono (4.4b). Nota: el archivo real es `EnginePerfSettings.kt`, no `EnginePerfStore.kt`.
 - **Síntoma (Bloque 4, prueba 4.4):** el preset guarda modelo, mmproj, persona y muestreo, pero NO los ajustes de rendimiento: al aplicarlo no se restauran hilos, batch, flash attention, KV ni el lado máximo de imagen.
 - **Causa verificada:** `data/characters/EnginePreset.kt` solo serializa `id/name/model/mmproj/personaId/samplerMode/samplerCustom` — el rendimiento vive en `EnginePerfStore` y no se incluye en el preset.
 - **Campos exactos a añadir (verificados en `data/characters/EnginePerfSettings.kt:11-29`):** `threads`, `nBatch`, `nUBatch`, `flashAttn`, `kvType`, `noMmap`, `repack`, `contextLength`, `maxResponse`, `imageMaxSide`. El `mmproj` ya está en el preset; el contexto y el tope de respuesta conviene guardarlos también aunque la prueba 4.4 no los mencione.

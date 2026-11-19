@@ -40,6 +40,19 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-018: los presets de motor guardan y restauran el rendimiento
+
+**Qué y por qué:** los presets solo guardaban modelo, visión, persona y muestreo; al aplicarlos no se restauraban hilos, batch, flash attention, KV, etc. Se amplía `EnginePreset` con los diez campos de `EnginePerfSettings` como **anulables** (`null` = "no cambiar"), de modo que los presets antiguos siguen cargando sin sobrescribir los ajustes actuales. La codificación solo escribe los campos guardados. Se unifica la aplicación en `EngineApply.applyBasics()` (antes `BoxInferenceScreen` tenía su propia copia parcial) y se usa tanto al aplicar un preset general como uno de personaje. Nota de realidad: el inventario citaba `EnginePerfStore.kt` y `ui/modelmanager/EnginePerfDialog.kt`, pero los archivos reales son `EnginePerfSettings.kt` y `ui/roleplay/EnginePerfDialog.kt`; el diálogo no se tocó porque solo edita los ajustes vigentes. Tests de ida/vuelta JSON, presets antiguos y sobreescritura parcial (4 en `EnginePresetTest`, todos pasan).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/EnginePreset.kt` — campos de rendimiento anulables + codificación/decodificación tolerante.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/EnginePerfSettings.kt` — `overriddenBy(preset)` (solo sobrescribe lo guardado y sanea).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/CharacterEngineStore.kt` — `EngineApply.applyBasics` aplica visión + rendimiento + muestreo.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/BoxInferenceScreen.kt` — guarda el rendimiento en el preset y aplica por la vía compartida.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/EnginePresetTest.kt` — nuevos tests.
+- `analisis/BUGS.md` — BUG-018 ✅.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — BUG-006: chips con las etiquetas ya usadas en escenas y personajes
 
 **Qué y por qué:** los editores de escena y de personaje solo tenían un campo de texto libre para las etiquetas, así que no se veían las ya existentes. Se añade un componente compartido `TagChips` (lógica pura + `FlowRow` de `FilterChip`) que muestra las etiquetas usadas en escenas y personajes, sin duplicados (ignorando mayúsculas) y en orden alfabético; al tocar una se añade o quita del campo, que sigue admitiendo texto nuevo. `RoleplayViewModel` expone las escenas del store singleton para alimentar los chips del editor de personajes. Tests de la lógica (`TagChipsTest`, 2 pasan).

@@ -28,9 +28,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
+import com.google.ai.edge.gallery.data.characters.EngineApply
 import com.google.ai.edge.gallery.data.characters.EnginePreset
 import com.google.ai.edge.gallery.data.characters.EnginePresetStore
-import com.google.ai.edge.gallery.data.characters.SamplerMode
 import com.google.ai.edge.gallery.data.characters.SamplerSettings
 import com.google.ai.edge.gallery.data.characters.SamplerSettingsStore
 import androidx.compose.material3.MaterialTheme
@@ -113,7 +113,7 @@ fun BoxInferenceScreen(
       text = {
         Column {
           Text(
-            "Guarda el modelo, la visión, la persona y el muestreo actuales para volver a ellos con un toque.",
+            "Guarda el modelo, la visión, la persona, el muestreo y el rendimiento actuales para volver a ellos con un toque.",
             style = MaterialTheme.typography.bodySmall,
           )
           OutlinedTextField(
@@ -127,6 +127,8 @@ fun BoxInferenceScreen(
         TextButton(
           enabled = presetName.isNotBlank(),
           onClick = {
+            // BUG-018: se guarda también el rendimiento vigente para poder restaurarlo.
+            val perf = perfStore.load()
             presetStore.save(
               EnginePreset(
                 name = presetName,
@@ -135,6 +137,16 @@ fun BoxInferenceScreen(
                 personaId = personas.firstOrNull { it.isActive }?.id ?: "",
                 samplerMode = samplerStore.mode().id,
                 samplerCustom = samplerStore.custom()?.let { SamplerSettings.encode(it) } ?: "",
+                threads = perf.threads,
+                nBatch = perf.nBatch,
+                nUBatch = perf.nUBatch,
+                flashAttn = perf.flashAttn,
+                kvType = perf.kvType,
+                noMmap = perf.noMmap,
+                repack = perf.repack,
+                contextLength = perf.contextLength,
+                maxResponse = perf.maxResponse,
+                imageMaxSide = perf.imageMaxSide,
               )
             )
             presets = presetStore.all(); showSavePreset = false; presetName = ""
@@ -165,7 +177,7 @@ fun BoxInferenceScreen(
       BoxActionCard(
         icon = Icons.Rounded.Bookmark,
         title = "Guardar combinación actual",
-        subtitle = "Modelo, visión, persona y muestreo en un perfil",
+        subtitle = "Modelo, visión, persona, muestreo y rendimiento en un perfil",
         onClick = { showSavePreset = true },
         dashed = true,
       )
@@ -185,16 +197,13 @@ fun BoxInferenceScreen(
               if (models.any { it.name == pr.model }) onSelectModel(pr.model) else missing += "modelo"
             }
             if (pr.mmproj.isNotBlank() && pr.mmproj !in mmprojFiles) missing += "visión"
-            else {
-              mmproj = pr.mmproj
-              perfStore.save(perfStore.load().copy(mmproj = pr.mmproj))
-            }
+            // BUG-018: una única vía de aplicación (la misma que usa el motor por personaje):
+            // visión, rendimiento y muestreo. Así no quedan dos rutas que puedan diverger.
+            EngineApply.applyBasics(context, pr)
+            mmproj = pr.mmproj
             if (pr.personaId.isNotBlank()) {
               val persona = personas.firstOrNull { it.id == pr.personaId }
               if (persona != null) viewModel.selectPersona(persona) else missing += "persona"
-            }
-            if (pr.samplerMode.isNotBlank()) {
-              samplerStore.save(SamplerMode.fromId(pr.samplerMode), pr.samplerCustom.takeIf { it.isNotBlank() }?.let { SamplerSettings.decodeOrNull(it) })
             }
             note = "Motor «${pr.name}» aplicado" + if (missing.isEmpty()) "" else " (no se encontró: ${missing.joinToString()})"
           },

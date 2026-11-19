@@ -40,6 +40,24 @@ data class EnginePerfSettings(
       imageMaxSide = imageMaxSide.coerceIn(128, 2048),
     )
 
+  /**
+   * BUG-018: aplica un preset dejando intactos los campos que no guardó (null = "no cambiar").
+   * Los presets anteriores a este campo siguen siendo válidos.
+   */
+  fun overriddenBy(preset: EnginePreset): EnginePerfSettings =
+    copy(
+      threads = preset.threads ?: threads,
+      nBatch = preset.nBatch ?: nBatch,
+      nUBatch = preset.nUBatch ?: nUBatch,
+      flashAttn = preset.flashAttn ?: flashAttn,
+      kvType = preset.kvType ?: kvType,
+      noMmap = preset.noMmap ?: noMmap,
+      repack = preset.repack ?: repack,
+      contextLength = preset.contextLength ?: contextLength,
+      maxResponse = preset.maxResponse ?: maxResponse,
+      imageMaxSide = preset.imageMaxSide ?: imageMaxSide,
+    ).sanitized()
+
   fun toEngineOptions(): SmolLM.EngineOptions =
     SmolLM.EngineOptions(
       nBatch = nBatch,

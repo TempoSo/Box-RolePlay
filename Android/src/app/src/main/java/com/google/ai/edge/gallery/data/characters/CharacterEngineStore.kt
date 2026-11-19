@@ -13,13 +13,14 @@ class CharacterEngineStore(context: Context) {
     }
 }
 
-/** Aplica de un [EnginePreset] lo que no necesita la base de datos: visión y muestreo. */
+/** Aplica de un [EnginePreset] lo que no necesita la base de datos: visión, rendimiento y muestreo. */
 object EngineApply {
     fun applyBasics(context: Context, p: EnginePreset) {
-        if (p.mmproj.isBlank() || p.mmproj in MmprojFiles.list(context)) {
-            val perf = EnginePerfStore(context)
-            perf.save(perf.load().copy(mmproj = p.mmproj))
-        }
+        val perf = EnginePerfStore(context)
+        var next = perf.load().overriddenBy(p)
+        // El mmproj del preset siempre se aplica (vacío = quitar visión), salvo que el archivo ya no exista.
+        if (p.mmproj.isBlank() || p.mmproj in MmprojFiles.list(context)) next = next.copy(mmproj = p.mmproj)
+        perf.save(next)
         if (p.samplerMode.isNotBlank()) {
             SamplerSettingsStore(context).save(
                 SamplerMode.fromId(p.samplerMode),
