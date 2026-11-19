@@ -125,7 +125,11 @@ object LogExporter {
                 "EXCESSIVE_RESOURCE_USAGE"
             android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED (cierre forzado)"
             android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
+            android.app.ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
             android.app.ApplicationExitInfo.REASON_OTHER -> "OTHER"
+            android.app.ApplicationExitInfo.REASON_FREEZER -> "FREEZER"
+            android.app.ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE -> "PACKAGE_STATE_CHANGE"
+            android.app.ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "PACKAGE_UPDATED (instalación)"
             android.app.ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
             else -> "motivo $reason"
         }

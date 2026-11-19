@@ -40,6 +40,14 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-022: nombres completos de motivo en `ApplicationExitInfo`
+
+**Qué y por qué:** el reporte `box-log-20261119-093634.txt` ya trae la sección nueva y **detecta el force-stop** (`2026-11-19 09:02:03 · USER_REQUESTED (cierre forzado) · descripción: [FORCE STOP] stop com.box.gallery due to from process:com.miui.securitycenter`), pero dos entradas salían como `motivo 16`. Verificado con `javap` sobre `android-37.0/android.jar`: `16 = REASON_PACKAGE_UPDATED` (las instalaciones del APK a las 09:00:33 y 09:34:57). Se añaden también `REASON_DEPENDENCY_DIED` (12), `REASON_FREEZER` (14) y `REASON_PACKAGE_STATE_CHANGE` (15) para no dejarlos como número.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/LogExporter.kt` — `exitReasonName()`.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — BUG-031 (segunda ronda): la conversación no se recreaba tras cancelar porque se creía "en sincronía"
 
 **Qué y por qué:** la primera ronda (`6d7f304`) no arregló el bug en el teléfono. El log `box-log-20261119-093634.txt` (APK con `ea50de1`) lo explica sin ambigüedad:
