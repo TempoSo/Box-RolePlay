@@ -40,6 +40,12 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-007: confirmado en código, sin cambios (queda re-prueba en dispositivo)
+
+**Qué y por qué:** se ha vuelto a revisar `ui/roleplay/RoleplayScreens.kt` (~185-192 y ~226-233): "Compartir" ya lanza `ACTION_SEND` con `type = "application/json"`, `EXTRA_TEXT` con el JSON de la tarjeta y `EXTRA_SUBJECT` con `<nombre>.json`, a través de `Intent.createChooser`. No hay diálogo propio ni texto no guardable en el código actual, así que **no se toca código**: la única duda (si el destino elegido permite guardar el archivo) solo se puede resolver en el teléfono. Si la prueba 4.1c/5.6 confirma que no se puede guardar, se cambiará a exportar `.json` en caché + `FileProvider`, como hace la copia `.zip`.
+
+**Archivos:** sin cambios de código. `analisis/CAMBIOS.md` — esta entrada; `analisis/BUGS.md` — nota de confirmación.
+
 ### 2026-11-19 — BUG-028: hueco estable para la etiqueta de holgura del navegador HF
 
 **Qué y por qué:** la etiqueta ("✔ cabe bien" / "justo" / "demasiado grande") compartía fila con los metadatos y el botón Descargar, así que quedaba pegada al texto, lejos o recortada según la longitud de los metadatos. Ahora los metadatos se limitan a dos líneas con ellipsis y separación de 8 dp del botón, y la etiqueta va en su **propia línea** con 4 dp de separación superior y una sola línea; se conservan los colores de BUG-020 y no se tocan los umbrales de `HfApi.fit()`. Sin tests nuevos (cambio de UI); compila.

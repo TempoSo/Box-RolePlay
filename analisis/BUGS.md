@@ -137,6 +137,7 @@
 ### BUG-007 · ❌ Ficha: "Compartir" genera un texto no guardable
 - **Síntoma:** diálogo de texto sin opción de guardar/archivo.
 - **Estado verificado (2026-11-19):** el código ya no abre un diálogo propio: `ui/roleplay/RoleplayScreens.kt:185-191` y `:225-231` hacen `ACTION_SEND` tipo `application/json` con el JSON en `EXTRA_TEXT` y el nombre en `EXTRA_SUBJECT`. Falta confirmar en dispositivo que el destino permite guardarlo como archivo; si no, exportar a caché + `FileProvider` (como la copia .zip).
+- **Revisión 2026-11-19 (Tanda 3):** confirmado de nuevo en código, **sin cambios**. Se deja abierto a re-prueba en teléfono: si el compartir no permite guardar, se sustituirá por archivo en caché + `FileProvider`.
 - **Fix:** compartir de verdad: `ACTION_SEND` con texto plano o exportar `.json` a caché + `FileProvider` (como hace la copia de seguridad .zip).
 - **Archivos:** `ui/roleplay/CharacterDetailSheet.kt`, `data/characters/CharacterRepository.kt`.
 
