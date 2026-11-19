@@ -88,6 +88,15 @@ object LlmChatModelHelper : LlmModelHelper {
   /** I-6: peticiones canceladas a mano por el usuario, para no confundir su final con un error. */
   private val manualStops = java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean>()
 
+  /**
+   * I-6 (19/11, segunda ronda): en LiteRT-LM 0.18.1 una `Conversation` que se cancela a mitad queda
+   * inservible: los envíos siguientes terminan en 0-3 ms sin ningún token. El chat reutilizaba esa
+   * conversación porque la consideraba "en sincronía" (`liteRtWindows`), así que el fallo duraba
+   * hasta reiniciar la app. Esta marca avisa al chat de que debe **recrear** la conversación antes
+   * del siguiente envío; se consume una sola vez.
+   */
+  private val cancelledTurns = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
   /** I-6: evita dos limpiezas simultáneas del mismo modelo. */
   private val cleaningUp = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
@@ -450,6 +459,8 @@ object LlmChatModelHelper : LlmModelHelper {
           onDone()
           return
         }
+        // I-6: al recargar el motor completo la marca de cancelación deja de tener sentido.
+        cancelledTurns.remove(model.name)
 
         // BUG (12:44): la instancia puede no ser de LiteRT (p. ej. un GGUF cargado por otra tarea
         // cuya limpieza llegó aquí de casualidad): el cast duro acababa en ClassCastException y
@@ -505,9 +516,18 @@ object LlmChatModelHelper : LlmModelHelper {
     // respuesta vacía. No se toma el candado aquí a propósito: el botón de parar está en el hilo
     // principal y no debe esperar a un reset en curso.
     manualStops[model.name]?.set(true)
+    // I-6: la conversación que se cancela queda inservible; el siguiente envío debe recrearla.
+    cancelledTurns.add(model.name)
+    Log.i(TAG, "Cancelación manual de '${model.name}': se recreará la conversación al reenviar")
     val instance = model.instance as? LlmModelInstance ?: return
     instance.conversation.cancelProcess()
   }
+
+  /**
+   * I-6: true una sola vez si el último turno se detuvo a mano (o quedó inservible). El chat lo usa
+   * para forzar la recreación de la conversación antes del siguiente envío.
+   */
+  fun consumeCancelled(model: Model): Boolean = cancelledTurns.remove(model.name)
 
   override fun runInference(
     model: Model,
@@ -538,6 +558,16 @@ object LlmChatModelHelper : LlmModelHelper {
       awaitPreviousGeneration(model.name, AWAIT_GENERATION_MS)
 
       val conversation = instance.conversation
+      if (!conversation.isAlive) {
+        // I-6: si la conversación ya no está viva (p. ej. un reset a medias), no se envía sobre
+        // ella: se avisa para que el chat limpie y recargue en vez de devolver un vacío silencioso.
+        Log.w(TAG, "La conversación de '${model.name}' no está viva; no se envía")
+        cancelledTurns.add(model.name)
+        onError(
+          "La conversación del modelo quedó inservible. Se reinicia; vuelve a enviar el mensaje."
+        )
+        return
+      }
 
       // BUG-021: registrar la generación para poder cancelarla y esperarla al limpiar el motor.
       // I-6: también se usa para saber si la respuesta vacía es una cancelación manual.
@@ -546,7 +576,9 @@ object LlmChatModelHelper : LlmModelHelper {
       val stopFlag = AtomicBoolean(false)
       manualStops[model.name] = stopFlag
       val startedAt = SystemClock.elapsedRealtime()
-      val delivered = AtomicBoolean(false)
+      // I-6: cuentan los caracteres de verdad entregados, no los callbacks: LiteRT puede llamar a
+      // `onMessage` con un mensaje vacío (eso dejaba una burbuja vacía de ~500 ms sin avisar).
+      val deliveredChars = java.util.concurrent.atomic.AtomicInteger(0)
 
       val contents = mutableListOf<Content>()
       for (image in images) {
@@ -564,6 +596,12 @@ object LlmChatModelHelper : LlmModelHelper {
         if (pendingGenerations[model.name] === pending) pendingGenerations.remove(model.name)
         if (manualStops[model.name] === stopFlag) manualStops.remove(model.name)
         pending.complete(Unit)
+        val elapsed = SystemClock.elapsedRealtime() - startedAt
+        Log.d(
+          TAG,
+          "Turno LiteRT '${model.name}': ${deliveredChars.get()} caracteres en $elapsed ms " +
+            "(throwable=${throwable?.javaClass?.simpleName ?: "ninguno"}, stop=${stopFlag.get()})",
+        )
         when {
           throwable is CancellationException -> {
             Log.i(TAG, "The inference is cancelled.")
@@ -576,14 +614,13 @@ object LlmChatModelHelper : LlmModelHelper {
           // I-6: tras cancelar, la conversación podía quedar inservible y el motor devolvía un
           // "done" vacío en ~500 ms. Eso no es una respuesta: se trata como error para que el
           // ViewModel limpie y reinitialice en vez de dejar el chat mudo.
-          !delivered.get() &&
-            !stopFlag.get() &&
-            SystemClock.elapsedRealtime() - startedAt < EMPTY_RESPONSE_MS -> {
+          deliveredChars.get() == 0 && !stopFlag.get() && elapsed < EMPTY_RESPONSE_MS -> {
             Log.w(
               TAG,
-              "Respuesta vacía de '${model.name}' en ${SystemClock.elapsedRealtime() - startedAt} ms; " +
-                "se trata como error",
+              "Respuesta vacía de '${model.name}' en $elapsed ms; se trata como error",
             )
+            // La conversación que acaba de fallar no se reutiliza.
+            cancelledTurns.add(model.name)
             onError(
               "El modelo devolvió una respuesta vacía. Se reinicia la conversación; " +
                 "vuelve a enviar el mensaje."
@@ -598,8 +635,9 @@ object LlmChatModelHelper : LlmModelHelper {
           Contents.of(contents),
           object : MessageCallback {
             override fun onMessage(message: Message) {
-              delivered.set(true)
-              resultListener(message.toString(), false, message.channels["thought"])
+              val text = message.toString()
+              if (text.isNotBlank()) deliveredChars.addAndGet(text.length)
+              resultListener(text, false, message.channels["thought"])
             }
 
             override fun onDone() {

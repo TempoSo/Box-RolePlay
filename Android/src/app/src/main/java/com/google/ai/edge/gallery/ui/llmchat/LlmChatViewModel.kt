@@ -410,7 +410,14 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       val dropped = alreadyDropped + extraDrop
       val summary = buildSummary(previous, keep, dropped, maxTokens)
       lastMemorySummary = summary
-      val needsReset = extraDrop > 0 || (!inSync && (prompt.isNotBlank() || previous.isNotEmpty()))
+      // I-6: si el turno anterior se detuvo a mano, la conversación de LiteRT quedó inservible
+      // (devolvía vacíos en ~0 ms). Se recrea siempre, aunque parezca "en sincronía" con el motor.
+      val cancelled = helper.consumeCancelled(model)
+      if (cancelled) {
+        Log.i(TAG, "Conversación de '${model.name}' cancelada: se recrea con el historial")
+      }
+      val needsReset =
+        cancelled || extraDrop > 0 || (!inSync && (prompt.isNotBlank() || previous.isNotEmpty()))
 
       if (needsReset) {
         val window = previous.take(keep) + previous.drop(keep + dropped)
@@ -936,6 +943,12 @@ open class LlmChatViewModelBase() : ChatViewModel() {
   ) {
     // Remove the "loading" message.
     if (getLastMessage(model = model) is ChatMessageLoading) {
+      removeLastMessage(model = model)
+    }
+    // I-6: LiteRT puede entregar un mensaje sin contenido antes de cerrar el turno; esa burbuja
+    // vacía no debe quedarse en el chat cuando el turno acaba en error.
+    val lastAfterLoading = getLastMessage(model = model)
+    if (lastAfterLoading is ChatMessageText && lastAfterLoading.content.isBlank()) {
       removeLastMessage(model = model)
     }
 

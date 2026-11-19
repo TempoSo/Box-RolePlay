@@ -40,6 +40,31 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-031 (segunda ronda): la conversación no se recreaba tras cancelar porque se creía "en sincronía"
+
+**Qué y por qué:** la primera ronda (`6d7f304`) no arregló el bug en el teléfono. El log `box-log-20261119-093634.txt` (APK con `ea50de1`) lo explica sin ambigüedad:
+
+- No aparece **ni una** línea `Resetting conversation with …` en todo el turno fallido: el chat **no** recreó la conversación.
+- Las respuestas vacías tardan **503.0 ms** y **511.0 ms**; 500 ms son el `delay(500)` de `LlmChatViewModel.generateResponse`. El turno real dura ~3 ms: el motor termina al instante sin emitir un solo token.
+- La captura lo confirma: `¡Hola! Estoy muy` cortado a los 6.9 s y después dos burbujas vacías.
+
+Causa: `applySystemPromptIfNeeded` solo resetea si `needsReset`; con el historial creciendo de dos en dos, `inSync` seguía siendo `true` y se reutilizaba la misma `Conversation` de LiteRT, que **queda inservible al cancelarla** (LiteRT-LM 0.18.1). Por eso el fallo duraba hasta reiniciar la app.
+
+**Cambios:**
+1. `LlmChatModelHelper`: nueva marca por modelo `cancelledTurns`. `stopResponse()` la activa (es el botón de parar) y `consumeCancelled(model)` la consume una sola vez. Se limpia al recargar el motor completo.
+2. `LlmChatViewModel.applySystemPromptIfNeeded`: si la marca está activa, `needsReset` pasa a `true` y se llama a `resetConversationWithHistory` (cancelar + esperar + cerrar + recrear con historial, ya bajo el candado de la primera ronda) antes del siguiente envío.
+3. Detección de respuesta vacía **por caracteres**, no por callback: LiteRT puede llamar a `onMessage` con un mensaje vacío; eso creaba la burbuja vacía y además hacía que la comprobación anterior no saltara. Ahora, si no se entregó ningún carácter, se marca el modelo y se reporta error.
+4. `runInference` comprueba `conversation.isAlive` antes de enviar (evita enviar sobre una conversación cerrada) y deja una traza por turno: `Turno LiteRT '<modelo>': N caracteres en X ms (…, stop=…)`.
+5. `handleError` quita la burbuja de texto vacía si quedó una.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatModelHelper.kt` — `cancelledTurns`, `consumeCancelled`, `stopResponse`, comprobación de `isAlive`, detección por caracteres y trazas.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` — `consumeCancelled` en `needsReset` y limpieza de la burbuja vacía.
+- `analisis/BUGS.md` — BUG-031 con la segunda ronda documentada.
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Pendiente:** re-prueba en el teléfono (enviar → cancelar a mitad → enviar). En el log deben verse `Cancelación manual de '…': se recreará la conversación al reenviar` y `Conversación de '…' cancelada: se recrea con el historial`.
+
 ### 2026-11-19 — BUG-022: `ApplicationExitInfo` incluye también el cierre forzado desde el sistema
 
 **Qué y por qué:** el log `box-log-20261119-090208.txt` (force-stop de las 09:01, exportado a las 09:02) **no traía el apartado "Crash nativo (ApplicationExitInfo)"**. Dos causas: (1) el APK instalado es anterior al cambio `1dda4fd`; (2) aun con el cambio, el filtro solo aceptaba crashes (`CRASH_NATIVE`, `CRASH`, `ANR`, `SIGNALED`, `LOW_MEMORY`) y un cierre forzado del usuario llega como `REASON_USER_REQUESTED`, así que la sección se habría generado vacía y no se habría impreso. Se cambia el filtro: ahora se excluyen solo las salidas normales (`REASON_EXIT_SELF`, `REASON_UNKNOWN`) y se listan las últimas 8 con nombre legible del motivo, hora, estado, pid, **proceso** y descripción (más la traza en Android 12+). Se añade `exitReasonName()` para no repetir el `when` dentro del bucle.
