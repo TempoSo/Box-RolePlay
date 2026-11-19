@@ -40,6 +40,18 @@
 
 ## 📝 Registro
 
+### 2026-11-18 — Revisión de código: puerta única al nativo y unloadModel espera la carga (I-1, I-3, BUG-030/BUG-021)
+
+**Qué y por qué:** revisión de código (hallazgos I-1 e I-3, relacionados con BUG-030 y BUG-021). Ambos tocan el mismo archivo y se entregan en un solo commit.
+
+- **I-3 — acceso al nativo serializado.** `LLMInference` no es seguro entre hilos y el motor lo llamaba desde varios (generación, `seedConversation`, `prepareForAuxTanda`, `setSampler`, `setThinking`, `setMaxResponse`, `benchModel`). Ahora hay una puerta única (`nativeGate`, `Semaphore(1)`): una generación nueva espera a que la anterior termine de verdad (cancelar no interrumpe el prefill nativo) y los métodos auxiliares esperan la puerta (`applySampler` y `benchModel` no esperan: si está ocupada, se saltan). `isGenerating` se marca dentro de `stateLock` al lanzar la generación (antes quedaba una ventana en la que `seedConversation` podía colarse) y un contador de época evita que una generación vieja ponga a `false` el estado de la nueva. Los callbacks `onComplete/onError/onCancelled` se ejecutan **después** de soltar la puerta.
+- **I-1 — `unloadModel` espera la carga en curso.** Antes solo esperaba la generación, así que si llegaba a mitad de una carga cerraba la instancia vieja y la carga terminaba sobre una instancia sin dueño. Ahora espera a generación **y** carga (máx. 60 s); si no terminan, no cierra y lo deja en el log. `resetConversation` ahora registra su recarga como `loadJob`, de modo que un `unloadModel` posterior también la espera.
+
+**Verificación:** compilado con kotlinc 2.0.21 contra un `SmolLM` simulado que detecta llamadas nativas solapadas y cierres con una llamada dentro. El motor anterior falla "stop + seed inmediato" y "dos generaciones seguidas" (solape); el nuevo pasa los 7 comprobantes (incluye unload durante carga y durante generación). La compilación detectó un `import kotlinx.coroutines.ensureActive` que faltaba y ya está añadido. **No probado en el teléfono ni compilado con Gradle** (la nube no puede).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — `nativeGate`, `generationEpoch`, `whenNativeIdle`, `unloadModel`, `resetConversation`, `generateResponse` y métodos auxiliares.
+
 ### 2026-11-18 — Revisión de código: absorber respeta el orden cronológico de las notas (I-4, BUG-002)
 
 **Qué y por qué:** revisión de código de la Tanda 1+2 (hallazgo I-4, BUG-002). `RawMemoryStore.forCharacter()` devuelve las notas de la **más nueva a la más vieja**, y el código anterior a la Tanda 1 le daba la vuelta (`notes.asReversed()`) antes de armar el prompt de absorción. Al repartir en tandas, `MemoryScreen.absorb` pasaba la lista **sin invertir** a `MemoryAbsorbPrompt.tandas`, que asume orden cronológico: dentro de cada tanda las notas salían al revés y, con más de 8 tandas, `takeLast` descartaba las más NUEVAS en vez de las más viejas. Los tests no lo veían porque alimentaban la función ya en orden cronológico.

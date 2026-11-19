@@ -6,10 +6,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.measureTime
@@ -27,6 +31,9 @@ class LlamaCppEngine {
 
         /** ...hasta bajar a este porcentaje (como Layla: 75 % -> ~45 %). */
         const val CONTEXT_WINDOW_LOW = 0.45f
+
+        /** Espera máxima para que una generación cancelada termine de verdad en el nativo. */
+        private const val GATE_WAIT_MS = 60_000L
     }
 
     private var instance = SmolLM()
@@ -58,6 +65,33 @@ class LlamaCppEngine {
     private var loadJob: Job? = null
 
     val isModelLoaded = AtomicBoolean(false)
+
+    /**
+     * I-3 (revisión de código): puerta única del motor nativo. LLMInference no es seguro entre
+     * hilos, y cancelar una corrutina solo surte efecto en el siguiente token (un prefill largo
+     * sigue dentro del nativo). La generación la retiene desde antes de su primera llamada nativa
+     * hasta después de la última; seedConversation y el resto de operaciones esperan a que se
+     * libere, y una generación nueva no arranca hasta que la anterior haya terminado de verdad.
+     * Es un Semaphore (no un ReentrantLock) porque la corrutina puede reanudarse en otro hilo.
+     * Orden de bloqueo: primero la puerta y luego stateLock; nunca al revés.
+     */
+    private val nativeGate = Semaphore(1)
+
+    /** Identifica la última generación pedida, para que una anterior no apague su isGenerating. */
+    private val generationEpoch = AtomicInteger(0)
+
+    /** true mientras el tope de tokens de la respuesta es el de una inferencia auxiliar. */
+    @Volatile private var maxResponseOverridden = false
+
+    /** Ejecuta [block] con la puerta del nativo; null si no se libró en [waitMs]. */
+    private inline fun <T> whenNativeIdle(waitMs: Long, block: () -> T): T? {
+        if (!nativeGate.tryAcquire(waitMs, TimeUnit.MILLISECONDS)) return null
+        try {
+            return block()
+        } finally {
+            nativeGate.release()
+        }
+    }
 
     @Volatile
     var isGenerating = false
@@ -163,25 +197,40 @@ class LlamaCppEngine {
     fun unloadModel() {
         stateLock.withLock {
             val gen = generationJob
+            val load = loadJob
             val inst = instance
-            loadJob?.cancel()
+            load?.cancel()
             gen?.cancel()
             isModelLoaded.set(false)
             isGenerating = false
             lastHistory = emptyList()
-            // BUG-021: liberar el motor solo cuando el hilo de generación haya terminado. La
-            // cancelación surte efecto en el siguiente token (y un prefill en marcha puede
-            // tardar bastante más), así que la espera y el cierre van en un hilo aparte; este
-            // motor ya no es alcanzable (cleanUp lo saca del mapa antes de llamar aquí).
+            // BUG-021 / I-1: liberar el motor solo cuando hayan terminado la generación Y la carga
+            // en curso. La cancelación surte efecto en el siguiente token (un prefill puede tardar
+            // bastante más) y una carga nativa no se puede interrumpir: si se cerrara antes, el
+            // close vería nativePtr == 0 y el modelo que termina de cargar después quedaría
+            // abierto sin dueño (varios GB de RAM). La espera y el cierre van en un hilo aparte;
+            // este motor ya no es alcanzable (cleanUp lo saca del mapa antes de llamar aquí).
             CoroutineScope(Dispatchers.Default).launch {
-                try {
-                    kotlinx.coroutines.withTimeoutOrNull(60_000) { gen?.join() }
-                } catch (_: Exception) {}
-                // Se cierra la instancia capturada: si mientras tanto el motor se hubiera
-                // recreado, no se toca la nueva.
-                try {
-                    inst.close()
-                } catch (_: Exception) {}
+                val terminaron =
+                    try {
+                        kotlinx.coroutines.withTimeoutOrNull(GATE_WAIT_MS) {
+                            gen?.join()
+                            load?.join()
+                            true
+                        } == true
+                    } catch (_: Exception) {
+                        false
+                    }
+                if (!terminaron) {
+                    // Cerrar con el hilo nativo aún dentro es un SIGSEGV seguro; es preferible
+                    // dejar el motor sin cerrar (fuga puntual) que matar la app (BUG-030).
+                    Log.e("AGLlamaPerf", "unloadModel: la generación o la carga no terminaron en ${GATE_WAIT_MS / 1000} s; no se cierra el motor")
+                    return@launch
+                }
+                // Se cierra la instancia capturada y la actual (si resetConversation la había
+                // sustituido). close() es atómico e idempotente.
+                try { inst.close() } catch (_: Exception) {}
+                try { instance.close() } catch (_: Exception) {}
             }
         }
     }
@@ -204,19 +253,32 @@ class LlamaCppEngine {
             // La conversacion nativa se borra; el historial sembrado para la plantilla tambien.
             lastHistory = emptyList()
             val gen = generationJob
+            val prevLoad = loadJob
             val inst = instance
             // BUG-002: mientras dura el close+reload, ninguna generacion debe poder entrar
             // (antes seguia a true y una tanda podia arrancar contra un motor a medio cerrar).
             isModelLoaded.set(false)
 
-            CoroutineScope(Dispatchers.Default).launch {
+            // I-1: este recargado cuenta como "carga en curso": si unloadModel llega a mitad, espera
+            // a que termine (y cierra la instancia nueva) en vez de dejarla abierta sin dueño.
+            loadJob = CoroutineScope(Dispatchers.Default).launch {
                 try {
                     // BUG-021: la generacion cancelada termina en el siguiente token (y un
                     // prefill en marcha puede tardar bastante); esperarla aqui, fuera del hilo
-                    // llamador, antes de cerrar el contexto nativo.
-                    try {
-                        kotlinx.coroutines.withTimeoutOrNull(60_000) { gen?.join() }
-                    } catch (_: Exception) {}
+                    // llamador, antes de cerrar el contexto nativo. Igual con una carga previa.
+                    val terminaron =
+                        try {
+                            kotlinx.coroutines.withTimeoutOrNull(GATE_WAIT_MS) {
+                                gen?.join()
+                                prevLoad?.join()
+                                true
+                            } == true
+                        } catch (_: Exception) {
+                            false
+                        }
+                    if (!terminaron) {
+                        throw IllegalStateException("El motor sigue ocupado; no se puede reiniciar la conversación ahora")
+                    }
                     // Close and reopen — this clears the KV cache and message history
                     // but the OS keeps model pages in memory so reload is fast
                     inst.close()
@@ -252,9 +314,12 @@ class LlamaCppEngine {
     /** Cambia el muestreo entre turnos (no hace nada si el modelo está ocupado). */
     fun applySampler(settings: com.google.ai.edge.gallery.data.characters.SamplerSettings) {
         samplerSettings = settings
-        stateLock.withLock {
-            if (!isModelLoaded.get() || isGenerating) return
-            instance.setSampler(settings.toFloatArray())
+        // Sin espera: si el nativo está ocupado se queda como antes ("no hace nada si ocupado").
+        whenNativeIdle(0) {
+            stateLock.withLock {
+                if (!isModelLoaded.get() || isGenerating) return@whenNativeIdle
+                instance.setSampler(settings.toFloatArray())
+            }
         }
     }
 
@@ -262,9 +327,11 @@ class LlamaCppEngine {
     fun setThinking(enabled: Boolean) {
         if (isGenerating) return
         thinkingEnabled = enabled
-        stateLock.withLock {
-            if (!isModelLoaded.get()) return
-            instance.setThinking(enabled)
+        whenNativeIdle(GATE_WAIT_MS) {
+            stateLock.withLock {
+                if (!isModelLoaded.get()) return@whenNativeIdle
+                instance.setThinking(enabled)
+            }
         }
     }
 
@@ -279,26 +346,34 @@ class LlamaCppEngine {
     }
 
     fun seedConversation(systemPrompt: String, history: List<Pair<String, String>>) {
-        stateLock.withLock {
-            if (!isModelLoaded.get() || isGenerating) {
-                Log.w("AGLlamaPerf", "seedConversation ignorado: modelo ocupado o no cargado")
-                return
-            }
-            instance.resetChat()
-            lastSystemPrompt = systemPrompt
-            val seeded = mutableListOf<Pair<String, String>>()
-            if (systemPrompt.isNotBlank()) {
-                instance.addSystemPrompt(systemPrompt)
-            }
-            for ((role, content) in history) {
-                // BUG-001: no sembrar cadenas vacias (el nativo acabaria tokenizandolas).
-                if (content.isNotBlank()) {
-                    instance.addChatMessage(role, content)
-                    seeded.add(role to content)
+        if (!isModelLoaded.get() || isGenerating) {
+            Log.w("AGLlamaPerf", "seedConversation ignorado: modelo ocupado o no cargado")
+            return
+        }
+        // I-3: si acabas de parar una respuesta, el hilo nativo puede seguir dentro (prefill);
+        // se espera a que termine antes de tocar el historial o la KV.
+        val hecho =
+            whenNativeIdle(GATE_WAIT_MS) {
+                stateLock.withLock {
+                    if (!isModelLoaded.get() || isGenerating) return@whenNativeIdle false
+                    instance.resetChat()
+                    lastSystemPrompt = systemPrompt
+                    val seeded = mutableListOf<Pair<String, String>>()
+                    if (systemPrompt.isNotBlank()) {
+                        instance.addSystemPrompt(systemPrompt)
+                    }
+                    for ((role, content) in history) {
+                        // BUG-001: no sembrar cadenas vacias (el nativo acabaria tokenizandolas).
+                        if (content.isNotBlank()) {
+                            instance.addChatMessage(role, content)
+                            seeded.add(role to content)
+                        }
+                    }
+                    lastHistory = seeded
+                    true
                 }
             }
-            lastHistory = seeded
-        }
+        if (hecho != true) Log.w("AGLlamaPerf", "seedConversation ignorado: el motor nativo sigue ocupado")
     }
 
     /**
@@ -310,25 +385,27 @@ class LlamaCppEngine {
      * En la ruta normal (prompt formado con el historial nativo) sí hace falta vaciar el chat.
      */
     fun prepareForAuxTanda() {
-        stateLock.withLock {
-            if (!isModelLoaded.get() || isGenerating) {
-                Log.w("AGLlamaPerf", "prepareForAuxTanda ignorado: modelo ocupado o no cargado")
-                return
+        val hecho =
+            whenNativeIdle(GATE_WAIT_MS) {
+                stateLock.withLock {
+                    if (!isModelLoaded.get() || isGenerating) return@whenNativeIdle false
+                    lastHistory = emptyList()
+                    lastSystemPrompt = ""
+                    if (!useGemma4Template) {
+                        // El prompt se forma con el historial nativo: hay que vaciarlo para que cada
+                        // tanda sea independiente (y con él se va la KV, como hasta ahora).
+                        instance.resetChat()
+                        return@whenNativeIdle true
+                    }
+                    // El historial nativo acumula el resumen de cada tanda, pero en la ruta de marcadores
+                    // no participa en la tokenización (el prompt lo construye GgufChatTemplate en Kotlin);
+                    // prepareForAuxInference —antes de la primera tanda— lo limpia. Solo queda resetear el
+                    // sampler: setSampler recrea la cadena y olvida las penalizaciones de la tanda previa.
+                    samplerSettings?.let { instance.setSampler(it.toFloatArray()) }
+                    true
+                }
             }
-            lastHistory = emptyList()
-            lastSystemPrompt = ""
-            if (!useGemma4Template) {
-                // El prompt se forma con el historial nativo: hay que vaciarlo para que cada
-                // tanda sea independiente (y con él se va la KV, como hasta ahora).
-                instance.resetChat()
-                return
-            }
-            // El historial nativo acumula el resumen de cada tanda, pero en la ruta de marcadores
-            // no participa en la tokenización (el prompt lo construye GgufChatTemplate en Kotlin);
-            // prepareForAuxInference —antes de la primera tanda— lo limpia. Solo queda resetear el
-            // sampler: setSampler recrea la cadena y olvida las penalizaciones de la tanda previa.
-            samplerSettings?.let { instance.setSampler(it.toFloatArray()) }
-        }
+        if (hecho != true) Log.w("AGLlamaPerf", "prepareForAuxTanda ignorado: modelo ocupado o no cargado")
     }
 
     /**
@@ -337,17 +414,36 @@ class LlamaCppEngine {
      * entero solo en generación. Debe restaurarse con [restoreMaxResponse] al acabar la tanda.
      */
     fun setMaxResponse(tokens: Int) {
-        stateLock.withLock {
-            if (!isModelLoaded.get() || isGenerating) return
-            instance.setMaxResponse(tokens)
+        whenNativeIdle(GATE_WAIT_MS) {
+            stateLock.withLock {
+                if (!isModelLoaded.get() || isGenerating) return@whenNativeIdle
+                instance.setMaxResponse(tokens)
+                maxResponseOverridden = true
+            }
         }
     }
 
     /** Devuelve el tope de generación al que tenía el chat (EngineOptions.maxResponse). */
     fun restoreMaxResponse() {
-        stateLock.withLock {
-            if (!isModelLoaded.get() || isGenerating) return
+        // Salida rápida (este método se llama desde callbacks, a veces en el hilo principal): si el
+        // tope ya se devolvió al terminar la generación, o hay otra en marcha, no se espera la puerta.
+        if (!maxResponseOverridden || isGenerating) return
+        whenNativeIdle(GATE_WAIT_MS) {
+            stateLock.withLock {
+                if (!isModelLoaded.get() || isGenerating) return@whenNativeIdle
+                restoreMaxResponseLocked()
+            }
+        }
+    }
+
+    /** Restaura el tope del chat si estaba cambiado. Quien llama ya tiene la puerta del nativo. */
+    private fun restoreMaxResponseLocked() {
+        if (!maxResponseOverridden) return
+        maxResponseOverridden = false
+        try {
             instance.setMaxResponse(lastLoadParams?.engine?.maxResponse ?: -1)
+        } catch (e: Exception) {
+            Log.w("AGLlamaPerf", "no se pudo restaurar el tope de respuesta: ${e.message}")
         }
     }
 
@@ -364,11 +460,26 @@ class LlamaCppEngine {
                 return
             }
 
+            // I-3: la anterior se cancela, pero la nueva no toca el nativo hasta que aquella haya
+            // terminado de verdad (nativeGate). isGenerating se marca YA, aquí, y no dentro de la
+            // corrutina: antes quedaba una ventana en la que seedConversation podía colarse.
             generationJob?.cancel()
+            val epoch = generationEpoch.incrementAndGet()
+            isGenerating = true
 
-            generationJob = CoroutineScope(Dispatchers.Default).launch {
+            val job = CoroutineScope(Dispatchers.Default).launch {
+                var gateHeld = false
+                // Callback final (completo, cancelado o error). Se ejecuta DESPUÉS de soltar la
+                // puerta del nativo, para que quien lo reciba pueda llamar a otros métodos del motor.
+                var finish: (suspend () -> Unit)? = null
                 try {
-                    isGenerating = true
+                    gateHeld = nativeGate.tryAcquire(GATE_WAIT_MS, TimeUnit.MILLISECONDS)
+                    if (!gateHeld) {
+                        throw IllegalStateException(
+                            "El motor sigue ocupado con la respuesta anterior; inténtalo de nuevo en unos segundos.",
+                        )
+                    }
+                    ensureActive()
                     var fullResponse = ""
                     var lastDisplayed = ""
 
@@ -442,24 +553,34 @@ class LlamaCppEngine {
                                 "(${"%.2f".format(st.generationTokensPerSecond)} t/s)",
                         )
                     }
-                    withContext(Dispatchers.Main) {
-                        isGenerating = false
-                        onComplete(
-                            GenerationResult(
-                                response = finalResponse,
-                                tokensPerSecond = instance.getResponseGenerationSpeed(),
-                                durationSeconds = duration.inWholeSeconds.toInt(),
-                                contextLengthUsed = instance.getContextLengthUsed(),
-                            )
-                        )
-                    }
+                    // Las lecturas nativas se hacen aquí, con la puerta aún en la mano.
+                    val result = GenerationResult(
+                        response = finalResponse,
+                        tokensPerSecond = instance.getResponseGenerationSpeed(),
+                        durationSeconds = duration.inWholeSeconds.toInt(),
+                        contextLengthUsed = instance.getContextLengthUsed(),
+                    )
+                    finish = { onComplete(result) }
                 } catch (e: CancellationException) {
-                    isGenerating = false
-                    withContext(Dispatchers.Main) { onCancelled() }
+                    finish = { onCancelled() }
                 } catch (e: Exception) {
-                    isGenerating = false
-                    withContext(Dispatchers.Main) { onError(e) }
+                    finish = { onError(e) }
+                } finally {
+                    if (gateHeld) {
+                        // El tope de una inferencia auxiliar (absorción) vale para una sola
+                        // generación: se devuelve aquí, también si se cancela o falla (el callback
+                        // de cancelación no siempre llega), antes de soltar la puerta.
+                        restoreMaxResponseLocked()
+                        nativeGate.release()
+                    }
+                    if (generationEpoch.get() == epoch) isGenerating = false
                 }
+                finish?.let { withContext(Dispatchers.Main) { it() } }
+            }
+            generationJob = job
+            // Si la corrutina se cancela antes de empezar, su cuerpo (y su finally) no se ejecuta.
+            job.invokeOnCompletion {
+                if (generationEpoch.get() == epoch) isGenerating = false
             }
         }
     }
@@ -499,8 +620,11 @@ class LlamaCppEngine {
     /** Prueba de velocidad sintética (prompt y generación). Devuelve null si no se puede ahora. */
     fun benchModel(pp: Int = 256, tg: Int = 64, pl: Int = 1, nr: Int = 2): String? {
         if (!isModelLoaded.get() || isGenerating) return null
-        return stateLock.withLock {
-            if (isGenerating) null else instance.benchModel(pp, tg, pl, nr)
+        // Sin espera: si el nativo está ocupado (aunque sea una respuesta recién cancelada), no corre.
+        return whenNativeIdle(0) {
+            stateLock.withLock {
+                if (isGenerating) null else instance.benchModel(pp, tg, pl, nr)
+            }
         }
     }
 
