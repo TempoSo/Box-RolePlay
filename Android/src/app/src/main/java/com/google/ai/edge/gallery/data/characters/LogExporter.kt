@@ -61,42 +61,36 @@ object LogExporter {
 
     /**
      * BUG-022 (segunda fuente, 19/11): `ApplicationExitInfo` no necesita `READ_LOGS` ni el protobuf
-     * del tombstone. Devuelve las últimas salidas anómalas del proceso con su motivo, hora,
-     * descripción y, desde Android 12, la traza. Complementa el buffer `crash` de logcat, que una
-     * app normal no siempre puede leer.
+     * del tombstone. Devuelve las últimas salidas del proceso con su motivo, hora, descripción y,
+     * desde Android 12, la traza. Complementa el buffer `crash` de logcat, que una app normal no
+     * siempre puede leer.
+     *
+     * Se excluyen solo las salidas normales (`REASON_EXIT_SELF` y `REASON_UNKNOWN`). El resto se
+     * lista igual, incluidas `REASON_USER_REQUESTED` / `REASON_USER_STOPPED`: así un cierre forzado
+     * desde Ajustes de Android también queda registrado y se puede distinguir de un crash nativo.
      */
     private fun nativeExitReasons(context: Context): String {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return ""
         return runCatching {
             val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val interesting =
-                setOf(
-                    android.app.ApplicationExitInfo.REASON_CRASH_NATIVE,
-                    android.app.ApplicationExitInfo.REASON_CRASH,
-                    android.app.ApplicationExitInfo.REASON_ANR,
-                    android.app.ApplicationExitInfo.REASON_SIGNALED,
-                    android.app.ApplicationExitInfo.REASON_LOW_MEMORY,
-                )
             val records =
                 manager
-                    .getHistoricalProcessExitReasons(context.packageName, 0, 6)
-                    .filter { it.reason in interesting }
+                    .getHistoricalProcessExitReasons(context.packageName, 0, 8)
+                    .filter {
+                        it.reason != android.app.ApplicationExitInfo.REASON_EXIT_SELF &&
+                            it.reason != android.app.ApplicationExitInfo.REASON_UNKNOWN
+                    }
             buildString {
                 records.forEach { info ->
                     val stamp =
                         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(info.timestamp))
-                    val reason =
-                        when (info.reason) {
-                            android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
-                            android.app.ApplicationExitInfo.REASON_CRASH -> "CRASH"
-                            android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
-                            android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
-                            android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
-                            else -> "motivo ${info.reason}"
-                        }
-                    appendLine("• $stamp · $reason · estado=${info.status} · pid=${info.pid}")
-                    info.description?.takeIf { it.isNotBlank() }?.let {
-                        appendLine("  descripción: ${it.take(2000)}")
+                    appendLine(
+                        "• $stamp · ${exitReasonName(info.reason)} · estado=${info.status} · " +
+                            "pid=${info.pid} · proceso=${info.processName ?: "?"}"
+                    )
+                    val desc = info.description
+                    if (desc != null && desc.isNotBlank()) {
+                        appendLine("  descripción: ${desc.take(2000)}")
                     }
                     // getTraceInputStream existe desde Android 11 (API 30); se limita a 12+ por
                     // si el fabricante no la expone y se protege con runCatching.
@@ -116,6 +110,25 @@ object LogExporter {
             }
         }.getOrElse { "(no se pudo leer ApplicationExitInfo: ${it.message})" }
     }
+
+    /** Nombre legible del motivo de `ApplicationExitInfo` (constantes de `android.app`). */
+    private fun exitReasonName(reason: Int): String =
+        when (reason) {
+            android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+            android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+            android.app.ApplicationExitInfo.REASON_CRASH -> "CRASH"
+            android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
+            android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
+            android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
+            android.app.ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
+            android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE ->
+                "EXCESSIVE_RESOURCE_USAGE"
+            android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED (cierre forzado)"
+            android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
+            android.app.ApplicationExitInfo.REASON_OTHER -> "OTHER"
+            android.app.ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
+            else -> "motivo $reason"
+        }
 
     /** Arma el texto completo del reporte. Puede tardar un par de segundos: llamar fuera del hilo principal. */
     fun buildReport(context: Context): String {

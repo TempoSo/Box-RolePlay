@@ -40,6 +40,17 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-022: `ApplicationExitInfo` incluye también el cierre forzado desde el sistema
+
+**Qué y por qué:** el log `box-log-20261119-090208.txt` (force-stop de las 09:01, exportado a las 09:02) **no traía el apartado "Crash nativo (ApplicationExitInfo)"**. Dos causas: (1) el APK instalado es anterior al cambio `1dda4fd`; (2) aun con el cambio, el filtro solo aceptaba crashes (`CRASH_NATIVE`, `CRASH`, `ANR`, `SIGNALED`, `LOW_MEMORY`) y un cierre forzado del usuario llega como `REASON_USER_REQUESTED`, así que la sección se habría generado vacía y no se habría impreso. Se cambia el filtro: ahora se excluyen solo las salidas normales (`REASON_EXIT_SELF`, `REASON_UNKNOWN`) y se listan las últimas 8 con nombre legible del motivo, hora, estado, pid, **proceso** y descripción (más la traza en Android 12+). Se añade `exitReasonName()` para no repetir el `when` dentro del bucle.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/LogExporter.kt` — `nativeExitReasons()` sin filtro de crashes y con `processName`; `exitReasonName()` nuevo.
+- `analisis/BUGS.md` — BUG-022: se documenta que el force-stop también aparece.
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Verificado en el log adjunto:** el proceso actual arranca a las 09:02:05 y el reporte se genera a las 09:02:08; **no queda ninguna línea de las 09:01** en "logcat (últimas líneas)" porque una app solo puede leer sus propios logs (el force-stop mató el proceso anterior). Tampoco hay ningún mensaje del motor LiteRT ni de "falla de escritura": los únicos crashes del buffer `crash` son del 16/11 (`libllama.so`) y del 17/11 (`liblitertlm_jni.so` 07:18, TTS 13:36/13:37, Scudo 15:23/15:27/15:30).
+
 ### 2026-11-19 — BUG-031 (refuerzo): liberar la petición si el envío falla en seco
 
 **Qué y por qué:** `LlmChatModelHelper.runInference` registra una `CompletableFuture` por turno para poder esperarlo al resetear/limpiar. Si `conversation.sendMessageAsync` lanzaba una excepción síncrona, la petición quedaba registrada para siempre y el turno siguiente esperaba los 10 s de `AWAIT_GENERATION_MS` antes de continuar. Ahora el envío va en `try/catch` y llama a `finish(e)`, que libera la petición y reporta el error por el camino normal.
