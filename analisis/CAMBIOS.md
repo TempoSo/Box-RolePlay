@@ -40,6 +40,16 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-023: UI para restaurar una copia de personajes
+
+**Qué y por qué:** la exportación .zip funcionaba pero no había forma de restaurarla desde la app, aunque el backend (`CharacterRepository.importAnyFromUri()`, que detecta .zip y empareja `.json` con `.avatar.png`) ya existía. Se añade la tarjeta "Restaurar copia" en Configuración con `OpenDocument` para `.zip`, `.json` y `.png`, y un método `RoleplayViewModel.importFromSettings()` que devuelve el resultado sin usar el canal de mensajes de la biblioteca. El importador crea ids nuevos: por defecto **duplica** en vez de sobrescribir (opción segura). El texto no promete chats ni escenas porque el .zip solo contiene personajes y avatares. Sin tests nuevos (cambio de UI); compila.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/BoxSettingsScreen.kt` — tarjeta de restauración, launcher y estado propio.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RoleplayViewModel.kt` — `importFromSettings(uri)` con mensaje propio.
+- `analisis/BUGS.md` — BUG-023 ✅.
+- `analisis/CAMBIOS.md` — esta entrada.
+
 ### 2026-11-19 — BUG-018: los presets de motor guardan y restauran el rendimiento
 
 **Qué y por qué:** los presets solo guardaban modelo, visión, persona y muestreo; al aplicarlos no se restauraban hilos, batch, flash attention, KV, etc. Se amplía `EnginePreset` con los diez campos de `EnginePerfSettings` como **anulables** (`null` = "no cambiar"), de modo que los presets antiguos siguen cargando sin sobrescribir los ajustes actuales. La codificación solo escribe los campos guardados. Se unifica la aplicación en `EngineApply.applyBasics()` (antes `BoxInferenceScreen` tenía su propia copia parcial) y se usa tanto al aplicar un preset general como uno de personaje. Nota de realidad: el inventario citaba `EnginePerfStore.kt` y `ui/modelmanager/EnginePerfDialog.kt`, pero los archivos reales son `EnginePerfSettings.kt` y `ui/roleplay/EnginePerfDialog.kt`; el diálogo no se tocó porque solo edita los ajustes vigentes. Tests de ida/vuelta JSON, presets antiguos y sobreescritura parcial (4 en `EnginePresetTest`, todos pasan).

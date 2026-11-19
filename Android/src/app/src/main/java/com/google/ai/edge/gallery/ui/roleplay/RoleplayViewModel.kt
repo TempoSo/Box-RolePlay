@@ -77,6 +77,22 @@ class RoleplayViewModel @Inject constructor(
         }
     }
 
+    /**
+     * BUG-023: restauración desde Ajustes. Devuelve el resultado en vez de escribir [_message],
+     * que es el canal que consume la biblioteca de personajes. Duplica por defecto (el importador
+     * asigna ids nuevos): es la opción segura, no sobrescribe personajes existentes.
+     */
+    suspend fun importFromSettings(uri: Uri): String =
+        try {
+            val list = repository.importAnyFromUri(uri)
+            if (list.size == 1) "Personaje restaurado: ${list[0].name}"
+            else "Se restauraron ${list.size} personajes"
+        } catch (e: CharacterCardException) {
+            e.message ?: "No se pudo importar la tarjeta"
+        } catch (e: Exception) {
+            "No se pudo restaurar: ${e.message ?: "error desconocido"}"
+        }
+
     fun save(character: RoleplayCharacter, onDone: () -> Unit) {
         viewModelScope.launch {
             try {

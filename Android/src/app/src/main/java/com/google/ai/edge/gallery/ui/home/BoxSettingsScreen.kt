@@ -1,5 +1,7 @@
 package com.google.ai.edge.gallery.ui.home
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -44,6 +46,14 @@ fun BoxSettingsScreen(
   var showSampler by remember { mutableStateOf(false) }
   var showPerf by remember { mutableStateOf(false) }
   var status by remember { mutableStateOf<String?>(null) }
+  // BUG-023: el backend de restauración ya existe; solo faltaba la UI. Estado propio de Ajustes.
+  var restoreStatus by remember { mutableStateOf<String?>(null) }
+  val restoreLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+      if (uri != null) {
+        scope.launch { restoreStatus = viewModel.importFromSettings(uri) }
+      }
+    }
 
   if (showTts) TtsSettingsDialog(onDismiss = { showTts = false })
   if (showSampler) SamplerDialog(onDismiss = { showSampler = false })
@@ -102,6 +112,14 @@ fun BoxSettingsScreen(
             }
               .onFailure { status = "No se pudo crear la copia: ${it.message}" }
           }
+        },
+      )
+      BoxActionCard(
+        icon = Icons.Rounded.Backup,
+        title = "Restaurar copia",
+        subtitle = restoreStatus ?: "Importa personajes de un .zip o una tarjeta .json/.png",
+        onClick = {
+          restoreLauncher.launch(arrayOf("application/zip", "application/json", "image/png"))
         },
       )
       BoxActionCard(
