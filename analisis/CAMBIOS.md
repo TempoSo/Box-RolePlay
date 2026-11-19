@@ -40,6 +40,13 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — BUG-027 descartado y BUG-041 (biblioteca de voces de Pocket TTS)
+
+**Qué y por qué:** el humano aclaró que las capturas de "Pocket TTS / Voces" eran de **Layla** (referencia de funcionalidad), no del fork. En el fork subir el `.wav` funciona; lo que falta es **guardar varias voces con nombre y etiquetas**. BUG-027 se descarta como fallo de importación y se abre BUG-041 (biblioteca de voces). No se toca código.
+
+**Archivos:**
+- `analisis/BUGS.md` — BUG-027 pasa a ✅ (descartado) y se añade BUG-041 con las funciones de referencia y el diseño propuesto (`VoiceStore`).
+
 ### 2026-11-19 — Revisión de la Tanda 2/3 y registro de la tanda final de roleplay (BUG-032 a BUG-040)
 
 **Qué y por qué:** revisión de los 16 commits de OpenCode (`1dda4fd`…`5995f15`: BUG-022 ampliado, BUG-031/I-6 LiteRT, BUG-003/004/005/006, BUG-018, BUG-023, BUG-028, BUG-007) y registro de las re-pruebas del humano del 19/11 como **"Tanda final — roleplay de grupo, copias y compartir"** (BUG-032 a BUG-040) en `analisis/BUGS.md`. No se toca código.

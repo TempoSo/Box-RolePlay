@@ -113,7 +113,7 @@
 - **Fix propuesto:** (a) añadir `orientation|screenSize` a `configChanges` (elimina de golpe la recarga y el crash); (b) además, al destruir, **cancelar la generación y esperar al hilo** antes de tocar/liberar el motor (refuerzo, igual para BUG-001); (c) verificar que los motores viven en scope Application/ViewModel, no Activity.
 - **Archivos:** `Android/src/app/src/main/AndroidManifest.xml`, `com/box/gallery/MainActivity.kt`, `runtime/LlamaCppModelHelper.kt`, helper LiteRT de `runtime/`.
 
-### BUG-027 · ❌ Importar muestras `.wav` para clonar voz: no deja *(documentado 2026-11-17; corregido el mismo día: era `.wav`, no `.wab`)*
+### BUG-027 · ✅ Importar muestras `.wav` para clonar voz: no deja *(descartado 2026-11-19: el humano confirma que SÍ deja subir la muestra `.wav`; lo que falta es guardarla como voz independiente → BUG-041)*
 - **Síntoma (feedback 17/11):** tras arreglar 3.1, el humano reportó que "no deja importar los `.wab`, que son los archivos para clonar las voces", y después aclaró: **"es wav, se me confundió la letra"**. Es decir, falla la importación de muestras `.wav`.
 - **Código verificado:** hay dos entradas para importar voz: `ui/roleplay/TtsSettingsDialog.kt:127` ("Elegir muestra de voz (.wav)" → `TtsFiles.importVoice(context, uri, "default")`) y `CharacterVoiceRow` (`:241` → `id = "char_$characterId"`). Ambas usan `ActivityResultContracts.OpenDocument()` con MIME `audio/*`. `TtsFiles.importVoice()` (`tts/TtsFiles.kt:47-54`) lee los bytes y exige `WavReader.parse(bytes) != null`; si falla, el diálogo muestra "Ese archivo no es un WAV legible (PCM de 16/24/32 bits)." y no guarda nada.
 - **Lo que SÍ está soportado:** `WavReader.parse()` (`data/characters/WavReader.kt:21-77`) acepta RIFF/WAVE con PCM 8/16/24/32 bits o float de 32 bits (format 1/3, también `WAVE_FORMAT_EXTENSIBLE`), mono/estéreo, y mezcla a mono; `TtsManager.launchJob()` (`tts/TtsManager.kt:218`) vuelve a parsear el archivo ya guardado antes de generar. Por tanto **no es falta de soporte de `.wav` en el código**: hace falta el mensaje exacto del teléfono o una muestra para ver si el archivo usa otro codec (μ-law/ADPCM), tiene cabeceras no estándar o el selector no lo abre.
@@ -246,6 +246,13 @@
 - **Archivos:** `Android/src/app/src/main/AndroidManifest.xml`, `runtime/`, `com/box/gallery/MainActivity.kt`.
 
 ---
+
+### BUG-041 · ❌ Voces de Pocket TTS: no se pueden guardar varias voces propias (biblioteca de voces)
+- **Síntoma (humano, 2026-11-19, con captura de "Voz (Pocket TTS)"):** subir la muestra `.wav` funciona, pero solo hay **una voz predeterminada** (`default.wav`) y **una por personaje** (`char_<id>.wav`); no se puede guardar cada muestra como una voz con nombre para tener varias y elegirlas.
+- **Código verificado:** `tts/TtsFiles.kt` `importVoice(context, uri, id)` guarda `voices/<id>.wav` solo con los ids `"default"` y `"char_$characterId"` (`ui/roleplay/TtsSettingsDialog.kt:76` y `:216`). No existe un almacén de voces con nombre.
+- **Referencia de funciones (la app Layla, solo como guía de funcionalidad; código propio, sin copiar nada de ella):** pantalla "Voces" con (1) origen: subir `.wav` o grabar con el micrófono; (2) reproducir la muestra antes de guardar; (3) texto de prueba editable y botón "Probar voz"; (4) nombre + etiquetas (fijas: hombre, mujer, narrador, personaje, calmado, enérgico, grave, suave, robótico, cálido, y una personalizada); (5) "Guardar voz"; (6) lista de voces con buscador por nombre/etiqueta, botón reproducir y borrar; (7) interruptor "Guardar como archivo de audio". El nombre debe autocompletarse con el nombre del archivo **sin extensión**; la duración mostrada debe ser la real (en la referencia sale "0:00" aunque dure 10 s).
+- **Fix propuesto:** `VoiceStore` (singleton Hilt con `StateFlow<List<Voice>>`, como `ScenarioStore`) que guarda `voices/<uuid>.wav` + un `voices.json` con `id`, `name`, `tags`, `createdAt`; `TtsFiles.importVoice` recibe el id de la voz; el selector de voz (por defecto y por personaje) elige de la lista en vez de importar al vuelo. Migrar `default.wav` y `char_*.wav` existentes como voces con nombre ("Predeterminada", nombre del personaje). Test de lógica pura para el almacén (alta, borrado, búsqueda por etiqueta).
+- **Archivos:** `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt`, `tts/TtsManager.kt`, nueva pantalla de voces y `VoiceStore`.
 
 ## 🧩 Tanda final — Roleplay de grupo, copias y compartir *(documentado 2026-11-19, pendiente; hacer DESPUÉS de los bugs menores)*
 
