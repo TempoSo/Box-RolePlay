@@ -23,6 +23,14 @@ fun BenchmarkAppScreen(onBack: () -> Unit, onOpenModelBenchmark: () -> Unit) {
     if (showBench) QuickBenchDialog(onDismiss = { showBench = false })
     BoxScaffold(title = "Benchmark de modelos", subtitle = "Mide la velocidad de tus modelos", onBack = onBack) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            // BUG-019: cada motor mide con su propio método; avisarlo para no comparar cifras de motores distintos.
+            androidx.compose.material3.Text(
+                "Las cifras de GGUF y de LiteRT no son comparables entre sí: cada motor mide con su propio " +
+                    "método. Compara siempre resultados del mismo motor.",
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
             BoxActionCard(
                 icon = Icons.Rounded.Speed,
                 title = "Benchmark completo",

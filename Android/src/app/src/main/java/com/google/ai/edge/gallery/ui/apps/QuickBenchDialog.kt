@@ -59,7 +59,8 @@ fun QuickBenchDialog(onDismiss: () -> Unit) {
                         "Modelo cargado: $loadedName\n\n" +
                             "Mide tokens/s de prompt (PP) y generación (TG) sin chat. Para comparar " +
                             "ajustes: cambia hilos/batch/flash attention en Configuración → Rendimiento " +
-                            "del motor, recarga el modelo y repite.",
+                            "del motor, recarga el modelo y repite. Estas cifras son de llama.cpp y no son " +
+                            "comparables con las de un modelo LiteRT.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     OutlinedButton(

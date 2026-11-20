@@ -129,12 +129,13 @@
 - **Mejoras propuestas (parcial — puede haber coste inherente del encoder de visión en CPU):** redimensionado real del bitmap antes del encoder, hilos del codificador mtmd, y medir por fases (encode vs prefill) para localizar el cuello; valorar caché si se reenvía la misma imagen.
 - **Archivos:** `engine/LlamaCppEngine.kt` (`queueImages`), `runtime/LlamaCppModelHelper.kt`, `data/characters/EnginePerfStore.kt`.
 
-### BUG-019 · ⚠️ Benchmark LiteRT: métrica propia no comparable con GGUF
+### BUG-019 · 🟡 Benchmark LiteRT: métrica propia no comparable con GGUF
 **Esfuerzo:** S · **Escalón:** 1 · Unificar métrica o etiquetar como no comparable
 
 - **Síntoma (Bloque 4, prueba 4.5):** el benchmark mide en ambos motores, pero la medición de LiteRT usa otra base (métrica propia del runtime) y sus cifras no son comparables con las de GGUF. Menor; arreglar más adelante.
 - **Fix propuesto:** unificar la medición (mismos prompts de prueba y misma fórmula tok/s) o etiquetar claramente que no son comparables.
 - **Archivos:** app Benchmark de modelos (GGUF: `QuickBenchDialog.kt`) y la medición del runtime LiteRT.
+- **Parche aplicado (2026-11-20, pendiente de tu comprobación visual):** se elige la opción «etiquetar como no comparable» (unificar la métrica exigiría cambiar el benchmark completo heredado y no aporta al roleplay). La pantalla «Benchmark de modelos» muestra un aviso: las cifras de GGUF y de LiteRT no son comparables entre sí, compara siempre dentro del mismo motor; y la prueba rápida GGUF aclara que sus cifras son de llama.cpp. **Re-prueba:** Apps → Benchmark de modelos: se ve el aviso arriba; Prueba rápida del motor GGUF: el texto lo menciona. Archivos: `ui/apps/BenchmarkAppScreen.kt`, `ui/apps/QuickBenchDialog.kt`.
 
 > **BUG-024** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-024).
 

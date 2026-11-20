@@ -41,6 +41,15 @@
 
 ## 📝 Registro
 
+### 2026-11-20 — BUG-019: el benchmark avisa de que GGUF y LiteRT no son comparables (Escalón 1)
+
+**Qué y por qué:** BUG-019 (Escalón 1). El benchmark mide en GGUF y en LiteRT con métodos distintos, así que sus cifras no se pueden comparar. Se elige etiquetarlo en vez de unificar la métrica: aviso en la pantalla «Benchmark de modelos» y aclaración en la prueba rápida GGUF. Solo texto de interfaz. Pendiente de comprobación visual.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/BenchmarkAppScreen.kt` — aviso de no comparabilidad.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/QuickBenchDialog.kt` — aclaración en el texto.
+- `analisis/BUGS.md` — BUG-019 con parche aplicado.
+
 ### 2026-11-20 — BUG-014: el error de importar la carpeta de voz lista los archivos esperados (Escalón 1)
 
 **Qué y por qué:** BUG-014 (Escalón 1). El aviso al importar una carpeta de modelo de voz sin piezas reconocibles era genérico («No se encontraron archivos…») y confundía, sobre todo con las carpetas v2 de KevinAHM. Ahora lista los archivos exactos que se esperan y, si detecta nombres v2, explica que no se pueden importar tal cual y remite a «Descargar de Hugging Face». Pendiente de re-prueba en el teléfono.
