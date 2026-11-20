@@ -3,6 +3,7 @@
 <p align="center"><b>Roleplay con IA 100 % local en tu Android. Sin nube. Sin cuentas. Sin límites.</b></p>
 
 [![Fork](https://img.shields.io/badge/Fork%20de-Box%20(jegly)-6272A4.svg)](https://github.com/jegly/Box)
+[![Base](https://img.shields.io/badge/Base-Box%201.0.12-6272A4.svg)](https://github.com/jegly/Box/tree/8d6503a8a393ace3d50cfd5084827a0614028c67)
 [![Android](https://img.shields.io/badge/Android-13%2B-50FA7B.svg?logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-BD93F9.svg?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Engine](https://img.shields.io/badge/Motores-LiteRT%20%2B%20llama.cpp-BD93F9.svg)]()
@@ -17,8 +18,8 @@
 
 **Box RolePlay** es un fork de [Box](https://github.com/jegly/Box) (que a su vez deriva de [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery)) reorientado por completo a una sola idea: **conversar con personajes de IA en tu teléfono, sin que nada salga de él**.
 
-> [!IMPORTANT]
-> **Base del fork: Box 1.0.1.** Este proyecto parte del código de Box en su versión **1.0.1**. El README original de upstream (que documentaba la 3.5.7) se conservó al hacer el fork, pero sus funciones posteriores **no forman parte de este código**: Box Assist, Gemini Nano Hub, reconocimiento facial, upscale, restauración de fotos, generación musical, Bonsai/FLUX/Z-Image, MCP, temas Catppuccin/Dracula, etc. Solo cuenta lo que está en este repositorio.
+> [!NOTE]
+> **Base del fork: Box [`1.0.12`](https://github.com/jegly/Box/tree/8d6503a8a393ace3d50cfd5084827a0614028c67)** (commit `8d6503a8`, nov 2026). Este proyecto se desarrolla sobre el código abierto de Box en ese punto de su historia. Las versiones posteriores documentadas en el README de upstream corresponden a compilaciones distribuidas como APK; aquí la referencia es siempre el código de este repositorio.
 
 Los modelos corren en el dispositivo (LiteRT y llama.cpp con GGUF), así que puedes interpretar personajes, montar escenas con varios personajes y mantener memorias de largo plazo sin cuentas, sin suscripciones y sin conexión.
 
@@ -82,9 +83,9 @@ Los modelos corren en el dispositivo (LiteRT y llama.cpp con GGUF), así que pue
 
 ---
 
-## 🧱 Lo que hereda de Box (base 1.0.1)
+## 🧱 Lo que hereda de Box (base `1.0.12`)
 
-Del código de Box 1.0.1 el fork conserva el motor sobre el que se construye el roleplay:
+Del código de Box en ese commit el fork conserva el motor sobre el que se construye el roleplay:
 
 | Área | Detalle |
 |---|---|
