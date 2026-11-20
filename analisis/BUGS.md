@@ -34,13 +34,14 @@
 
 > **BUG-013** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-013).
 
-### BUG-014 · ❌ Importar carpeta del modelo de voz: solo acepta nombres antiguos (bloquea el Bloque 3)
+### BUG-014 · 🟡 Importar carpeta del modelo de voz: solo acepta nombres antiguos (bloquea el Bloque 3)
 **Esfuerzo:** S · **Escalón:** 1 · Mejorar el mensaje de error con los archivos esperados
 
 - **Síntoma:** importas una carpeta con nombres v2 (`flow_lm_flow.onnx`, `flow_lm_main.onnx`, `mimi_*`, `tokenizer.model`, `bundle.json` — la del repo de KevinAHM) → toast "No se encontraron archivos de Pocket TTS en esa carpeta" y el panel sigue mostrando "Faltan: lm_flow.onnx, lm_main.onnx, encoder.onnx, decoder.onnx, vocab.json, token_scores.json" (capturas 17:07–17:08).
 - **Causa:** `PocketModelFiles.isPart()/missing()` (`tts/PocketModelFiles.kt`) solo entienden nombres v1 y `TtsFiles.importModelFolder()` filtra con `isPart` → la carpeta se descarta entera. Inconsistente con `PocketHfSelect` (que sí entiende v2) y con el propio diálogo de descarga (que convierte `tokenizer.model` → `vocab.json`/`token_scores.json` con `SentencePieceModel`).
 - **Fix recomendado:** no dar soporte v2 crudo a la importación (aunque se renombrara, los bundles KevinAHM necesitan el fix BOS de BUG-013); en su lugar, apuntar a repos compatibles sherpa-onnx y **mejorar el mensaje de error** de la importación con la lista exacta de archivos esperados (hoy es genérico y confunde).
 - **Archivos:** `tts/PocketModelFiles.kt`, `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt` (mensaje y texto de ayuda).
+- **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** sigue la decisión del fix recomendado (no dar soporte v2 crudo). Nuevo `PocketModelFiles.noPartsMessage()` y `EXPECTED_NAMES`: si la carpeta no tiene ninguna pieza, el aviso lista los 7 archivos exactos (`lm_flow.onnx`, `lm_main.onnx`, `encoder.onnx`, `decoder.onnx`, `text_conditioner.onnx`, `vocab.json`, `token_scores.json`; vale `.int8.onnx`); y si la carpeta tiene nombres v2 (`flow_lm_*`, `mimi_*`, `tokenizer.model`, `bundle.json`) explica que no se puede importar tal cual y manda a «Descargar de Hugging Face». El diálogo lee los nombres de la carpeta con `DocumentFile`. Test `PocketModelFilesTest` (3/3, kotlinc). **Re-prueba:** Ajustes → Voz → importar carpeta con la de KevinAHM (v2) → el aviso debe mencionar v2 y el botón de descarga; con una carpeta vacía → lista de archivos esperados. Archivos: `tts/PocketModelFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt`.
 
 > **BUG-003** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-003).
 

@@ -62,7 +62,8 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                 val copied = runCatching { TtsFiles.importModelFolder(context, uri) }.getOrElse { emptyList() }
                 Toast.makeText(
                     context,
-                    if (copied.isEmpty()) "No se encontraron archivos de Pocket TTS en esa carpeta."
+                    // BUG-014: el error lista los archivos esperados (y avisa si la carpeta es del formato v2).
+                    if (copied.isEmpty()) PocketModelFiles.noPartsMessage(listFolderNames(context, uri))
                     else "Copiados ${copied.size} archivos.",
                     Toast.LENGTH_LONG,
                 ).show()
@@ -245,3 +246,10 @@ fun CharacterVoiceRow(characterId: String) {
         }
     }
 }
+
+/** Nombres de los archivos de la carpeta elegida (vacío si no se puede leer). */
+private fun listFolderNames(context: android.content.Context, tree: Uri): List<String> =
+    runCatching {
+        androidx.documentfile.provider.DocumentFile.fromTreeUri(context, tree)
+            ?.listFiles()?.mapNotNull { it.name }.orEmpty()
+    }.getOrDefault(emptyList())

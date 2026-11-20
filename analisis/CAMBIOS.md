@@ -41,6 +41,16 @@
 
 ## 📝 Registro
 
+### 2026-11-20 — BUG-014: el error de importar la carpeta de voz lista los archivos esperados (Escalón 1)
+
+**Qué y por qué:** BUG-014 (Escalón 1). El aviso al importar una carpeta de modelo de voz sin piezas reconocibles era genérico («No se encontraron archivos…») y confundía, sobre todo con las carpetas v2 de KevinAHM. Ahora lista los archivos exactos que se esperan y, si detecta nombres v2, explica que no se pueden importar tal cual y remite a «Descargar de Hugging Face». Pendiente de re-prueba en el teléfono.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/PocketModelFiles.kt` — `EXPECTED_NAMES` y `noPartsMessage`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/TtsSettingsDialog.kt` — usa el mensaje nuevo y lee los nombres de la carpeta.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/tts/PocketModelFilesTest.kt` — 3 pruebas nuevas.
+- `analisis/BUGS.md` — BUG-014 con parche aplicado.
+
 ### 2026-11-20 — BUG-009: la hamburguesa del inicio abre el cajón (Escalón 1)
 
 **Qué y por qué:** BUG-009 (Escalón 1). La hamburguesa del inicio no abría el cajón (solo el gesto de deslizar). El botón sí estaba conectado a `drawerState.open()`, pero se dibujaba antes de la `Column` que ocupa toda la pantalla, así que esta se quedaba con los toques. Se mueve el botón después de la `Column` para que quede encima. Pendiente de re-prueba en el teléfono.
