@@ -41,6 +41,16 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — Plan de pruebas al día tras el Escalón 0
+
+**Qué y por qué:** `PLAN_PRUEBAS.md` seguía listando como pendientes re-pruebas que el humano ya pasó (2.1b, 5.4b) y un 4.2b que ahora se replantea como 4.2c. Se mueven las verificadas al archivo de abajo, se añade una sección «Escalón 0» con el estado real (015, 021, 025, 026 y 030 OK; 011, 016 y 037 pendientes) y se describe qué debe traer el log si 4.2c vuelve a fallar. Solo documentación.
+
+**Archivos exactos:**
+- `analisis/PLAN_PRUEBAS.md`
+- `analisis/CAMBIOS.md`
+
+---
+
 ### 2026-11-19 — BUG-016: pedir la (re)carga del modelo si el envío se queda esperando
 
 **Qué y por qué:** la re-prueba 4.2b del 19/11 mostró que ya no sale "Session re-initialized", pero el envío podía quedarse hasta 180 s esperando un motor que figuraba como `INITIALIZED` sin estarlo y acabar en «El modelo sigue cargando (…). Vuelve a enviar el mensaje en unos segundos.» (GGUF→GGUF y LiteRT→GGUF). Dos cambios:
