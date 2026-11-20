@@ -647,6 +647,10 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     promptSuffix: String? = null,
     // BUG-004: filtro defensivo de hablantes no permitidos en la respuesta de una escena.
     sceneRestriction: com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? = null,
+    // BUG-016: si tras unos segundos el motor no está listo, se pide una (re)inicialización al
+    // llamador (la pantalla, que tiene contexto y ModelManagerViewModel). Sin esto, un estado
+    // "INITIALIZED" obsoleto o un motor liberado hacían esperar 180 s y fallar el envío.
+    onModelStuck: (() -> Unit)? = null,
   ) {
     val engineInput =
       when {
@@ -898,11 +902,29 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         // pregunta al runtime (isModelReady) en vez de mirar solo esa referencia.
         _perfLine.value = "⏳ cargando modelo…"
         val esperaInicio = System.currentTimeMillis()
+        var pedidosDeCarga = 0
+        var ultimoAviso = 0L
         while (!model.runtimeHelper.isModelReady(model)) {
-          if (System.currentTimeMillis() - esperaInicio > ESPERA_MODELO_MS) {
+          val transcurrido = System.currentTimeMillis() - esperaInicio
+          if (transcurrido > ESPERA_MODELO_MS) {
             Log.e(TAG, "Timeout esperando a que cargue ${model.name}")
             errorListener("$ERROR_CARGA_MODELO (${model.name}). Vuelve a enviar el mensaje en unos segundos.")
             return@launch
+          }
+          // BUG-016: a los 15 s, y como máximo 3 veces, pedir que se (re)inicie el modelo. Si ya
+          // hay una carga en curso, initializeModel la ignora; si el estado era obsoleto, la relanza.
+          if (onModelStuck != null && transcurrido >= 15_000 && pedidosDeCarga < 3) {
+            val tramo = transcurrido / 15_000
+            if (tramo > ultimoAviso) {
+              ultimoAviso = tramo
+              pedidosDeCarga++
+              Log.w(
+                TAG,
+                "El modelo ${model.name} no está listo tras ${transcurrido / 1000} s " +
+                  "(instancia=${model.instance != null}, inicializando=${model.initializing}); se pide reinicializar",
+              )
+              onModelStuck()
+            }
           }
           delay(100)
         }

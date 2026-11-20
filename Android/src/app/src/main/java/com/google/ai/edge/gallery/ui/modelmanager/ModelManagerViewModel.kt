@@ -54,6 +54,7 @@ import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.proto.ImportedModel
 import com.google.ai.edge.gallery.proto.Theme
 import com.google.ai.edge.gallery.runtime.aicore.AICoreModelHelper
+import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -399,14 +400,20 @@ constructor(
     onDone: () -> Unit = {},
   ) {
     viewModelScope.launch(Dispatchers.Default) {
-      // Skip if initialized already.
+      // BUG-016: el estado puede decir INITIALIZED aunque el motor ya no esté cargado (p. ej. tras
+      // una limpieza o un cambio de modelo). Hasta ahora se saltaba la carga y el chat esperaba
+      // 180 s para acabar en "El modelo sigue cargando". Se comprueba también el runtime.
+      val status = uiState.value.modelInitializationStatus[model.name]?.status
       if (
         !force &&
-          uiState.value.modelInitializationStatus[model.name]?.status ==
-            ModelInitializationStatusType.INITIALIZED
+          status == ModelInitializationStatusType.INITIALIZED &&
+          model.runtimeHelper.isModelReady(model)
       ) {
         Log.d(TAG, "Model '${model.name}' has been initialized. Skipping.")
         return@launch
+      }
+      if (!force && status == ModelInitializationStatusType.INITIALIZED) {
+        Log.w(TAG, "Model '${model.name}' figura como INITIALIZED pero el motor no está listo: se recarga")
       }
 
       // Skip if initialization is in progress.

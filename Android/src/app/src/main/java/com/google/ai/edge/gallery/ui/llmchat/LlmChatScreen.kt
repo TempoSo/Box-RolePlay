@@ -307,6 +307,10 @@ fun ChatViewWrapper(
           // Con "Aleatorio" no hay texto: el sufijo es todo el prompt del turno.
           promptSuffix = promptSuffix,
           sceneRestriction = restriction,
+          // BUG-016: si el modelo no arranca solo, el ViewModel nos pide relanzar la carga.
+          onModelStuck = {
+            modelManagerViewModel.initializeModel(context = context, task = task, model = model)
+          },
         )
 
         firebaseAnalytics?.logEvent(
