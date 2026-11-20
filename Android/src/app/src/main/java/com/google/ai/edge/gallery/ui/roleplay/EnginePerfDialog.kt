@@ -40,6 +40,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.characters.EnginePerfSettings
 import com.google.ai.edge.gallery.data.characters.EnginePerfStore
+import com.google.ai.edge.gallery.data.characters.EnginePreset
+import com.google.ai.edge.gallery.data.characters.EnginePresetStore
 import com.google.ai.edge.gallery.data.characters.LastEnginePerf
 import com.google.ai.edge.gallery.data.characters.MmprojFiles
 import kotlinx.coroutines.Dispatchers
@@ -57,6 +59,7 @@ fun EnginePerfDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val store = remember { EnginePerfStore(context) }
     var s by remember { mutableStateOf(store.load()) }
+    var presetName by remember { mutableStateOf("") }
     fun update(n: EnginePerfSettings) {
         s = n
         store.save(n)
@@ -183,6 +186,41 @@ fun EnginePerfDialog(onDismiss: () -> Unit) {
                 NumberField("Reducir imagen enviada (px, lado máximo)", s.imageMaxSide) {
                     update(s.copy(imageMaxSide = it))
                 }
+
+                // BUG-040: guardar hilos, batch, flash attention, contexto… como preset con nombre.
+                // Es un EnginePreset solo con rendimiento (modelo, persona y muestreo vacíos = "no cambiar"),
+                // así aparece en «Motores guardados» y se aplica por la misma vía que los demás.
+                Section("Guardar como preset")
+                OutlinedTextField(
+                    value = presetName,
+                    onValueChange = { presetName = it },
+                    label = { Text("Nombre del preset de rendimiento") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(
+                    enabled = presetName.isNotBlank(),
+                    onClick = {
+                        EnginePresetStore(context).save(
+                            EnginePreset(
+                                name = presetName.trim(),
+                                mmproj = s.mmproj,
+                                threads = s.threads,
+                                nBatch = s.nBatch,
+                                nUBatch = s.nUBatch,
+                                flashAttn = s.flashAttn,
+                                kvType = s.kvType,
+                                noMmap = s.noMmap,
+                                repack = s.repack,
+                                contextLength = s.contextLength,
+                                maxResponse = s.maxResponse,
+                                imageMaxSide = s.imageMaxSide,
+                            )
+                        )
+                        Toast.makeText(context, "Preset «${presetName.trim()}» guardado (Configuración de inferencia → Motores guardados)", Toast.LENGTH_LONG).show()
+                        presetName = ""
+                    },
+                ) { Text("Guardar como preset") }
 
                 Section("Último turno")
                 val st = LastEnginePerf.stats

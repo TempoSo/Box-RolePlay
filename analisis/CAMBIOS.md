@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-20 — BUG-040: «Guardar como preset» en Rendimiento del motor (Escalón 1)
+
+**Qué y por qué:** BUG-040 (Escalón 1). Decisión del humano: añadir un botón propio para guardar el rendimiento como preset (como el de temperatura). Se añade la sección «Guardar como preset» en «Rendimiento del motor»; guarda un `EnginePreset` solo de rendimiento que aparece en «Motores guardados» y se aplica por la vía existente. Pendiente de re-prueba en el teléfono.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/EnginePerfDialog.kt` — sección, campo de nombre y botón.
+- `analisis/BUGS.md` — BUG-040 con parche aplicado.
+
 ### 2026-11-20 — BUG-010: «Sin personaje» en el cajón (Escalón 1)
 
 **Qué y por qué:** BUG-010 (Escalón 1). Decisión del humano: renombrar. El grupo de chats cuyo personaje se borró pasa de «Personaje borrado» a «Sin personaje». Pendiente de re-prueba.
