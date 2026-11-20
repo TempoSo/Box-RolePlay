@@ -41,6 +41,23 @@
 
 ## 📝 Registro
 
+### 2026-11-20 — Cerrar 011 y 016; aclarar el caso de 037 (solo documentación)
+
+**Qué y por qué:** el humano confirmó en el teléfono que **011 funciona** (ficha y tarjeta con la persona activa) y que **016 funciona** (4.2c: GGUF→GGUF y LiteRT→GGUF sin «El modelo sigue cargando»). Se cierran los dos siguiendo la regla: bloque íntegro a `analisis/BUGS_CERRADOS.md` (con su fila en la tabla), línea de referencia en `analisis/BUGS.md`, contadores a **23 cerrados · 18 abiertos** y plan de pruebas al día. **No se tocó código.**
+
+- **016, evidencia del log del 20/11 07:47:** no hay `Timeout esperando a que cargue` ni `no está listo tras … s`; la única línea de modelo es una limpieza correcta (`Cleaning up model 'gemma-4-E4B-it-qat-q4_0-heretic-Q4_0_PURE.gguf'` + `Clean up done` a las 07:47:02). `ApplicationExitInfo` no trae crashes nuevos: los cierres por `MiuiMemoryService` son del 19/11 y los del 20/11 00:04/00:12 son `OTHER`.
+- **037, caso de la captura 07:46:** el usuario escribe `KIP: …` y responden `Narrator:`, `Tohru:` y `Psicólogo Digital:` en la misma burbuja. Es el comportamiento que `ScenePromptBuilder.userTurnRestriction` define para un turno **del usuario** (permite a todos los demás hablantes + narrador), es decir, lo que debe cambiar **BUG-033**; no reproduce el fallo de los alias del narrador. Queda abierto y el humano lo trabajará más adelante.
+
+**Archivos exactos:**
+- `analisis/BUGS.md`
+- `analisis/BUGS_CERRADOS.md` (además se completan los bloques de **015** y **030**, que se habían quedado solo como línea de referencia en el commit anterior: ahora tienen su entrada íntegra y su fila en la tabla, 23/23)
+- `analisis/PLAN_PRUEBAS.md`
+- `analisis/CAMBIOS.md`
+
+**Estado:** `analisis/PRUEBAS.md` y los submódulos, sin tocar.
+
+---
+
 ### 2026-11-19 — Plan de pruebas al día tras el Escalón 0
 
 **Qué y por qué:** `PLAN_PRUEBAS.md` seguía listando como pendientes re-pruebas que el humano ya pasó (2.1b, 5.4b) y un 4.2b que ahora se replantea como 4.2c. Se mueven las verificadas al archivo de abajo, se añade una sección «Escalón 0» con el estado real (015, 021, 025, 026 y 030 OK; 011, 016 y 037 pendientes) y se describe qué debe traer el log si 4.2c vuelve a fallar. Solo documentación.

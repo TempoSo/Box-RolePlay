@@ -1,6 +1,6 @@
 # 🐞 Inventario de bugs — Box RolePlay
 
-> **Triaje 2026-11-19 (tras el Escalón 0):** 21 cerrados · 20 abiertos. Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
+> **Triaje 2026-11-20:** 23 cerrados · 18 abiertos. Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
 >
 > **Documento vivo.** Un bug = una entrada. Al cerrar uno: **no se marca ✅ dentro del texto**; se mueve el bloque entero a [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md), se deja aquí solo una línea de referencia y se añade una entrada en [`CAMBIOS.md`](CAMBIOS.md) con fecha, archivos tocados y motivo.
 > Origen: pruebas del Bloque 2 (2026-11-16, POCO duchamp, HyperOS 3.0.9.0, Android 15 — fingerprint del crash) y de los Bloques 4 y 5 (2026-11-17, Xiaomi 2311DRK48G / POCO duchamp).
@@ -13,7 +13,7 @@
 
 | Escalón | IDs | Coste | Qué es |
 |---|---|---|---|
-| **0 · Verificación gratis** | 011, 016, 037 | 0 parche nuevo | 015, 021, 025, 026 y 030 cerrados el 19/11; quedan la re-prueba de la tarjeta (011), la del refuerzo de 016 y un caso concreto de 037 |
+| **0 · Verificación gratis** | 037 | 0 parche nuevo | 011, 015, 016, 021, 025, 026 y 030 cerrados (015/021/025/026/030 el 19/11; 011/016 el 20/11); queda un caso concreto de 037 |
 | **1 · Rápidos** | 008, 009, 010, 014, 019, 040 | S | Causa localizada; decisión pequeña en 010 y 040 |
 | **2 · Medianos con tests** | 007, 032–036, 038, 039, 041 | M–L | FileProvider, Tanda final de escenas, copia/Room, VoiceStore |
 | **3 · Duros / nativos** | 017, 029 | L | Visión en CPU y stop strings en `LLMInference.cpp` |
@@ -52,17 +52,7 @@
 
 > **BUG-015** — cerrado y verificado el 2026-11-19 (2.1b: calidad en GGUF y LiteRT). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-015). El recorte de respuestas largas en GGUF es otro bug: **BUG-029**.
 
-### BUG-016 · ⚠️ Cambiar de modelo: el primer mensaje falla "engine not initialized" o "El modelo sigue cargando" y re-inicia la sesión
-**Esfuerzo:** S · **Escalón:** 0 · Re-prueba 4.2c del refuerzo del 19/11
-
-- **Re-prueba 19/11 (4.2b):** ya **no** aparece "Session re-initialized". Pero sigue fallando con **otro** mensaje: «El modelo sigue cargando (…gguf). Vuelve a enviar el mensaje en unos segundos.» al cambiar **GGUF→GGUF** (fallan 2-3 envíos seguidos) y **LiteRT→GGUF** (falla 1-2); el siguiente envío ya funciona. Capturas 21:29, 21:37 y 22:12. El reporte de logs adjunto muestra que MIUI mató el proceso por memoria varias veces esa noche (`ApplicationExitInfo`: `MiuiMemoryService(previous-improve-imr)` a las 21:31, 21:38 y 21:50; `SwipeUpClean` a las 21:45-21:47), lo que encaja con motores que no llegan a liberarse y recargas largas.
-- **Refuerzo aplicado (2026-11-19, pendiente de re-prueba):** (1) `ModelManagerViewModel.initializeModel` ya no se fía del estado `INITIALIZED`: solo se salta la carga si el runtime confirma `isModelReady(model)`; si el estado es obsoleto, recarga. (2) el envío de `LlmChatViewModel.generateResponse` pide una (re)inicialización a los 15 s y hasta 3 veces (`onModelStuck`, conectado en `LlmChatScreen`), en vez de esperar 180 s a ciegas; deja en el log `instancia=…, inicializando=…`. Archivos: `ui/modelmanager/ModelManagerViewModel.kt`, `ui/llmchat/LlmChatViewModel.kt`, `ui/llmchat/LlmChatScreen.kt`.
-- **Fix anterior (2026-11-17, verificado parcialmente el 19/11):** dos vías. (A) `LlmChatViewModel.generateResponse` encola el mensaje y espera `runtimeHelper.isModelReady(model)` (GGUF: motor cargado + instancia vigente) hasta 180 s, mostrando "⏳ cargando modelo…"; el error de timeout no dispara la reinicialización en `handleError`. (B) `LlamaCppModelHelper.runInference` espera hasta 60 s a que el motor exista y esté cargado antes de reportar error. `runAgain` ya no se queda con una instancia obsoleta. Archivos: `runtime/LlmModelHelper.kt`, `runtime/LlamaCppModelHelper.kt`, `ui/llmchat/LlmChatViewModel.kt`.
-- **Síntoma (Bloque 4, prueba 4.2):** al cambiar de modelo GGUF/LiteRT, el primer mensaje de un chat nuevo a veces responde "llama.cpp engine not initialized for …" seguido del aviso "Session re-initialized"; al reenviar la misma pregunta, carga y funciona. La carga del modelo en sí está bien.
-- **Cadena verificada en código:** `runInference()` (`runtime/LlamaCppModelHelper.kt:200-203`) falla en seco si `engines[model.name]` no existe o `isModelLoaded == false`; ese error entra a `handleError()` (`ui/llmchat/LlmChatViewModel.kt:907-939`), que muestra el error, hace `cleanupModel` + `initializeModel` y añade el aviso "Session re-initialized". Es decir: el envío llega antes de que termine de inicializarse el motor recién seleccionado (carrera).
-- **¿Es arreglable? Sí.** Dos vías complementarias: (A) en el ViewModel, no enviar mientras el modelo seleccionado está inicializando — deshabilitar enviar / mostrar "cargando modelo…" y encolar el primer mensaje hasta `isModelLoaded`; (B) en `runInference`, en vez de fallar al primer intento, esperar la inicialización con un timeout razonable antes de reportar error.
-- **Archivos:** `runtime/LlamaCppModelHelper.kt` (`runInference`), `ui/llmchat/LlmChatViewModel.kt` (`handleError`, flujo de envío).
-- **Verificado por el usuario (17/11):** 4.2 funciona en **GGUF y LiteRT** al cambiar de modelo; no aparece "engine not initialized" ni "Session re-initialized".
+> **BUG-016** — cerrado y verificado el 2026-11-20 (4.2c: GGUF→GGUF y LiteRT→GGUF sin «El modelo sigue cargando»). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-016).
 
 > **BUG-021** — cerrado y verificado el 2026-11-19 (5.4b: rotar con y sin generación). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-021).
 
@@ -108,17 +98,7 @@
 - **Decisión pendiente:** renombrar a "Sin personaje" u ocultarlos/moverlos a "Chat libre".
 - **Archivos:** `ui/home/` (cajón) + `data/local/` (consulta de chats agrupados).
 
-### BUG-011 · ⚠️ Macros `{{char}}`/`{{user}}` sin sustituir en fichas y previews
-**Esfuerzo:** S · **Escalón:** 0 · Re-prueba: abrir fichas y mirar la tarjeta de personaje
-
-- **Síntoma:** "Psicólogo Digital" muestra `{{char}}`/`{{user}}` crudos en la biblioteca; Tohru muestra `{user}` crudo en la ficha.
-- **Verificar también:** que el prompt final SÍ las sustituya (y soportar ambas sintaxis y alias de tarjeta tipo SillyTavern).
-- **Archivos:** `data/characters/CharacterPromptBuilder.kt` (`applyMacros`), `ui/roleplay/CharacterDetailSheet.kt`, `ui/roleplay/CharacterLibrary.kt`.
-- **Causa verificada (2026-11-19):** (1) `CharacterPromptBuilder.MACRO` solo reconocía `{{char}}`/`{{user}}` y `<BOT>`/`<USER>`; fichas como Tohru escriben `{user}` con llaves simples y pasaba crudo **también al prompt**. (2) La hoja de detalle y la vista previa de la biblioteca mostraban `description`/`personality`/`scenario` sin pasar por `applyMacros` (el prompt final sí lo hacía).
-- **Fix aplicado (corregido el mismo día, decisión del humano):** las llaves simples NO son macros (igual que SillyTavern); `MACRO` vuelve a ser solo `{{char}}`/`{{user}}` y `<BOT>`/`<USER>`. Una ficha con `{user}` lo conserva literal y se corrige a mano. Test `singleBracesAreNotMacros` en `CharacterPromptBuilderTest.kt` (16/16 pruebas OK con Gradle el 19/11). Archivos: `data/characters/CharacterPromptBuilder.kt`, `ui/roleplay/CharacterDetailSheet.kt`, `ui/roleplay/CharacterLibrary.kt`.
-- **Re-prueba 19/11 (humano):** el chat funciona correctamente («4 funciona correctamente, lo prefiero así»). Queda un resto: **la tarjeta de personaje** seguía sustituyendo `{{user}}` por `User` en vez de por la persona activa, porque `RoleplayScreens.kt` pasaba a la vista previa el nombre fijo (`DEFAULT_USER_NAME`).
-- **Arreglo de la tarjeta (2026-11-19, pendiente de re-prueba):** `RoleplayScreen` calcula `activePersonaName` desde `viewModel.personas` (la persona con `isActive`, o `User` si no hay ninguna) y lo pasa a `CharacterLibrary` y `CharacterDetailSheet` como parámetro `userName`; ambas composables lo usan al llamar a `applyMacros`. Las fichas ya muestran `{{char}}` → nombre del personaje y `{{user}}` → nombre de la persona activa. Archivos: `ui/roleplay/RoleplayScreens.kt`, `ui/roleplay/CharacterLibrary.kt`, `ui/roleplay/CharacterDetailSheet.kt`.
-- **Re-prueba (teléfono):** abrir la ficha de Tohru y la de Psicólogo Digital: ya no deben verse `{user}` ni `{{char}}` crudos ni en la hoja de detalle ni en la biblioteca; `{{user}}` debe mostrar el nombre de la persona activa (no `User`); y en un chat, el modelo debe llamar por su nombre al usuario.
+> **BUG-011** — cerrado y verificado el 2026-11-20 (ficha y tarjeta con la persona activa). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-011).
 
 > **BUG-018** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-018).
 
@@ -218,7 +198,8 @@
 - **Hallazgo de la revisión de código (2026-11-19):** `ScenePromptBuilder.NARRATOR = "Narrator"` pero la barra muestra "Narrador" y el modelo suele responder `Narrador:`. `headerSpeaker` no lo reconoce como encabezado conocido, así que `filterReply` deja pasar ese bloque en turnos que no lo permiten (comprobado con una prueba en JVM: con el hablante `KIP` fijo se descarta Tohru, pero un `Narrador:` justo detrás de KIP se conserva como si fuera de KIP).
 - **Fix:** aceptar ambos alias (`Narrator`, `Narrador`, y `Narradora`) en `headerSpeaker`, y añadir test en `ScenarioTest.kt`.
 - **Fix aplicado (2026-11-19):** `ScenePromptBuilder.headerSpeaker` acepta `Narrator`, `Narrador` y `Narradora` (sin distinguir mayúsculas) y devuelve el nombre canónico `NARRATOR`, solo si el narrador forma parte de la escena. Test `filterRecognisesSpanishNarratorAlias` en `ScenarioTest.kt` (falla con el código anterior, pasa con el nuevo; 9/9 pruebas de `ScenarioTest` OK con Gradle el 19/11). Archivos: `data/characters/ScenePromptBuilder.kt`, `test/.../ScenarioTest.kt`.
-- **Re-prueba 19/11 (humano):** «un poco dando más problemas» al probarlo en un escalón más fuerte (el 4). No se pudo identificar el caso: sin saber qué escena, qué hablante estaba fijado y qué texto se coló, no hay nada que corregir sin adivinar. **Pendiente:** captura o texto exacto (respuesta con `Narrador:` colado cuando el narrador está desactivado, o al revés) y si la escena tenía el narrador activo — sin narrador, el bloque `Narrador:` se conserva a propósito.
+- **Re-prueba 19/11 (humano):** «un poco dando más problemas» al probarlo en un escalón más fuerte (el 4). No se pudo identificar el caso: sin saber qué escena, qué hablante estaba fijado y qué texto se coló, no hay nada que corregir sin adivinar. **Pendiente:** captura o texto exacto y si la escena tenía el narrador activo.
+- **Caso aportado el 20/11 (captura 07:46, GGUF `gemma-4-E…PURE`, escena con Narrador en la barra y KIP seleccionado):** el usuario escribe `KIP: Muchachos tenemos un problema` y la respuesta trae tres bloques en la misma burbuja: `Narrator:`, `Tohru:` y `Psicólogo Digital:`. **Aclaración:** ese turno es del **usuario**, y `ScenePromptBuilder.userTurnRestriction` permite justo a *todos* los demás hablantes de la escena (menos el que firmó) + narrador si está activo; es el comportamiento que pide cambiar **BUG-033** («un mensaje del usuario no debería disparar a todos»), no un fallo de los alias del narrador. Es decir: la captura no reproduce el síntoma de este bug. El humano lo deja para más adelante (necesita tiempo); no se toca nada aquí hasta tener un caso con el hablante fijado por la app (Aleatorio o envío vacío) y el narrador activo/desactivado.
 
 ### BUG-038 · ❌ Copia de seguridad: duplica en vez de fusionar, y no incluye todo ni permite elegir qué restaurar
 **Esfuerzo:** L · **Escalón:** 2 · Sucede a BUG-023 (cerrado); parte L si incluye chats Room

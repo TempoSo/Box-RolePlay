@@ -84,7 +84,6 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 
 ### Bloque 2 — Re-pruebas tras corregir bugs (ver [`BUGS.md`](BUGS.md))
 - [ ] 2.6 Hamburguesa del inicio abre el cajón (BUG-009).
-- [ ] 0.11 Tarjeta de personaje: `{{user}}` muestra el nombre de la persona activa (no `User`) en la ficha y en la biblioteca; `{user}` con llaves simples se conserva literal a propósito (BUG-011).
 
 ### Bloque 3 — Voz: re-pruebas tras cargar un modelo (desbloqueo: importar carpeta `es` de haex-space, ver arriba)
 - [ ] 3.2 "Texto a voz" sin LLM: ¿suena?, segundos hasta la 1.ª frase, botón parar.
@@ -98,7 +97,6 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 - [ ] **Verificación del commit `2cec7db` (fix de Claude, tokenizer.json + q4):** buscar `TTSBard/kyutai-en-clone-onnx` → debe listar **"Principal"** (~130 MB, todo en raíz), bajar las piezas int8/normal **ignorando las q4**, y convertir solo el `tokenizer.json` a `vocab.json`/`token_scores.json`. El filtro de `parseFiles` ya está corregido y verificado en BUG-013 (17/11); este ítem comprueba además el commit `2cec7db`.
 
 ### Bloque 4 — Re-pruebas tras corregir bugs
-- [ ] 4.2c Cambio de modelo con el refuerzo del 19/11: el primer mensaje entra siempre sin «El modelo sigue cargando» (eran 2-3 envíos fallidos en GGUF→GGUF y 1-2 en LiteRT→GGUF). Si falla otra vez, exportar el log: debe traer `El modelo … no está listo tras 15 s (instancia=…, inicializando=…)` (BUG-016).
 - [ ] 4.3b Visión: tiempo con lado 256 y 512 tras las optimizaciones (BUG-017).
 
 ### Bloque 5 — Re-pruebas tras corregir bugs (la base ya está probada, ver resultados arriba)
@@ -143,6 +141,6 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 - [x] **Limpiar GGUF desde AgentChat — ✅ OK (19/11, BUG-025):** el log 22:02:37 trae `Cleaning up model 'gemma-4-E4B-it-Q4_K_M.gguf'` + `BoxLlamaCppModelHelper: Clean up done`, sin `ClassCastException`.
 - [x] **Voz con Pocket (sherpa-onnx) — ✅ OK (19/11, BUG-026):** genera voz; sin `SIGABRT` ni `NoSuchMethodError` en el log de la sesión.
 - [x] **Cerrar GGUF (Scudo) — ✅ OK (19/11, BUG-030):** sin crash nativo nuevo tras el cierre atómico y las esperas acotadas.
-- [ ] **0.11 Tarjeta de personaje (BUG-011):** pendiente de mirar `{{user}}` en la ficha y la biblioteca.
-- [ ] **0.16 Cambio de modelo (BUG-016):** pendiente el refuerzo 4.2c.
-- [ ] **0.37 Filtro de escenas (BUG-037):** falta el caso concreto que falla (escena, hablante fijado, texto que se coló).
+- [x] **0.11 Tarjeta de personaje — ✅ OK (20/11, BUG-011):** `{{user}}` muestra la persona activa en la ficha y la biblioteca; `{user}` con llaves simples se conserva literal a propósito.
+- [x] **0.16 Cambio de modelo (4.2c) — ✅ OK (20/11, BUG-016):** GGUF→GGUF y LiteRT→GGUF sin «El modelo sigue cargando»; el log no trae `Timeout esperando a que cargue` ni `no está listo tras … s`.
+- [ ] **0.37 Filtro de escenas (BUG-037):** falta el caso concreto que falla (escena, hablante fijado por la app, texto que se coló y si el narrador estaba activo). El humano lo deja para más adelante.
