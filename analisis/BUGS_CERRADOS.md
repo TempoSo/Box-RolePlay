@@ -17,9 +17,12 @@
 | [BUG-013](#bug-013) | Descarga HF de voz: nunca encuentra carpetas | `89bc4cc7` · verificado 3.1 (17/11) |
 | [BUG-018](#bug-018) | Presets de motor no guardan rendimiento | `478740ac` · verificado 4.4b (19/11) |
 | [BUG-020](#bug-020) | Etiquetas de holgura todas del mismo color | `18d259da` · verificado 4.1/4.1c |
+| [BUG-021](#bug-021) | Rotar la pantalla recargaba el modelo / crasheaba | `0ab2979` · verificado 5.4b (19/11) |
 | [BUG-022](#bug-022) | Exportar logs no incluía el crash | `150516be` · verificado 09:36 (19/11) |
 | [BUG-023](#bug-023) | No había UI para restaurar copia | `fec62bd3` · verificado 5.6b (19/11) → deriva en BUG-038 |
 | [BUG-024](#bug-024) | Generación se pausa en segundo plano | comportamiento aceptable; mejora opcional |
+| [BUG-025](#bug-025) | ClassCastException al limpiar GGUF de AgentChat | `c3374e8` · verificado 19/11 (log 22:02) |
+| [BUG-026](#bug-026) | Crash del TTS: NoSuchMethodError en callback JNI | `a037faf` · verificado 19/11 (voz OK) |
 | [BUG-027](#bug-027) | Importar muestras .wav para clonar voz | descartado (19/11) → pasa a BUG-041 |
 | [BUG-028](#bug-028) | Etiqueta de holgura sin espaciado estable | `3cb6de0b` · verificado 4.1c (19/11) |
 | [BUG-031](#bug-031) | LiteRT: respuestas vacías tras cancelar | `150516be` · verificado 10:51 (19/11) |
@@ -260,4 +263,41 @@
 - **Archivos:** `Android/src/app/src/main/AndroidManifest.xml`, `runtime/`, `com/box/gallery/MainActivity.kt`.
 
 ---
+
+### BUG-021
+
+**✅ Rotar la pantalla recarga el modelo (GGUF y LiteRT) y, si está generando, crash nativo**
+
+- **Fix aplicado (compilado y verificado en el teléfono — 5.4b, 2026-11-19):** (a) `AndroidManifest.xml`: `configChanges="uiMode|orientation|screenSize"` → la rotación ya no destruye la Activity ni recarga el modelo; (b) al destruir/liberar el motor se cancela la generación y se espera al hilo nativo ANTES de cerrar: GGUF en `LlamaCppEngine.unloadModel`/`resetConversation` (espera + cierre en un hilo aparte, acotado a 60 s, y cierre sobre la instancia capturada) y LiteRT en `LlmChatModelHelper.cleanUp` (cancela, espera máx. 5 s al callback de fin y solo entonces cierra). (c) Verificado: el motor GGUF vive en el singleton `LlamaCppModelHelper` (proceso) y el de LiteRT en los `Model`, fuera del ciclo de la Activity.
+- **✅ Verificado por el usuario (2026-11-19, 5.4b):** rotar con y sin generación ya no recarga el modelo ni crashea, en GGUF y LiteRT.
+- **Síntoma (Bloque 5, prueba 5.4 · POCO duchamp):** al rotar, el modelo se recarga entero en **ambos** motores (no debería pasar). Si rota **mientras está escribiendo**, la app crashea: `SIGSEGV` en `liblitertlm_jni.so` (LiteRT; 4 frames del JNI + pthread, sin frames de la app).
+- **Causa verificada:** `AndroidManifest.xml` (línea ~78) declara solo `android:configChanges="uiMode"` → la rotación **destruye y recrea la Activity**, y con ella se re-inicializa el motor (por eso recarga). Si había generación en curso, el hilo nativo queda en marcha mientras se desmonta todo → SIGSEGV.
+- **Fix propuesto:** (a) añadir `orientation|screenSize` a `configChanges` (elimina de golpe la recarga y el crash); (b) además, al destruir, **cancelar la generación y esperar al hilo** antes de tocar/liberar el motor (refuerzo, igual para BUG-001); (c) verificar que los motores viven en scope Application/ViewModel, no Activity.
+- **Archivos:** `Android/src/app/src/main/AndroidManifest.xml`, `com/box/gallery/MainActivity.kt`, `runtime/LlamaCppModelHelper.kt`, helper LiteRT de `runtime/`.
+
+---
+
+### BUG-025
+
+**✅ Crash al limpiar un modelo GGUF cargado por AgentChat: ClassCastException en LlmChatModelHelper.cleanUp**
+
+- **✅ Verificado en el teléfono (2026-11-19, log 22:02:39):** el reporte exportado trae la limpieza completa sin excepción: `Cleaning up model 'gemma-4-E4B-it-Q4_K_M.gguf'` seguido de `BoxLlamaCppModelHelper: Clean up done`. El `ClassCastException` del 17/11 12:44 no vuelve a aparecer en ningún punto del log.
+- **Síntoma (crash 12:44 del 17/11, con el APK de la 4.ª ronda):** `ClassCastException: LlamaCppEngine cannot be cast to LlmModelInstance` en `LlmChatModelHelper.cleanUp` (línea 367), vía `AgentChatTask.cleanUpModelFn` ← `ModelManagerViewModel.cleanupModel` ← `setAppInForeground`. Mata la app al limpiar el modelo (p. ej. al volver a primer plano), interrumpe pruebas en curso.
+- **Causa raíz:** `AgentChatTaskModule.cleanUpModelFn` estaba **fijo a `LlmChatModelHelper.cleanUp`** (LiteRT) aunque el modelo cargado fuera GGUF (instancia `LlamaCppEngine`): el cast duro dentro de `cleanUp` explota. El crash venía de ayer (23:18, línea 359 del APK viejo) y hoy (12:44, línea 367 del APK nuevo) — bug viejo, no regresión.
+- **Fix:** (1) `AgentChatTask.cleanUpModelFn` despacha vía `model.runtimeHelper.cleanUp` (el helper correcto según el runtime); (2) `LlmChatModelHelper.cleanUp` ya no hace cast duro: ante una instancia no LiteRT avisa en el log, pone `model.instance = null` y termina sin crashear (defensa para cualquier otro punto de llamada).
+- **Archivos:** `customtasks/agentchat/AgentChatTaskModule.kt`, `ui/llmchat/LlmChatModelHelper.kt`.
+
+---
+
+### BUG-026
+
+**✅ Crash del TTS al generar voz: NoSuchMethodError en el callback JNI de sherpa-onnx**
+
+- **✅ Verificado por el usuario (2026-11-19):** la generación de voz con Pocket (sherpa-onnx) funciona; no hay `SIGABRT` ni `NoSuchMethodError` en el log exportado de esa sesión.
+- **Síntoma (crashes SIGABRT 13:36:52 y 13:37:10 del 17/11, tid `pool-*-thread-1`):** al generar voz con Pocket (sherpa-onnx), `JNI DETECTED ERROR IN APPLICATION: NewFloatArray called with pending exception java.lang.NoSuchMethodError: no non-static method "SherpaPocketEngine$$ExternalSyntheticLambda0.invoke([F)Ljava/lang/Integer;"`. Mata la app a la primera generación de voz. Stack: `OfflineTts.generateWithConfigImpl` ← `OfflineTts.generateWithConfigAndCallback` ← `SherpaPocketEngine.generate` (`SherpaPocketEngine.kt:97`) ← `TtsManager.launchJob$lambda$2` (`TtsManager.kt:270`).
+- **Causa raíz:** el callback de muestras se pasaba como lambda Kotlin `(FloatArray) -> Int`. D8 la desazaúca en una clase sintética (`$$ExternalSyntheticLambda0`) cuyo `invoke` es **estático** cuando no captura nada, y el JNI de sherpa-onnx busca con `GetMethodID` un `invoke` de **instancia** con firma `([F)Ljava/lang/Integer;` (retorno **boxed** `Integer`, porque sherpa declara `Function1<? super float[], java.lang.Integer>`). Sin método → excepción pendiente → abort en el siguiente `NewFloatArray`.
+- **Fix:** clase normal `SherpaPocketEngine.ChunkCallback` que implementa `Function1<FloatArray, Int?>` con `override fun invoke(samples: FloatArray): Int?`. Verificado con `javap`: emite `public java.lang.Integer invoke(float[])` — instancia, firma exacta.
+- **Archivos:** `tts/SherpaPocketEngine.kt`.
+- **Actualización (reportes 15:26 y 15:30 del 17/11):** el mismo `NoSuchMethodError` reaparece a las 15:27:54 y 15:30:05 con la firma `SherpaPocketEngine$$ExternalSyntheticLambda0.invoke([F)Ljava/lang/Integer;` — no consta si el dispositivo ya tenía instalado el APK con el fix. Cerrado al confirmarse con esa build.
+
 

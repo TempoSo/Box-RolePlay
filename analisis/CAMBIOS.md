@@ -8,7 +8,7 @@
 - [`PRUEBAS.md`](PRUEBAS.md) — checklist original completa de pruebas por fase.
 - [`PLAN_PRUEBAS.md`](PLAN_PRUEBAS.md) — plan priorizado con resultados de pruebas en dispositivo.
 - [`BUGS.md`](BUGS.md) — inventario vivo de bugs **abiertos y dudosos** (síntomas, stacks, repros, fixes propuestos y archivos afectados).
-- [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md) — histórico de los 16 cerrados con el mismo detalle y el commit/verificación que los cerró. Se consulta solo si se quiere auditar.
+- [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md) — histórico de los bugs cerrados con el mismo detalle y el commit/verificación que los cerró. Se consulta solo si se quiere auditar.
 - [`MEMORIA.md`](MEMORIA.md) — análisis de diseño: memoria de Layla vs la de Box, con modificaciones propuestas.
 
 ---
@@ -40,6 +40,56 @@
 ---
 
 ## 📝 Registro
+
+### 2026-11-19 — BUG-016: pedir la (re)carga del modelo si el envío se queda esperando
+
+**Qué y por qué:** la re-prueba 4.2b del 19/11 mostró que ya no sale "Session re-initialized", pero el envío podía quedarse hasta 180 s esperando un motor que figuraba como `INITIALIZED` sin estarlo y acabar en «El modelo sigue cargando (…). Vuelve a enviar el mensaje en unos segundos.» (GGUF→GGUF y LiteRT→GGUF). Dos cambios:
+
+- `ModelManagerViewModel.initializeModel` ya no se fía solo del estado: si dice `INITIALIZED` pero `model.runtimeHelper.isModelReady(model)` es falso, registra el aviso y **recarga** en vez de saltarse la carga.
+- `LlmChatViewModel.generateResponse` acepta `onModelStuck`; a los 15 s (y como máximo 3 veces) deja en el log el estado real (`instancia=`, `inicializando=`) y pide una reinicialización, en vez de esperar a ciegas. `LlmChatScreen` conecta el callback a `initializeModel`.
+
+**Archivos exactos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/modelmanager/ModelManagerViewModel.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatScreen.kt`
+- `analisis/BUGS.md`
+
+**Estado:** compilado (`:app:assembleDebug` OK). Pendiente de re-prueba en el teléfono (4.2c). No se ha tocado ningún submódulo.
+
+---
+
+### 2026-11-19 — BUG-011: la ficha y la tarjeta muestran la persona activa en `{{user}}`
+
+**Qué y por qué:** el humano confirmó que el chat ya funciona («4 funciona correctamente, lo prefiero así»), pero quedaba un resto: la vista previa de la tarjeta de personaje sustituía `{{user}}` por el literal `User` en vez de por la persona activa, porque `RoleplayScreen` pasaba el nombre fijo `DEFAULT_USER_NAME`. Ahora `RoleplayScreen` calcula `activePersonaName` desde `viewModel.personas` (la persona con `isActive`, o `User` si no hay ninguna) y lo pasa como `userName` a `CharacterLibrary` y `CharacterDetailSheet`, que lo usan al llamar a `CharacterPromptBuilder.applyMacros`. Las llaves simples (`{user}`) siguen siendo literales por decisión del humano (sintaxis SillyTavern).
+
+**Archivos exactos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RoleplayScreens.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterLibrary.kt`
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterDetailSheet.kt`
+- `analisis/BUGS.md`
+
+**Estado:** compilado (`:app:assembleDebug` OK). Pendiente de re-prueba visual en el teléfono.
+
+---
+
+### 2026-11-19 — Cierre del Escalón 0: 015, 021, 025, 026 y 030 verificados
+
+**Qué y por qué:** con las re-pruebas del humano del 19/11 se cierran cinco bugs del Escalón 0. Siguiendo la regla nueva, **no se marca ✅ dentro del texto**: se mueve el bloque íntegro a `analisis/BUGS_CERRADOS.md` (con su ancla y su fila en la tabla resumen) y en `analisis/BUGS.md` queda solo una línea de referencia. Quedan abiertos 011 (tarjeta recién parcheada), 016 (refuerzo 4.2c) y 037 (falta el caso concreto).
+
+- **BUG-015** (plantilla de turnos GGUF): 2.1b OK en GGUF y LiteRT; el recorte de respuestas largas es BUG-029, aparte.
+- **BUG-021** (rotación): 5.4b OK con y sin generación, en ambos motores. Commit `0ab2979`.
+- **BUG-025** (ClassCastException al limpiar GGUF de AgentChat): el log exportado del 19/11 22:02:37 muestra `Cleaning up model 'gemma-4-E4B-it-Q4_K_M.gguf'` + `BoxLlamaCppModelHelper: Clean up done` sin excepción. Commit `c3374e8`.
+- **BUG-026** (NoSuchMethodError del TTS): la voz con Pocket funciona y el log de la sesión no trae el `SIGABRT`. Commit `a037faf`.
+- **BUG-030** (Scudo al cerrar GGUF): sin crash nativo nuevo el 19/11 tras el cierre atómico y las esperas acotadas. Commits `0354818`, `79eb6b4`.
+
+**Archivos exactos:**
+- `analisis/BUGS.md`
+- `analisis/BUGS_CERRADOS.md`
+- `analisis/CAMBIOS.md`
+
+**Estado:** solo documentación; el código de esos cinco bugs ya estaba compilado y probado. `analisis/PRUEBAS.md` no se ha tocado.
+
+---
 
 ### 2026-11-19 — Orden de ejecución por esfuerzo en `BUGS.md` (solo documentación)
 

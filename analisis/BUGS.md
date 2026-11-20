@@ -1,19 +1,19 @@
 # 🐞 Inventario de bugs — Box RolePlay
 
-> **Triaje 2026-11-19:** 16 cerrados · 8 dudosos · 17 abiertos. Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
+> **Triaje 2026-11-19 (tras el Escalón 0):** 21 cerrados · 20 abiertos. Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
 >
-> **Documento vivo.** Un bug = una entrada. Al arreglar uno: marca ✅, fecha, y añade una entrada en [`CAMBIOS.md`](CAMBIOS.md) con los archivos tocados.
+> **Documento vivo.** Un bug = una entrada. Al cerrar uno: **no se marca ✅ dentro del texto**; se mueve el bloque entero a [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md), se deja aquí solo una línea de referencia y se añade una entrada en [`CAMBIOS.md`](CAMBIOS.md) con fecha, archivos tocados y motivo.
 > Origen: pruebas del Bloque 2 (2026-11-16, POCO duchamp, HyperOS 3.0.9.0, Android 15 — fingerprint del crash) y de los Bloques 4 y 5 (2026-11-17, Xiaomi 2311DRK48G / POCO duchamp).
 
 ---
 
 ## 🧭 Orden sugerido (más fácil → más difícil)
 
-> **Regla:** trabaja **un escalón a la vez**. Si un ID ya está en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md), sáltalo y avisa. Los dudosos del Escalón 0 **no llevan parche**: solo re-prueba tuya o compilación.
+> **Regla:** trabaja **un escalón a la vez**. Si un ID ya está en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md), sáltalo y avisa. Los pendientes del Escalón 0 ya llevan parche; solo falta tu re-prueba.
 
 | Escalón | IDs | Coste | Qué es |
 |---|---|---|---|
-| **0 · Verificación gratis** | 011, 015, 016, 021, 025, 026, 030, 037 | 0 parche | Arreglados en código; faltan tus re-pruebas (2.1b, 4.2b, 5.4b, Gradle…) |
+| **0 · Verificación gratis** | 011, 016, 037 | 0 parche nuevo | 015, 021, 025, 026 y 030 cerrados el 19/11; quedan la re-prueba de la tarjeta (011), la del refuerzo de 016 y un caso concreto de 037 |
 | **1 · Rápidos** | 008, 009, 010, 014, 019, 040 | S | Causa localizada; decisión pequeña en 010 y 040 |
 | **2 · Medianos con tests** | 007, 032–036, 038, 039, 041 | M–L | FileProvider, Tanda final de escenas, copia/Room, VoiceStore |
 | **3 · Duros / nativos** | 017, 029 | L | Visión en CPU y stop strings en `LLMInference.cpp` |
@@ -28,13 +28,7 @@
 
 > **BUG-002** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-002).
 
-### BUG-030 · 🟡 Crash nativo al cerrar GGUF: Scudo "invalid chunk state" en `LLMInference::~LLMInference()` *(documentado 2026-11-17; mitigado en Kotlin 2026-11-18 — `SmolLM.close()` atómico, `unloadModel` espera carga y generación, acceso nativo serializado; pendiente de re-prueba en el teléfono)*
-**Esfuerzo:** S · **Escalón:** 0 · Re-prueba de cierre/cambio de modelo
-
-- **Síntoma (crash 15:23:26 del 17/11, presente en los dos reportes adjuntos):** `SIGABRT` en el hilo `DefaultDispatch` con `Abort message: 'Scudo ERROR: invalid chunk state when deallocating address 0x200007da8f0fad0'`. Backtrace: `abort` ← `scudo::Allocator::deallocate` ← `LLMInference::~LLMInference()` ← `Java_com_jegly_offlineLLM_smollm_SmolLM_close` ← `SmolLM.close` ← `LlamaCppEngine$unloadModel$1$1.invokeSuspend` ← coroutines. Mata la app al descargar/cambiar de modelo GGUF o al limpiar el motor.
-- **Causa probable (verificada en Kotlin; el nativo no se ha tocado):** doble cierre o cierre con el motor aún en uso. `LlamaCppEngine.unloadModel()` (`engine/LlamaCppEngine.kt:163-187`) captura `inst = instance`, cancela `loadJob`/`generationJob` y llama a `inst.close()` en un `CoroutineScope(Default)` tras `withTimeoutOrNull(60_000) { gen?.join() }`: si el join expira, cierra mientras el hilo nativo sigue vivo. `resetConversation()` (`:194-241`) captura la **misma** `instance` y también la cierra en otro coroutine antes de asignar `instance = SmolLM()`, sin invalidarla antes; ambas vías pueden solaparse y cerrar dos veces el mismo `SmolLM`. `LlamaCppModelHelper.cleanUp()` (`:201-203`) saca el engine del mapa antes de llamar a `unloadModel`, de modo que una segunda limpieza no vuelve a entrar por esa vía.
-- **Fix propuesto:** bajo `stateLock`, marcar la instancia como cerrada (o sustituirla por `null`/una nueva) **antes** de lanzar el cierre asíncrono, y dejar que `close()` lo ejecute solo la primera vía que la capturó; si agota el timeout esperando a generación/carga, **no cerrar** y dejar aviso en el log. Revisar `resetConversation` para que no cierre una instancia ya marcada. No tocar el submódulo salvo que el doble cierre persista.
-- **Archivos:** `engine/LlamaCppEngine.kt`, `runtime/LlamaCppModelHelper.kt`; submódulo `Android/src/llama.cpp` solo si hace falta.
+> **BUG-030** — cerrado y verificado el 2026-11-19. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-030).
 
 ## P1 — Correctitud del roleplay
 
@@ -56,36 +50,21 @@
 
 > **BUG-006** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-006).
 
-### BUG-015 · ✅ GGUF: el prompt se envía sin plantilla de turnos (calidad inferior a Layla) *(arreglado 2026-11-17)*
-**Esfuerzo:** S · **Escalón:** 0 · Re-prueba 2.1b: calidad frente a Layla
+> **BUG-015** — cerrado y verificado el 2026-11-19 (2.1b: calidad en GGUF y LiteRT). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-015). El recorte de respuestas largas en GGUF es otro bug: **BUG-029**.
 
-- **Síntoma:** con el MISMO modelo GGUF (gemma-4-E4B PURE), mismo contexto (4096) y mismos parámetros, Box escribe peor que Layla: pregunta "cómo prefieres que te llame" pese a que la persona ("The User is Héctor") está en el prompt; seguimiento del personaje más flojo (capturas 20:49 Layla vs 20:50 Box). El usuario confirma que el problema solo se aprecia en GGUF.
-- **Evidencia (dumps de prompt):** Layla envuelve el contenido con los marcadores de turno del modelo (`<|turn>system … <turn|>`, `<|turn>user`, `<|turn>model`). Box lo manda como **texto crudo**, sin estructura de turnos. Gemma depende fuertemente de su chat template: sin turnos, el seguimiento de instrucciones se degrada notablemente.
-- **Diferencia secundaria:** Layla inyecta además "remembers previously: …" (resumen de memoria) dentro del system; en el ejemplo de Box la memoria estaba a 0 — no es parte de este bug, pero alimenta la comparación.
-- **Causa probable (verificada en código):** `LlamaCppEngine.seedConversation()` (línea ~235) solo llama `instance.addSystemPrompt()` / `instance.addChatMessage()` del JNI SmolLM (`com.jegly.offlineLLM.smollm`); el wrapper nativo concatena sin aplicar la plantilla de chat del modelo (no hay jinja ni `llama_chat_apply_template` en la app).
-- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 2.1b), vía Kotlin como se pedía:** nuevo `engine/GgufChatTemplate.kt` que construye el prompt con la plantilla canónica de Gemma 4 (`<|turn>system/user/model … <turn|>` + `<|turn>model\n` final, turno de usuario vacío si el saludo del personaje abre el historial, e inyección de `<|think|>` con thinking), replicando el formato de `chatfmt::formatGemma4` del nativo. `LlamaCppModelHelper.initialize` la activa cuando el nombre del modelo es de la familia Gemma 4 (mismos patrones que `ThinkingSplitter`). El nativo tokeniza el prompt tal cual. Incluye tests (`engine/GgufChatTemplateTest.kt`). No hizo falta tocar el JNI ni `llama_chat_apply_template` (vía nativa descartada; el nativo mantiene su ruta para otros GGUF). Arreglado de forma coordinada con BUG-001 (misma zona, mismo mecanismo).
-- **Fix propuesto:** aplicar la plantilla según la familia del modelo antes de `startCompletion` — opción A en Kotlin (envolver system/historial/user con los turnos de Gemma `<start_of_turn>`, `<bos>`, etc., leyendo la plantilla del GGUF o detectando la familia); opción B en nativo con `llama_chat_apply_template` (más correcto, toca JNI del submódulo). Coordinar con BUG-001: el recorte de `_applyContextWindow` debe respetar los turnos al deslizar la ventana.
-- **Archivos:** `engine/LlamaCppEngine.kt` (`seedConversation`, `generateResponse`), `runtime/LlamaCppModelHelper.kt`, submódulo `Android/src/llama.cpp` / JNI SmolLM (solo si va por la vía nativa).
-- **Repro:** mismo personaje + persona activa, mismo GGUF a 4096: "Hola, preséntate y dime mi nombre" → Box no usa el nombre; Layla sí.
+### BUG-016 · ⚠️ Cambiar de modelo: el primer mensaje falla "engine not initialized" o "El modelo sigue cargando" y re-inicia la sesión
+**Esfuerzo:** S · **Escalón:** 0 · Re-prueba 4.2c del refuerzo del 19/11
 
-### BUG-016 · ✅ Cambiar de modelo: el primer mensaje a veces falla "engine not initialized" y re-inicia la sesión *(arreglado 2026-11-17)*
-**Esfuerzo:** S · **Escalón:** 0 · Re-prueba 4.2b (el 17/11 se vio bien; casilla sin marcar)
-
-- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 4.2b):** dos vías. (A) `LlmChatViewModel.generateResponse` encola el mensaje y espera `runtimeHelper.isModelReady(model)` (GGUF: motor cargado + instancia vigente) hasta 180 s, mostrando "⏳ cargando modelo…"; el error de timeout no dispara la reinicialización en `handleError`. (B) `LlamaCppModelHelper.runInference` espera hasta 60 s a que el motor exista y esté cargado antes de reportar error. `runAgain` ya no se queda con una instancia obsoleta. Archivos: `runtime/LlmModelHelper.kt`, `runtime/LlamaCppModelHelper.kt`, `ui/llmchat/LlmChatViewModel.kt`.
+- **Re-prueba 19/11 (4.2b):** ya **no** aparece "Session re-initialized". Pero sigue fallando con **otro** mensaje: «El modelo sigue cargando (…gguf). Vuelve a enviar el mensaje en unos segundos.» al cambiar **GGUF→GGUF** (fallan 2-3 envíos seguidos) y **LiteRT→GGUF** (falla 1-2); el siguiente envío ya funciona. Capturas 21:29, 21:37 y 22:12. El reporte de logs adjunto muestra que MIUI mató el proceso por memoria varias veces esa noche (`ApplicationExitInfo`: `MiuiMemoryService(previous-improve-imr)` a las 21:31, 21:38 y 21:50; `SwipeUpClean` a las 21:45-21:47), lo que encaja con motores que no llegan a liberarse y recargas largas.
+- **Refuerzo aplicado (2026-11-19, pendiente de re-prueba):** (1) `ModelManagerViewModel.initializeModel` ya no se fía del estado `INITIALIZED`: solo se salta la carga si el runtime confirma `isModelReady(model)`; si el estado es obsoleto, recarga. (2) el envío de `LlmChatViewModel.generateResponse` pide una (re)inicialización a los 15 s y hasta 3 veces (`onModelStuck`, conectado en `LlmChatScreen`), en vez de esperar 180 s a ciegas; deja en el log `instancia=…, inicializando=…`. Archivos: `ui/modelmanager/ModelManagerViewModel.kt`, `ui/llmchat/LlmChatViewModel.kt`, `ui/llmchat/LlmChatScreen.kt`.
+- **Fix anterior (2026-11-17, verificado parcialmente el 19/11):** dos vías. (A) `LlmChatViewModel.generateResponse` encola el mensaje y espera `runtimeHelper.isModelReady(model)` (GGUF: motor cargado + instancia vigente) hasta 180 s, mostrando "⏳ cargando modelo…"; el error de timeout no dispara la reinicialización en `handleError`. (B) `LlamaCppModelHelper.runInference` espera hasta 60 s a que el motor exista y esté cargado antes de reportar error. `runAgain` ya no se queda con una instancia obsoleta. Archivos: `runtime/LlmModelHelper.kt`, `runtime/LlamaCppModelHelper.kt`, `ui/llmchat/LlmChatViewModel.kt`.
 - **Síntoma (Bloque 4, prueba 4.2):** al cambiar de modelo GGUF/LiteRT, el primer mensaje de un chat nuevo a veces responde "llama.cpp engine not initialized for …" seguido del aviso "Session re-initialized"; al reenviar la misma pregunta, carga y funciona. La carga del modelo en sí está bien.
 - **Cadena verificada en código:** `runInference()` (`runtime/LlamaCppModelHelper.kt:200-203`) falla en seco si `engines[model.name]` no existe o `isModelLoaded == false`; ese error entra a `handleError()` (`ui/llmchat/LlmChatViewModel.kt:907-939`), que muestra el error, hace `cleanupModel` + `initializeModel` y añade el aviso "Session re-initialized". Es decir: el envío llega antes de que termine de inicializarse el motor recién seleccionado (carrera).
 - **¿Es arreglable? Sí.** Dos vías complementarias: (A) en el ViewModel, no enviar mientras el modelo seleccionado está inicializando — deshabilitar enviar / mostrar "cargando modelo…" y encolar el primer mensaje hasta `isModelLoaded`; (B) en `runInference`, en vez de fallar al primer intento, esperar la inicialización con un timeout razonable antes de reportar error.
 - **Archivos:** `runtime/LlamaCppModelHelper.kt` (`runInference`), `ui/llmchat/LlmChatViewModel.kt` (`handleError`, flujo de envío).
 - **Verificado por el usuario (17/11):** 4.2 funciona en **GGUF y LiteRT** al cambiar de modelo; no aparece "engine not initialized" ni "Session re-initialized".
 
-### BUG-021 · ✅ Rotar la pantalla recarga el modelo (GGUF y LiteRT) y, si está generando, crash nativo *(arreglado 2026-11-17)*
-**Esfuerzo:** S · **Escalón:** 0 · Re-prueba 5.4b: rotar con y sin generación
-
-- **Fix aplicado (compilado, pendiente de re-prueba en teléfono — 5.4b):** (a) `AndroidManifest.xml`: `configChanges="uiMode|orientation|screenSize"` → la rotación ya no destruye la Activity ni recarga el modelo; (b) al destruir/liberar el motor se cancela la generación y se espera al hilo nativo ANTES de cerrar: GGUF en `LlamaCppEngine.unloadModel`/`resetConversation` (espera + cierre en un hilo aparte, acotado a 60 s, y cierre sobre la instancia capturada) y LiteRT en `LlmChatModelHelper.cleanUp` (cancela, espera máx. 5 s al callback de fin y solo entonces cierra). (c) Verificado: el motor GGUF vive en el singleton `LlamaCppModelHelper` (proceso) y el de LiteRT en los `Model`, fuera del ciclo de la Activity.
-- **Síntoma (Bloque 5, prueba 5.4 · POCO duchamp):** al rotar, el modelo se recarga entero en **ambos** motores (no debería pasar). Si rota **mientras está escribiendo**, la app crashea: `SIGSEGV` en `liblitertlm_jni.so` (LiteRT; 4 frames del JNI + pthread, sin frames de la app).
-- **Causa verificada:** `AndroidManifest.xml` (línea ~78) declara solo `android:configChanges="uiMode"` → la rotación **destruye y recrea la Activity**, y con ella se re-inicializa el motor (por eso recarga). Si había generación en curso, el hilo nativo queda en marcha mientras se desmonta todo → SIGSEGV.
-- **Fix propuesto:** (a) añadir `orientation|screenSize` a `configChanges` (elimina de golpe la recarga y el crash); (b) además, al destruir, **cancelar la generación y esperar al hilo** antes de tocar/liberar el motor (refuerzo, igual para BUG-001); (c) verificar que los motores viven en scope Application/ViewModel, no Activity.
-- **Archivos:** `Android/src/app/src/main/AndroidManifest.xml`, `com/box/gallery/MainActivity.kt`, `runtime/LlamaCppModelHelper.kt`, helper LiteRT de `runtime/`.
+> **BUG-021** — cerrado y verificado el 2026-11-19 (5.4b: rotar con y sin generación). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-021).
 
 > **BUG-027** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-027).
 
@@ -129,15 +108,17 @@
 - **Decisión pendiente:** renombrar a "Sin personaje" u ocultarlos/moverlos a "Chat libre".
 - **Archivos:** `ui/home/` (cajón) + `data/local/` (consulta de chats agrupados).
 
-### BUG-011 · ✅ Macros `{user}`/`{{char}}` sin sustituir en fichas y previews *(arreglado 2026-11-19, pendiente de re-prueba en el teléfono)*
-**Esfuerzo:** S · **Escalón:** 0 · Ya arreglado: solo abrir las fichas en el teléfono
+### BUG-011 · ⚠️ Macros `{{char}}`/`{{user}}` sin sustituir en fichas y previews
+**Esfuerzo:** S · **Escalón:** 0 · Re-prueba: abrir fichas y mirar la tarjeta de personaje
 
 - **Síntoma:** "Psicólogo Digital" muestra `{{char}}`/`{{user}}` crudos en la biblioteca; Tohru muestra `{user}` crudo en la ficha.
 - **Verificar también:** que el prompt final SÍ las sustituya (y soportar ambas sintaxis y alias de tarjeta tipo SillyTavern).
 - **Archivos:** `data/characters/CharacterPromptBuilder.kt` (`applyMacros`), `ui/roleplay/CharacterDetailSheet.kt`, `ui/roleplay/CharacterLibrary.kt`.
 - **Causa verificada (2026-11-19):** (1) `CharacterPromptBuilder.MACRO` solo reconocía `{{char}}`/`{{user}}` y `<BOT>`/`<USER>`; fichas como Tohru escriben `{user}` con llaves simples y pasaba crudo **también al prompt**. (2) La hoja de detalle y la vista previa de la biblioteca mostraban `description`/`personality`/`scenario` sin pasar por `applyMacros` (el prompt final sí lo hacía).
-- **Fix aplicado (corregido el mismo día, decisión del humano):** las llaves simples NO son macros (igual que SillyTavern); `MACRO` vuelve a ser solo `{{char}}`/`{{user}}` y `<BOT>`/`<USER>`. Una ficha con `{user}` lo conserva literal y se corrige a mano. Lo que sí se arregla: `CharacterDetailSheet` y `CharacterLibrary` sustituyen las macros al mostrar (con el nombre de la ficha y `User`). Test `singleBracesAreNotMacros` en `CharacterPromptBuilderTest.kt` (16 pruebas OK con kotlinc; pendiente de Gradle). Archivos: `data/characters/CharacterPromptBuilder.kt`, `ui/roleplay/CharacterDetailSheet.kt`, `ui/roleplay/CharacterLibrary.kt`.
-- **Re-prueba (teléfono):** abrir la ficha de Tohru y la de Psicólogo Digital: ya no deben verse `{user}` ni `{{char}}` crudos ni en la hoja de detalle ni en la biblioteca; y en un chat, el modelo debe llamar por su nombre al usuario.
+- **Fix aplicado (corregido el mismo día, decisión del humano):** las llaves simples NO son macros (igual que SillyTavern); `MACRO` vuelve a ser solo `{{char}}`/`{{user}}` y `<BOT>`/`<USER>`. Una ficha con `{user}` lo conserva literal y se corrige a mano. Test `singleBracesAreNotMacros` en `CharacterPromptBuilderTest.kt` (16/16 pruebas OK con Gradle el 19/11). Archivos: `data/characters/CharacterPromptBuilder.kt`, `ui/roleplay/CharacterDetailSheet.kt`, `ui/roleplay/CharacterLibrary.kt`.
+- **Re-prueba 19/11 (humano):** el chat funciona correctamente («4 funciona correctamente, lo prefiero así»). Queda un resto: **la tarjeta de personaje** seguía sustituyendo `{{user}}` por `User` en vez de por la persona activa, porque `RoleplayScreens.kt` pasaba a la vista previa el nombre fijo (`DEFAULT_USER_NAME`).
+- **Arreglo de la tarjeta (2026-11-19, pendiente de re-prueba):** `RoleplayScreen` calcula `activePersonaName` desde `viewModel.personas` (la persona con `isActive`, o `User` si no hay ninguna) y lo pasa a `CharacterLibrary` y `CharacterDetailSheet` como parámetro `userName`; ambas composables lo usan al llamar a `applyMacros`. Las fichas ya muestran `{{char}}` → nombre del personaje y `{{user}}` → nombre de la persona activa. Archivos: `ui/roleplay/RoleplayScreens.kt`, `ui/roleplay/CharacterLibrary.kt`, `ui/roleplay/CharacterDetailSheet.kt`.
+- **Re-prueba (teléfono):** abrir la ficha de Tohru y la de Psicólogo Digital: ya no deben verse `{user}` ni `{{char}}` crudos ni en la hoja de detalle ni en la biblioteca; `{{user}}` debe mostrar el nombre de la persona activa (no `User`); y en un chat, el modelo debe llamar por su nombre al usuario.
 
 > **BUG-018** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-018).
 
@@ -149,22 +130,9 @@
 
 > **BUG-023** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-023).
 
-### BUG-025 · ✅ Crash al limpiar un modelo GGUF cargado por AgentChat: ClassCastException en LlmChatModelHelper.cleanUp *(arreglado 2026-11-17)*
-**Esfuerzo:** S · **Escalón:** 0 · Re-prueba: limpiar GGUF desde AgentChat
+> **BUG-025** — cerrado y verificado el 2026-11-19 (log 22:02:37: `Cleaning up model` + `Clean up done`, sin `ClassCastException`). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-025).
 
-- **Síntoma (crash 12:44 del 17/11, con el APK de la 4.ª ronda):** `ClassCastException: LlamaCppEngine cannot be cast to LlmModelInstance` en `LlmChatModelHelper.cleanUp` (línea 367), vía `AgentChatTask.cleanUpModelFn` ← `ModelManagerViewModel.cleanupModel` ← `setAppInForeground`. Mata la app al limpiar el modelo (p. ej. al volver a primer plano), interrumpe pruebas en curso.
-- **Causa raíz:** `AgentChatTaskModule.cleanUpModelFn` estaba **fijo a `LlmChatModelHelper.cleanUp`** (LiteRT) aunque el modelo cargado fuera GGUF (instancia `LlamaCppEngine`): el cast duro dentro de `cleanUp` explota. El crash venía de ayer (23:18, línea 359 del APK viejo) y hoy (12:44, línea 367 del APK nuevo) — bug viejo, no regresión.
-- **Fix:** (1) `AgentChatTask.cleanUpModelFn` despacha vía `model.runtimeHelper.cleanUp` (el helper correcto según el runtime); (2) `LlmChatModelHelper.cleanUp` ya no hace cast duro: ante una instancia no LiteRT avisa en el log, pone `model.instance = null` y termina sin crashear (defensa para cualquier otro punto de llamada).
-- **Archivos:** `customtasks/agentchat/AgentChatTaskModule.kt`, `ui/llmchat/LlmChatModelHelper.kt`.
-
-### BUG-026 · ✅ Crash del TTS al generar voz: NoSuchMethodError en el callback JNI de sherpa-onnx *(arreglado 2026-11-17, compilado pendiente de re-prueba)*
-**Esfuerzo:** S · **Escalón:** 0 · Re-prueba con la build del fix; reapareció el 17/11
-
-- **Síntoma (crashes SIGABRT 13:36:52 y 13:37:10 del 17/11, tid `pool-*-thread-1`):** al generar voz con Pocket (sherpa-onnx), `JNI DETECTED ERROR IN APPLICATION: NewFloatArray called with pending exception java.lang.NoSuchMethodError: no non-static method "SherpaPocketEngine$$ExternalSyntheticLambda0.invoke([F)Ljava/lang/Integer;"`. Mata la app a la primera generación de voz. Stack: `OfflineTts.generateWithConfigImpl` ← `OfflineTts.generateWithConfigAndCallback` ← `SherpaPocketEngine.generate` (`SherpaPocketEngine.kt:97`) ← `TtsManager.launchJob$lambda$2` (`TtsManager.kt:270`).
-- **Causa raíz:** el callback de muestras se pasaba como lambda Kotlin `(FloatArray) -> Int`. D8 la desazaúca en una clase sintética (`$$ExternalSyntheticLambda0`) cuyo `invoke` es **estático** cuando no captura nada, y el JNI de sherpa-onnx busca con `GetMethodID` un `invoke` de **instancia** con firma `([F)Ljava/lang/Integer;` (retorno **boxed** `Integer`, porque sherpa declara `Function1<? super float[], java.lang.Integer>`). Sin método → excepción pendiente → abort en el siguiente `NewFloatArray`.
-- **Fix:** clase normal `SherpaPocketEngine.ChunkCallback` que implementa `Function1<FloatArray, Int?>` con `override fun invoke(samples: FloatArray): Int?`. Verificado con `javap`: emite `public java.lang.Integer invoke(float[])` — instancia, firma exacta.
-- **Archivos:** `tts/SherpaPocketEngine.kt`.
-- **Actualización (reportes 15:26 y 15:30 del 17/11):** el mismo `NoSuchMethodError` reaparece a las 15:27:54 y 15:30:05 con la firma `SherpaPocketEngine$$ExternalSyntheticLambda0.invoke([F)Ljava/lang/Integer;` — no consta si el dispositivo ya tenía instalado el APK con el fix (compilado pero pendiente de re-prueba). No se abre bug nuevo: hay que confirmar con esa build que el `javap` con `invoke` de instancia basta.
+> **BUG-026** — cerrado y verificado el 2026-11-19 (generación de voz con Pocket sin `NoSuchMethodError`). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-026).
 
 ## P3 — Rendimiento
 
@@ -244,12 +212,13 @@
 - **Pista:** `ScenePromptBuilder.build()` (`data/characters/ScenePromptBuilder.kt`, líneas ~30-60) arma el prompt por personaje con `CharacterPromptBuilder.applyMacros`; revisar qué campos mete hoy (escenario, saludo, ejemplos, system prompt) y recortarlos. Valorar un interruptor "Usar ficha completa" por escena.
 - **Observación relacionada (captura 17:00, "Political Pundits"):** dos personajes distintos (The Conservative / The Libertarian) devolvieron **el mismo texto en inglés**, una acotación de escenario (`[The studio lights are bright…]`) que parece venir del escenario/saludo de la escena y no de su personalidad; recortar los campos extra debería evitarlo. Comprobar también que el idioma de respuesta sigue al usuario (español).
 
-### BUG-037 · ✅ Filtro de escenas: el Narrador en español no se reconoce (`Narrador:` ≠ `Narrator`)
-**Esfuerzo:** S · **Escalón:** 0 · Compilar con Gradle + re-prueba en escena
+### BUG-037 · ⚠️ Filtro de escenas: el Narrador en español no se reconoce (`Narrador:` ≠ `Narrator`)
+**Esfuerzo:** S · **Escalón:** 0 · Re-prueba pendiente: falta el caso concreto que falla
 
 - **Hallazgo de la revisión de código (2026-11-19):** `ScenePromptBuilder.NARRATOR = "Narrator"` pero la barra muestra "Narrador" y el modelo suele responder `Narrador:`. `headerSpeaker` no lo reconoce como encabezado conocido, así que `filterReply` deja pasar ese bloque en turnos que no lo permiten (comprobado con una prueba en JVM: con el hablante `KIP` fijo se descarta Tohru, pero un `Narrador:` justo detrás de KIP se conserva como si fuera de KIP).
 - **Fix:** aceptar ambos alias (`Narrator`, `Narrador`, y `Narradora`) en `headerSpeaker`, y añadir test en `ScenarioTest.kt`.
-- **Fix aplicado (2026-11-19):** `ScenePromptBuilder.headerSpeaker` acepta `Narrator`, `Narrador` y `Narradora` (sin distinguir mayúsculas) y devuelve el nombre canónico `NARRATOR`, solo si el narrador forma parte de la escena. Test `filterRecognisesSpanishNarratorAlias` en `ScenarioTest.kt` (falla con el código anterior, pasa con el nuevo; compilado con kotlinc, pendiente de Gradle). Archivos: `data/characters/ScenePromptBuilder.kt`, `test/.../ScenarioTest.kt`.
+- **Fix aplicado (2026-11-19):** `ScenePromptBuilder.headerSpeaker` acepta `Narrator`, `Narrador` y `Narradora` (sin distinguir mayúsculas) y devuelve el nombre canónico `NARRATOR`, solo si el narrador forma parte de la escena. Test `filterRecognisesSpanishNarratorAlias` en `ScenarioTest.kt` (falla con el código anterior, pasa con el nuevo; 9/9 pruebas de `ScenarioTest` OK con Gradle el 19/11). Archivos: `data/characters/ScenePromptBuilder.kt`, `test/.../ScenarioTest.kt`.
+- **Re-prueba 19/11 (humano):** «un poco dando más problemas» al probarlo en un escalón más fuerte (el 4). No se pudo identificar el caso: sin saber qué escena, qué hablante estaba fijado y qué texto se coló, no hay nada que corregir sin adivinar. **Pendiente:** captura o texto exacto (respuesta con `Narrador:` colado cuando el narrador está desactivado, o al revés) y si la escena tenía el narrador activo — sin narrador, el bloque `Narrador:` se conserva a propósito.
 
 ### BUG-038 · ❌ Copia de seguridad: duplica en vez de fusionar, y no incluye todo ni permite elegir qué restaurar
 **Esfuerzo:** L · **Escalón:** 2 · Sucede a BUG-023 (cerrado); parte L si incluye chats Room
