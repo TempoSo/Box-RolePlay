@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-20 — BUG-009: la hamburguesa del inicio abre el cajón (Escalón 1)
+
+**Qué y por qué:** BUG-009 (Escalón 1). La hamburguesa del inicio no abría el cajón (solo el gesto de deslizar). El botón sí estaba conectado a `drawerState.open()`, pero se dibujaba antes de la `Column` que ocupa toda la pantalla, así que esta se quedaba con los toques. Se mueve el botón después de la `Column` para que quede encima. Pendiente de re-prueba en el teléfono.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/BoxHomeScreen.kt` — el `IconButton` del menú pasa a dibujarse encima.
+- `analisis/BUGS.md` — BUG-009 con parche aplicado.
+
 ### 2026-11-20 — BUG-008: editar los recuerdos sin procesar (Escalón 1)
 
 **Qué y por qué:** BUG-008 (Escalón 1). Los recuerdos «sin procesar» solo se podían borrar. Ahora cada nota tiene un botón ✏️ que abre un diálogo de edición; el cambio conserva el `id` y la fecha de la nota para no alterar el orden cronológico de las tandas del absorbedor, y un texto en blanco no se guarda. Test `editingRawNoteKeepsIdAndDate` (11 pruebas OK con kotlinc). Pendiente de re-prueba en el teléfono.

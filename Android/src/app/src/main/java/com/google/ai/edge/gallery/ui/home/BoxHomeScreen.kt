@@ -203,10 +203,6 @@ fun BoxHomeScreen(
     },
   ) {
   Box(Modifier.fillMaxSize()) {
-  androidx.compose.material3.IconButton(
-    onClick = { drawerScope.launch { drawerState.open() } },
-    modifier = Modifier.systemBarsPadding().padding(start = 8.dp, top = 8.dp).align(Alignment.TopStart),
-  ) { Icon(Icons.Rounded.Menu, "Menú") }
   Column(
     modifier =
       Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -279,6 +275,12 @@ fun BoxHomeScreen(
     )
     Spacer(Modifier.height(24.dp))
   }
+  // BUG-009: el botón va DESPUÉS de la Column para quedar encima; con la Column (fillMaxSize +
+  // verticalScroll) dibujada encima, se tragaba los toques y solo funcionaba el gesto de deslizar.
+  androidx.compose.material3.IconButton(
+    onClick = { drawerScope.launch { drawerState.open() } },
+    modifier = Modifier.systemBarsPadding().padding(start = 8.dp, top = 8.dp).align(Alignment.TopStart),
+  ) { Icon(Icons.Rounded.Menu, "Menú") }
   }
   }
 }
