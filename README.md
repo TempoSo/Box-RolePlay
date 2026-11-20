@@ -104,7 +104,7 @@ Todo lo demás que ves en la app —personajes, escenas, memoria a largo plazo, 
 
 ## 🚧 Roadmap
 
-Proyecto en desarrollo por fases sobre la rama `fase1-rendimiento`. Todo lo marcado está **implementado en código**; la validación en dispositivo avanza en la checklist de [`analisis/PRUEBAS.md`](analisis/PRUEBAS.md).
+Proyecto en desarrollo por fases sobre la rama `fase1-rendimiento`. Todo lo marcado está **implementado en código**; la validación en dispositivo avanza en la checklist de [`analisis/PRUEBAS.md`](analisis/PRUEBAS.md) y el estado de los bugs en [`analisis/BUGS.md`](analisis/BUGS.md).
 
 - [x] **Fases 1–5** — Velocidad del motor GGUF, TTS con Pocket (voz por personaje y voz en vivo), visión con mmproj, memoria larga y ligereza en segundo plano
 - [x] **Fase 6** — Pulido: nombre de la app, presets de muestreo con nombre
@@ -143,9 +143,12 @@ También puedes abrir la carpeta `Android/` en **Android Studio** y ejecutar sob
 │       ├── llama.cpp/  #   submódulo (motor GGUF)
 │       └── ...         #   stable-diffusion.cpp, whisper.cpp
 ├── analisis/           # Documentos de trabajo
+│   ├── BUGS.md         #   inventario vivo: abiertos + dudosos
+│   ├── BUGS_CERRADOS.md#   histórico de cerrados (solo si se audita)
 │   ├── PRUEBAS.md      #   checklist original de pruebas por fase
 │   ├── PLAN_PRUEBAS.md #   plan priorizado + resultados en dispositivo
-│   └── CAMBIOS.md      #   registro de cambios (qué, dónde, por qué)
+│   ├── CAMBIOS.md      #   registro de cambios (qué, dónde, por qué)
+│   └── MEMORIA.md      #   diseño de memoria a largo plazo
 ├── model_allowlists/   # Allowlists de modelos por versión
 ├── skills/             # Agent skills (documentación y ejemplos)
 └── images/             # Recursos gráficos

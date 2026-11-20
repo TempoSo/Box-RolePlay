@@ -1,6 +1,6 @@
 # AGENTS.md — Instrucciones para agentes IA (OpenCode, Claude, otros)
 
-Proyecto: **Box RolePlay** — fork de [Box](https://github.com/jegly/Box) (base **1.0.1**) reorientado a roleplay con IA 100 % local en Android. Rama activa: `fase1-rendimiento`.
+Proyecto: **Box RolePlay** — fork de [Box](https://github.com/jegly/Box) (base **1.0.12**, commit `8d6503a8`) reorientado a roleplay con IA 100 % local en Android. Rama activa: `fase1-rendimiento`.
 
 ## Reglas obligatorias
 
@@ -15,7 +15,8 @@ Proyecto: **Box RolePlay** — fork de [Box](https://github.com/jegly/Box) (base
 |---|---|
 | [`analisis/CAMBIOS.md`](analisis/CAMBIOS.md) | Registro de cambios + mapa de código + contexto del proyecto |
 | [`analisis/PLAN_PRUEBAS.md`](analisis/PLAN_PRUEBAS.md) | Plan de pruebas priorizado con resultados reales en dispositivo |
-| [`analisis/BUGS.md`](analisis/BUGS.md) | Inventario de bugs priorizados (P0–P3) con stacks, repros y archivos afectados |
+| [`analisis/BUGS.md`](analisis/BUGS.md) | Inventario vivo: **solo bugs abiertos y dudosos** (P0–P3), con stacks, repros y archivos afectados |
+| [`analisis/BUGS_CERRADOS.md`](analisis/BUGS_CERRADOS.md) | Histórico de los 16 cerrados con su texto íntegro y el commit/verificación que los cerró; se consulta solo si se quiere auditar |
 | [`analisis/MEMORIA.md`](analisis/MEMORIA.md) | Análisis de diseño: memoria de Layla vs Box y modificaciones propuestas |
 | [`analisis/PRUEBAS.md`](analisis/PRUEBAS.md) | Checklist original completa por fase |
 

@@ -7,7 +7,8 @@
 **Documentos vivos hermanos:**
 - [`PRUEBAS.md`](PRUEBAS.md) — checklist original completa de pruebas por fase.
 - [`PLAN_PRUEBAS.md`](PLAN_PRUEBAS.md) — plan priorizado con resultados de pruebas en dispositivo.
-- [`BUGS.md`](BUGS.md) — inventario de bugs priorizados (síntomas, stacks, repros, fixes propuestos y archivos afectados).
+- [`BUGS.md`](BUGS.md) — inventario vivo de bugs **abiertos y dudosos** (síntomas, stacks, repros, fixes propuestos y archivos afectados).
+- [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md) — histórico de los 16 cerrados con el mismo detalle y el commit/verificación que los cerró. Se consulta solo si se quiere auditar.
 - [`MEMORIA.md`](MEMORIA.md) — análisis de diseño: memoria de Layla vs la de Box, con modificaciones propuestas.
 
 ---
@@ -39,6 +40,26 @@
 ---
 
 ## 📝 Registro
+
+### 2026-11-19 — Reordenar la documentación de bugs: activos vs. cerrados (solo `.md`)
+
+**Qué y por qué:** el humano pidió mantener el sistema de documentos con los bugs **activos** y mover los **cerrados** a otro archivo sin borrarlos, para decidir después si conviene consultarlo. Triaje de los 41 IDs: **16 cerrados · 8 dudosos · 17 abiertos** (HEAD `ca51c23c`, rama `fase1-rendimiento`). **No se tocó código.**
+
+- `analisis/BUGS.md`: los 16 bloques cerrados se sustituyen por una línea de referencia con ancla a su entrada del histórico; conserva los 25 activos/dudosos con su texto literal.
+- `analisis/BUGS_CERRADOS.md` (nuevo): los 16 bloques originales íntegros, con un resumen de cierre (commit o verificación en dispositivo). Se consulta solo si se quiere auditar un cierre.
+- `analisis/PLAN_PRUEBAS.md`: las 8 re-pruebas ya verificadas se mueven a «🗄️ Re-pruebas verificadas» al final; arriba queda solo lo pendiente. La casilla 5.5b (BUG-022) se marca como OK: el humano verificó el 19/11 a las 09:36 que el reporte incluía el stack nativo. El inventario pasa de 24 a 41 IDs.
+- `AGENTS.md`, `README.md`, `analisis/MEMORIA.md`: enlaces al nuevo archivo; la base de AGENTS.md se corrige a Box 1.0.12 (`8d6503a8`) y MEMORIA.md anota que BUG-002 ya está verificado.
+
+**Archivos exactos:**
+- `AGENTS.md`
+- `README.md`
+- `analisis/BUGS.md`
+- `analisis/BUGS_CERRADOS.md`
+- `analisis/PLAN_PRUEBAS.md`
+- `analisis/MEMORIA.md`
+- `analisis/CAMBIOS.md`
+
+---
 
 ### 2026-11-19 — Limpieza: 56 imports sin uso en 25 archivos
 

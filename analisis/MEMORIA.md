@@ -51,8 +51,8 @@ Pipeline en tres piezas, todas en `data/characters/`:
 5. **Vincular borrado/regeneración**: al borrar o regenerar un mensaje, eliminar su nota sin procesar ligada.
 6. *(Largo plazo)* Estructura en clústeres temporales para la visualización, alineada con la vista de memoria actual.
 
-**Recomendación inicial:** 3 + 2 primero (sin dependencias, sin coste de CPU), y 1 cuando BUG-002 esté arreglado.
+**Recomendación inicial:** 3 + 2 primero (sin dependencias, sin coste de CPU), y 1 ahora que BUG-002 está verificado (17/11, 5.ª ronda; cierre en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md)).
 
 ---
 
-**Historia relacionada:** [`BUGS.md`](BUGS.md) (BUG-002 absorción, BUG-015 plantilla de turnos — Layla también inyecta la memoria dentro del system turn) · [`CAMBIOS.md`](CAMBIOS.md) (registro).
+**Historia relacionada:** [`BUGS.md`](BUGS.md) (BUG-015 plantilla de turnos — Layla también inyecta la memoria dentro del system turn) · [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md) (BUG-002 absorción, cierre verificado el 17/11) · [`CAMBIOS.md`](CAMBIOS.md) (registro).
