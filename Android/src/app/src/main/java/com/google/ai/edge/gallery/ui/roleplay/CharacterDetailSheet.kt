@@ -63,6 +63,8 @@ import java.io.File
 fun CharacterDetailSheet(
     character: RoleplayCharacter,
     detail: RoleplayViewModel.CharacterDetail?,
+    /** Nombre de la persona activa: sustituye `{{user}}` en la ficha (BUG-011). */
+    userName: String = CharacterPromptBuilder.DEFAULT_USER_NAME,
     memoriesCount: Int,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
@@ -156,8 +158,9 @@ fun CharacterDetailSheet(
                     }
                 }
 
-                // BUG-011: la ficha muestra las macros ya sustituidas ({{char}}, {{user}}, {user}…).
-                val shown = { t: String -> CharacterPromptBuilder.applyMacros(t, character.name, CharacterPromptBuilder.DEFAULT_USER_NAME) }
+                // BUG-011: la ficha muestra las macros ya sustituidas ({{char}}/{{user}} y <BOT>/<USER>).
+                // Las llaves simples ({user}) no son macros y se conservan literales, como en SillyTavern.
+                val shown = { t: String -> CharacterPromptBuilder.applyMacros(t, character.name, userName) }
                 ExpandableBlock("Descripción", shown(character.description))
                 ExpandableBlock("Personalidad", shown(character.personality))
                 ExpandableBlock("Escenario actual", shown(character.scenario), emptyText = "No hay escenario establecido.")

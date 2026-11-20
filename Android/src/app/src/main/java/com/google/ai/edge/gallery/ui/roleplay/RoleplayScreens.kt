@@ -93,6 +93,9 @@ fun RoleplayScreen(
     var toDelete by remember { mutableStateOf<RoleplayCharacter?>(null) }
     var groupsFor by remember { mutableStateOf<RoleplayCharacter?>(null) }
     val personas by viewModel.personas.collectAsState()
+    // BUG-011: las macros {{user}} de las fichas deben mostrar la persona activa, no "User".
+    val activePersonaName = personas.firstOrNull { it.isActive }?.name
+        ?: com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder.DEFAULT_USER_NAME
     var showPersonas by remember { mutableStateOf(false) }
     var showSampler by remember { mutableStateOf(false) }
     var showEnginePerf by remember { mutableStateOf(false) }
@@ -173,6 +176,7 @@ fun RoleplayScreen(
         } else {
             CharacterLibrary(
                 characters = characters,
+                userName = activePersonaName,
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 onOpen = { c ->
                     detailFor = c
@@ -217,6 +221,7 @@ fun RoleplayScreen(
         CharacterDetailSheet(
             character = c,
             detail = detail,
+            userName = activePersonaName,
             memoriesCount = mems.size,
             onDismiss = { detailFor = null },
             onEdit = { detailFor = null; onEditCharacter(c.id) },

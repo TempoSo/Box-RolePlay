@@ -56,6 +56,8 @@ import java.io.File
 @Composable
 fun CharacterLibrary(
     characters: List<RoleplayCharacter>,
+    /** Nombre de la persona activa: sustituye `{{user}}` en la vista previa (BUG-011). */
+    userName: String = com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder.DEFAULT_USER_NAME,
     onOpen: (RoleplayCharacter) -> Unit,
     onEdit: (RoleplayCharacter) -> Unit,
     onShare: (RoleplayCharacter) -> Unit,
@@ -136,6 +138,7 @@ fun CharacterLibrary(
                 items(visible, key = { it.id }) { c ->
                     CharacterTile(
                         character = c,
+                        userName = userName,
                         onOpen = { onOpen(c) },
                         onEdit = { onEdit(c) },
                         onShare = { onShare(c) },
@@ -151,6 +154,7 @@ fun CharacterLibrary(
 @Composable
 private fun CharacterTile(
     character: RoleplayCharacter,
+    userName: String,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onShare: () -> Unit,
@@ -196,7 +200,7 @@ private fun CharacterTile(
                 val sub = com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder.applyMacros(
                     character.description.ifBlank { character.personality }.ifBlank { "Sin descripción" },
                     character.name,
-                    com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder.DEFAULT_USER_NAME,
+                    userName,
                 )
                 Text(
                     sub,
