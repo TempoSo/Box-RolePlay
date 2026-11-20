@@ -41,6 +41,16 @@
 
 ## 📝 Registro
 
+### 2026-11-19 — Orden de ejecución por esfuerzo en `BUGS.md` (solo documentación)
+
+**Qué y por qué:** el humano gestiona los prompts y pidió atacar primero lo fácil y dejar lo difícil al final. Se añade a `analisis/BUGS.md` una sección «Orden sugerido» con 4 escalones (0 = verificación gratis → 3 = duros/nativos) y una línea `Esfuerzo / Escalón / nota` en las 25 entradas vivas, para que un modelo nuevo no tenga que deducir el orden ni reabrir el histórico. **No se tocó código** y el punto de partida elegido es el Escalón 0 (8 dudosos, solo re-prueba).
+
+**Archivos exactos:**
+- `analisis/BUGS.md`
+- `analisis/CAMBIOS.md`
+
+---
+
 ### 2026-11-19 — Reordenar la documentación de bugs: activos vs. cerrados (solo `.md`)
 
 **Qué y por qué:** el humano pidió mantener el sistema de documentos con los bugs **activos** y mover los **cerrados** a otro archivo sin borrarlos, para decidir después si conviene consultarlo. Triaje de los 41 IDs: **16 cerrados · 8 dudosos · 17 abiertos** (HEAD `ca51c23c`, rama `fase1-rendimiento`). **No se tocó código.**
