@@ -41,6 +41,17 @@
 
 ## 📝 Registro
 
+### 2026-11-20 — BUG-008: editar los recuerdos sin procesar (Escalón 1)
+
+**Qué y por qué:** BUG-008 (Escalón 1). Los recuerdos «sin procesar» solo se podían borrar. Ahora cada nota tiene un botón ✏️ que abre un diálogo de edición; el cambio conserva el `id` y la fecha de la nota para no alterar el orden cronológico de las tandas del absorbedor, y un texto en blanco no se guarda. Test `editingRawNoteKeepsIdAndDate` (11 pruebas OK con kotlinc). Pendiente de re-prueba en el teléfono.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/memory/MemoryScreen.kt` — botón y diálogo de edición, `editRaw` en el ViewModel.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/RawMemory.kt` — `withEditedText`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/RawMemoryStore.kt` — `updateText`.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/RawMemoryTest.kt` — test nuevo.
+- `analisis/BUGS.md` — BUG-008 con parche aplicado.
+
 ### 2026-11-20 — Cerrar 011 y 016; aclarar el caso de 037 (solo documentación)
 
 **Qué y por qué:** el humano confirmó en el teléfono que **011 funciona** (ficha y tarjeta con la persona activa) y que **016 funciona** (4.2c: GGUF→GGUF y LiteRT→GGUF sin «El modelo sigue cargando»). Se cierran los dos siguiendo la regla: bloque íntegro a `analisis/BUGS_CERRADOS.md` (con su fila en la tabla), línea de referencia en `analisis/BUGS.md`, contadores a **23 cerrados · 18 abiertos** y plan de pruebas al día. **No se tocó código.**

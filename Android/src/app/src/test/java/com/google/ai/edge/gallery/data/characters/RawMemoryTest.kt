@@ -97,4 +97,16 @@ class RawMemoryTest {
         val tandas = MemoryAbsorbPrompt.tandas(listOf("solo"), sizeOf = { it.length })
         assertEquals(listOf(listOf("solo")), tandas)
     }
+
+    // BUG-008: editar una nota conserva su id y su fecha; un texto en blanco no la cambia.
+    @Test fun editingRawNoteKeepsIdAndDate() {
+        val a = RawMemory(id = "a", characterId = "c", text = "viejo", createdAt = 10)
+        val b = RawMemory(id = "b", characterId = "c", text = "otra", createdAt = 20)
+        val out = listOf(a, b).withEditedText("a", "  nuevo  ")
+        assertEquals("nuevo", out[0].text)
+        assertEquals(10L, out[0].createdAt)
+        assertEquals("otra", out[1].text)
+        assertEquals(listOf(a, b), listOf(a, b).withEditedText("a", "   "))
+        assertEquals(listOf(a, b), listOf(a, b).withEditedText("zzz", "x"))
+    }
 }

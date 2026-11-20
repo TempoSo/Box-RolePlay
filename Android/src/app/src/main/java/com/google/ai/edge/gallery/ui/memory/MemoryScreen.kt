@@ -74,6 +74,7 @@ class MemoryViewModel @Inject constructor(
   private val _raw = MutableStateFlow<List<RawMemory>>(emptyList())
   val raw: StateFlow<List<RawMemory>> = _raw.asStateFlow()
   private fun refreshRaw() { _raw.value = rawStore.forCharacter(selectedId.value) }
+  fun editRaw(id: String, text: String) { viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { rawStore.updateText(id, text); refreshRaw() } }
   fun deleteRaw(id: String) { viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { rawStore.remove(setOf(id)); refreshRaw() } }
 
   /** Absorber clústeres: el modelo resume las notas sin procesar en recuerdos reales, por tandas. */
@@ -162,6 +163,9 @@ fun MemoryScreen(
   var query by remember { mutableStateOf("") }
   var editing by remember { mutableStateOf<CharacterMemory?>(null) }
   var editText by remember { mutableStateOf("") }
+  // BUG-008: edición de los recuerdos "sin procesar".
+  var editingRaw by remember { mutableStateOf<RawMemory?>(null) }
+  var editRawText by remember { mutableStateOf("") }
   var confirmClear by remember { mutableStateOf(false) }
   var enabled by remember(selected) { mutableStateOf(selected.isBlank() || store.memoryEnabled(selected)) }
   var auto by remember(selected) { mutableStateOf(selected.isBlank() || store.autoMemory(selected)) }
@@ -240,6 +244,7 @@ fun MemoryScreen(
                   Text(relativeTime(r.createdAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                   Text(r.text, maxLines = 4, style = MaterialTheme.typography.bodyMedium)
                 }
+                IconButton(onClick = { editingRaw = r; editRawText = r.text }) { Icon(Icons.Rounded.Edit, "Editar nota") }
                 IconButton(onClick = { viewModel.deleteRaw(r.id) }) { Icon(Icons.Rounded.Delete, "Borrar nota", tint = MaterialTheme.colorScheme.error) }
               }
             }
@@ -260,6 +265,20 @@ fun MemoryScreen(
       text = { OutlinedTextField(value = editText, onValueChange = { editText = it }, minLines = 4, modifier = Modifier.fillMaxWidth()) },
       confirmButton = { TextButton(onClick = { viewModel.save(target.copy(content = editText)); editing = null }) { Text("Guardar") } },
       dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancelar") } },
+    )
+  }
+  editingRaw?.let { target ->
+    AlertDialog(
+      onDismissRequest = { editingRaw = null },
+      title = { Text("Editar nota") },
+      text = { OutlinedTextField(value = editRawText, onValueChange = { editRawText = it }, minLines = 4, modifier = Modifier.fillMaxWidth()) },
+      confirmButton = {
+        TextButton(
+          onClick = { viewModel.editRaw(target.id, editRawText); editingRaw = null },
+          enabled = editRawText.isNotBlank(),
+        ) { Text("Guardar") }
+      },
+      dismissButton = { TextButton(onClick = { editingRaw = null }) { Text("Cancelar") } },
     )
   }
   if (confirmClear) {

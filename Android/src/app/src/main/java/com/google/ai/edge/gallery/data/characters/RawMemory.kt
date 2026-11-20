@@ -19,6 +19,16 @@ data class RawMemory(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/**
+ * BUG-008: reemplaza el texto de una nota conservando su id y su fecha (el orden cronológico de las
+ * tandas del absorbedor depende de `createdAt`). Un texto en blanco no edita nada: para eso está borrar.
+ */
+fun List<RawMemory>.withEditedText(id: String, text: String): List<RawMemory> {
+    val clean = text.trim()
+    if (clean.isEmpty()) return this
+    return map { if (it.id == id) it.copy(text = clean) else it }
+}
+
 object RawMemoryJson {
     fun encode(list: List<RawMemory>): String =
         buildJsonArray {

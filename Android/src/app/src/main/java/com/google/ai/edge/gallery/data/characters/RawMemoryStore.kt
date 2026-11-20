@@ -17,6 +17,10 @@ class RawMemoryStore(context: Context) {
     @Synchronized
     fun add(m: RawMemory) { file.writeText(RawMemoryJson.encode(load() + m)) }
 
+    /** BUG-008: edita el texto de una nota conservando su fecha. */
+    @Synchronized
+    fun updateText(id: String, text: String) { file.writeText(RawMemoryJson.encode(load().withEditedText(id, text))) }
+
     @Synchronized
     fun remove(ids: Set<String>) { file.writeText(RawMemoryJson.encode(load().filterNot { it.id in ids })) }
 }

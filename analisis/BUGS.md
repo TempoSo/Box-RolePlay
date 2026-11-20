@@ -81,11 +81,12 @@
 - **Fix:** compartir de verdad: `ACTION_SEND` con texto plano o exportar `.json` a caché + `FileProvider` (como hace la copia de seguridad .zip). El primer mecanismo ya está implantado y verificado.
 - **Archivos:** `ui/roleplay/CharacterDetailSheet.kt`, `data/characters/CharacterRepository.kt`.
 
-### BUG-008 · ❌ Memoria: los recuerdos "sin procesar" no se pueden editar
+### BUG-008 · 🟡 Memoria: los recuerdos "sin procesar" no se pueden editar
 **Esfuerzo:** S · **Escalón:** 1 · Causa localizada en `ui/memory/MemoryScreen.kt`
 
 - **Síntoma:** solo se pueden borrar; editar no funciona (los procesados sí, verificar).
 - **Archivos:** `ui/memory/MemoryScreen.kt`, `data/characters/RawMemory.kt`.
+- **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** causa localizada: la tarjeta de cada nota solo tenía botón de borrar. Se añade el botón ✏️ «Editar nota» con diálogo, `RawMemoryStore.updateText` y `withEditedText` (conserva `id` y `createdAt`, así el orden cronológico de las tandas no cambia; un texto en blanco no guarda). Test `editingRawNoteKeepsIdAndDate` (11/11 en `RawMemoryTest`, kotlinc). **Re-prueba:** Memoria → Recuerdos sin procesar → ✏️ en una nota → cambiar el texto → Guardar; debe actualizarse la tarjeta y seguir en su sitio. Archivos: `ui/memory/MemoryScreen.kt`, `data/characters/RawMemory.kt`, `data/characters/RawMemoryStore.kt`.
 
 ### BUG-009 · ❌ Cajón: la hamburguesa del inicio no abre el cajón (solo el swipe)
 **Esfuerzo:** S · **Escalón:** 1 · Conectar el botón al estado del `ModalNavigationDrawer`
