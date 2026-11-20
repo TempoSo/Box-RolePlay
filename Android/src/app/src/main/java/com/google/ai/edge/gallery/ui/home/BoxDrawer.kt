@@ -78,7 +78,7 @@ class BoxDrawerViewModel @Inject constructor(
         when {
           cid.isBlank() -> DrawerGroup("", "Chat libre", "", list)
           cid.startsWith("scene:") -> DrawerGroup(cid, "Escenas", "", list)
-          else -> DrawerGroup(cid, byId[cid]?.name ?: "Personaje borrado", byId[cid]?.avatarPath ?: "", list)
+          else -> DrawerGroup(cid, byId[cid]?.name ?: "Sin personaje", byId[cid]?.avatarPath ?: "", list)
         }
       }.sortedByDescending { g -> g.chats.maxOf { it.updatedAt } }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

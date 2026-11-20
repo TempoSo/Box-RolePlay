@@ -95,11 +95,12 @@
 - **Archivos:** `ui/home/BoxHomeScreen.kt` (conectar botón al estado del `ModalNavigationDrawer`).
 - **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** el botón ya llamaba a `drawerState.open()`; la causa es el orden de dibujo: estaba **antes** de la `Column` (`fillMaxSize` + `verticalScroll`) dentro del `Box`, así que la `Column` quedaba encima y recibía los toques (en Compose solo el hijo superior recibe el evento). Se mueve el botón **después** de la `Column`, sin cambiar su posición. **Re-prueba:** Inicio → tocar ☰ arriba a la izquierda → debe abrirse el cajón; los botones de la pantalla siguen funcionando y el scroll también. Archivo: `ui/home/BoxHomeScreen.kt`.
 
-### BUG-010 · ⚠️ Cajón: chats de personajes borrados salen como "Personaje borrado"
+### BUG-010 · 🟡 Cajón: chats de personajes borrados salen como "Personaje borrado"
 **Esfuerzo:** S · **Escalón:** 1 · Requiere decisión tuya: renombrar u ocultar
 
 - **Decisión pendiente:** renombrar a "Sin personaje" u ocultarlos/moverlos a "Chat libre".
 - **Archivos:** `ui/home/` (cajón) + `data/local/` (consulta de chats agrupados).
+- **Parche aplicado (2026-11-20, decisión tuya: renombrar):** los chats de personajes borrados se agrupan bajo «Sin personaje» en lugar de «Personaje borrado»; no se pierde ningún chat. Archivo: `ui/home/BoxDrawer.kt` (`BoxDrawerViewModel.groups`). **Re-prueba:** borrar un personaje que tenga chats → abrir el cajón → el grupo se llama «Sin personaje» y sus chats siguen abriéndose.
 
 > **BUG-011** — cerrado y verificado el 2026-11-20 (ficha y tarjeta con la persona activa). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-011).
 

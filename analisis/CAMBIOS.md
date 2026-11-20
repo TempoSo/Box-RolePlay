@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-20 — BUG-010: «Sin personaje» en el cajón (Escalón 1)
+
+**Qué y por qué:** BUG-010 (Escalón 1). Decisión del humano: renombrar. El grupo de chats cuyo personaje se borró pasa de «Personaje borrado» a «Sin personaje». Pendiente de re-prueba.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/BoxDrawer.kt` — título del grupo.
+- `analisis/BUGS.md` — BUG-010 con parche aplicado.
+
 ### 2026-11-20 — BUG-019: el benchmark avisa de que GGUF y LiteRT no son comparables (Escalón 1)
 
 **Qué y por qué:** BUG-019 (Escalón 1). El benchmark mide en GGUF y en LiteRT con métodos distintos, así que sus cifras no se pueden comparar. Se elige etiquetarlo en vez de unificar la métrica: aviso en la pantalla «Benchmark de modelos» y aclaración en la prueba rápida GGUF. Solo texto de interfaz. Pendiente de comprobación visual.
