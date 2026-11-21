@@ -41,6 +41,16 @@
 
 ## 📝 Registro
 
+### BUG-040: barra de presets (cargar / Nuevo / editar) en Rendimiento y Muestreo
+
+**Qué y por qué:** re-prueba de BUG-040 en el teléfono: el preset de rendimiento se guardaba pero no había forma de cargarlo desde su diálogo. Además, en «Muestreo (GGUF)» la ficha «Custom» sobraba en la fila de Default/Creative/Precise (ocupaba espacio y siempre salía marcada). Se crea una barra de presets compartida estilo Layla: fichas para cargar, botón «Nuevo» (guarda los valores actuales con un nombre) y lápiz de edición; borrar solo se puede en modo edición y pide confirmación. «Custom» deja de ser una ficha: es el estado «valores tocados a mano» y se muestra en una línea de estado («Usando «X»» o «Valores personalizados (sin guardar)»). Se retiran los botones antiguos de guardar. No se añade importar/exportar: irá con la copia de seguridad (BUG-038). Pendiente de re-prueba en el teléfono.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/PresetBar.kt` — nuevo, barra compartida.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/SamplerDialog.kt` — usa la barra; sin ficha Custom.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/EnginePerfDialog.kt` — barra de presets de rendimiento (cargar/nuevo/borrar) en vez de la sección de guardado.
+- `analisis/BUGS.md` — nota en BUG-040.
+
 ### 2026-11-20 — BUG-040: «Guardar como preset» en Rendimiento del motor (Escalón 1)
 
 **Qué y por qué:** BUG-040 (Escalón 1). Decisión del humano: añadir un botón propio para guardar el rendimiento como preset (como el de temperatura). Se añade la sección «Guardar como preset» en «Rendimiento del motor»; guarda un `EnginePreset` solo de rendimiento que aparece en «Motores guardados» y se aplica por la vía existente. Pendiente de re-prueba en el teléfono.

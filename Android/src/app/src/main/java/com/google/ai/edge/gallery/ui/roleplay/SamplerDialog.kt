@@ -2,13 +2,11 @@ package com.google.ai.edge.gallery.ui.roleplay
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -40,7 +38,6 @@ fun SamplerDialog(onDismiss: () -> Unit) {
     var custom by remember { mutableStateOf(store.custom()) }
     val shown = SamplerPresets.resolve(mode, custom)
     var named by remember { mutableStateOf(store.namedPresets()) }
-    var newName by remember { mutableStateOf("") }
 
     // Cambiar un número convierte el modo actual en Custom, partiendo de sus valores.
     fun edit(change: (SamplerSettings) -> SamplerSettings) {
@@ -57,24 +54,25 @@ fun SamplerDialog(onDismiss: () -> Unit) {
                     "Controla qué tan creativa o repetitiva es la respuesta. Los cambios se aplican en el siguiente mensaje. LiteRT usa sus propios ajustes del modelo.",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SamplerMode.entries.forEach { m ->
-                        FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
-                    }
-                }
-                if (named.isNotEmpty()) {
-                    Text("Tus presets (toca para cargar, ✕ para borrar):", style = MaterialTheme.typography.labelMedium)
-                    named.forEach { (name, preset) ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(
-                                selected = false,
-                                onClick = { custom = preset; mode = SamplerMode.CUSTOM },
-                                label = { Text(name) },
-                            )
-                            TextButton(onClick = { store.deleteNamedPreset(name); named = store.namedPresets() }) { Text("✕") }
-                        }
-                    }
-                }
+                val items =
+                    SamplerMode.entries.filter { it != SamplerMode.CUSTOM }.map { PresetBarItem("mode:${it.id}", it.label, deletable = false) } +
+                        named.keys.map { PresetBarItem("named:$it", it) }
+                // Custom ya no es una ficha: es el estado de «valores tocados a mano».
+                val selectedKey =
+                    if (mode != SamplerMode.CUSTOM) "mode:${mode.id}"
+                    else named.entries.firstOrNull { it.value == shown }?.let { "named:${it.key}" }
+                PresetBar(
+                    items = items,
+                    selectedKey = selectedKey,
+                    statusText = items.firstOrNull { it.key == selectedKey }?.let { "Usando «${it.label}»" }
+                        ?: "Valores personalizados (sin guardar). Toca «Nuevo» para guardarlos.",
+                    onPick = { key ->
+                        if (key.startsWith("mode:")) mode = SamplerMode.fromId(key.removePrefix("mode:"))
+                        else named[key.removePrefix("named:")]?.let { custom = it; mode = SamplerMode.CUSTOM }
+                    },
+                    onDelete = { key -> store.deleteNamedPreset(key.removePrefix("named:")); named = store.namedPresets() },
+                    onNew = { name -> store.saveNamedPreset(name, shown); named = store.namedPresets() },
+                )
                 NumField("Temperatura", shown.temperature) { v -> edit { it.copy(temperature = v) } }
                 NumField("Rango de temp. dinámica (0 = fija)", shown.dynTempRange) { v -> edit { it.copy(dynTempRange = v) } }
                 IntField("Top-K (0 = off)", shown.topK) { v -> edit { it.copy(topK = v) } }
@@ -87,21 +85,6 @@ fun SamplerDialog(onDismiss: () -> Unit) {
                 NumField("DRY multiplicador (0 = off)", shown.dryMultiplier) { v -> edit { it.copy(dryMultiplier = v) } }
                 NumField("DRY base", shown.dryBase) { v -> edit { it.copy(dryBase = v) } }
                 IntField("DRY longitud permitida", shown.dryAllowedLength) { v -> edit { it.copy(dryAllowedLength = v) } }
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    label = { Text("Nombre para guardar estos valores como preset") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                TextButton(
-                    enabled = newName.isNotBlank(),
-                    onClick = {
-                        store.saveNamedPreset(newName, shown)
-                        named = store.namedPresets()
-                        newName = ""
-                    },
-                ) { Text("Guardar como preset") }
             }
         },
         confirmButton = {

@@ -224,6 +224,7 @@
 
 - **Nota del humano:** "no hay botón que permita guardar los presets de hilos/flash como perfiles". BUG-018 ya guarda los diez campos de rendimiento dentro del preset de motor y se verificó en 4.4b; si lo que falta es un **botón propio** en la sección de rendimiento (como el de temperatura), añadirlo para que sea descubrible, sin duplicar la lógica. Revisar con el humano antes de tocar.
 - **Parche aplicado (2026-11-20, decisión tuya: botón propio):** «Rendimiento del motor» tiene ahora la sección **Guardar como preset**: nombre + botón, que guarda hilos, batch, ubatch, flash attention, caché KV, mmap, repack, contexto, respuesta máxima, visión y tamaño de imagen como un `EnginePreset` solo de rendimiento (modelo, persona y muestreo vacíos = «no cambiar», semántica ya existente de `EngineApply.applyBasics`). Aparece en **Configuración de inferencia → Motores guardados** y se aplica por la misma vía, sin lógica duplicada. **Re-prueba:** Ajustes → Rendimiento del motor → cambiar hilos/flash → nombre «Rápido» → Guardar como preset; cambiar los valores; Configuración de inferencia → tocar «Rápido»: deben volver los hilos/flash guardados y el modelo no debe cambiar. Archivo: `ui/roleplay/EnginePerfDialog.kt`.
+Re-prueba 2026-11-20: guardaba pero no se podía cargar. Corregido con una barra de presets (cargar, «Nuevo», lápiz para borrar con confirmación) en Rendimiento y en Muestreo; se quita la ficha «Custom». Pendiente de re-prueba: guardar un preset de rendimiento, cambiar valores, tocar el preset y ver que vuelven; borrar solo con el lápiz.
 
 ---
 
