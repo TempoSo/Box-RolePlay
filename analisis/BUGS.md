@@ -1,6 +1,6 @@
 # 🐞 Inventario de bugs — Box RolePlay
 
-> **Triaje 2026-11-20:** 23 cerrados · 18 abiertos. Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
+> **Triaje 2026-11-20:** 29 cerrados · 12 abiertos. Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
 >
 > **Documento vivo.** Un bug = una entrada. Al cerrar uno: **no se marca ✅ dentro del texto**; se mueve el bloque entero a [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md), se deja aquí solo una línea de referencia y se añade una entrada en [`CAMBIOS.md`](CAMBIOS.md) con fecha, archivos tocados y motivo.
 > Origen: pruebas del Bloque 2 (2026-11-16, POCO duchamp, HyperOS 3.0.9.0, Android 15 — fingerprint del crash) y de los Bloques 4 y 5 (2026-11-17, Xiaomi 2311DRK48G / POCO duchamp).
@@ -14,8 +14,8 @@
 | Escalón | IDs | Coste | Qué es |
 |---|---|---|---|
 | **0 · Verificación gratis** | 037 | 0 parche nuevo | 011, 015, 016, 021, 025, 026 y 030 cerrados (015/021/025/026/030 el 19/11; 011/016 el 20/11); queda un caso concreto de 037 |
-| **1 · Rápidos** | 008, 009, 010, 014, 019, 040 | S | Causa localizada; decisión pequeña en 010 y 040 |
-| **2 · Medianos con tests** | 007, 032–036, 038, 039, 041 | M–L | FileProvider, Tanda final de escenas, copia/Room, VoiceStore |
+| **1 · Rápidos** | ✅ completo | S | 008, 009, 010, 014, 019 y 040 verificados y cerrados el 20/11; 041 (voces) funciona y pasa a la tanda final para pulirla |
+| **2 · Medianos con tests** | 007, 032–036, 038, 039, 041 (pulido) | M–L | FileProvider, Tanda final de escenas, copia/Room, pulido de la biblioteca de voces |
 | **3 · Duros / nativos** | 017, 029 | L | Visión en CPU y stop strings en `LLMInference.cpp` |
 
 > **Agrupaciones:** 007 y 039 comparten `RoleplayScreens.kt` → un solo commit. 032–036 comparten el flujo de escenas → una sola tanda. En 038 y 041 la parte «L» aparece solo si se decide incluir chats cifrados o grabación de audio.
@@ -34,14 +34,7 @@
 
 > **BUG-013** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-013).
 
-### BUG-014 · 🟡 Importar carpeta del modelo de voz: solo acepta nombres antiguos (bloquea el Bloque 3)
-**Esfuerzo:** S · **Escalón:** 1 · Mejorar el mensaje de error con los archivos esperados
-
-- **Síntoma:** importas una carpeta con nombres v2 (`flow_lm_flow.onnx`, `flow_lm_main.onnx`, `mimi_*`, `tokenizer.model`, `bundle.json` — la del repo de KevinAHM) → toast "No se encontraron archivos de Pocket TTS en esa carpeta" y el panel sigue mostrando "Faltan: lm_flow.onnx, lm_main.onnx, encoder.onnx, decoder.onnx, vocab.json, token_scores.json" (capturas 17:07–17:08).
-- **Causa:** `PocketModelFiles.isPart()/missing()` (`tts/PocketModelFiles.kt`) solo entienden nombres v1 y `TtsFiles.importModelFolder()` filtra con `isPart` → la carpeta se descarta entera. Inconsistente con `PocketHfSelect` (que sí entiende v2) y con el propio diálogo de descarga (que convierte `tokenizer.model` → `vocab.json`/`token_scores.json` con `SentencePieceModel`).
-- **Fix recomendado:** no dar soporte v2 crudo a la importación (aunque se renombrara, los bundles KevinAHM necesitan el fix BOS de BUG-013); en su lugar, apuntar a repos compatibles sherpa-onnx y **mejorar el mensaje de error** de la importación con la lista exacta de archivos esperados (hoy es genérico y confunde).
-- **Archivos:** `tts/PocketModelFiles.kt`, `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt` (mensaje y texto de ayuda).
-- **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** sigue la decisión del fix recomendado (no dar soporte v2 crudo). Nuevo `PocketModelFiles.noPartsMessage()` y `EXPECTED_NAMES`: si la carpeta no tiene ninguna pieza, el aviso lista los 7 archivos exactos (`lm_flow.onnx`, `lm_main.onnx`, `encoder.onnx`, `decoder.onnx`, `text_conditioner.onnx`, `vocab.json`, `token_scores.json`; vale `.int8.onnx`); y si la carpeta tiene nombres v2 (`flow_lm_*`, `mimi_*`, `tokenizer.model`, `bundle.json`) explica que no se puede importar tal cual y manda a «Descargar de Hugging Face». El diálogo lee los nombres de la carpeta con `DocumentFile`. Test `PocketModelFilesTest` (3/3, kotlinc). **Re-prueba:** Ajustes → Voz → importar carpeta con la de KevinAHM (v2) → el aviso debe mencionar v2 y el botón de descarga; con una carpeta vacía → lista de archivos esperados. Archivos: `tts/PocketModelFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt`.
+> **BUG-014** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-014).
 
 > **BUG-003** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-003).
 
@@ -82,25 +75,11 @@
 - **Fix:** compartir de verdad: `ACTION_SEND` con texto plano o exportar `.json` a caché + `FileProvider` (como hace la copia de seguridad .zip). El primer mecanismo ya está implantado y verificado.
 - **Archivos:** `ui/roleplay/CharacterDetailSheet.kt`, `data/characters/CharacterRepository.kt`.
 
-### BUG-008 · 🟡 Memoria: los recuerdos "sin procesar" no se pueden editar
-**Esfuerzo:** S · **Escalón:** 1 · Causa localizada en `ui/memory/MemoryScreen.kt`
+> **BUG-008** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-008).
 
-- **Síntoma:** solo se pueden borrar; editar no funciona (los procesados sí, verificar).
-- **Archivos:** `ui/memory/MemoryScreen.kt`, `data/characters/RawMemory.kt`.
-- **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** causa localizada: la tarjeta de cada nota solo tenía botón de borrar. Se añade el botón ✏️ «Editar nota» con diálogo, `RawMemoryStore.updateText` y `withEditedText` (conserva `id` y `createdAt`, así el orden cronológico de las tandas no cambia; un texto en blanco no guarda). Test `editingRawNoteKeepsIdAndDate` (11/11 en `RawMemoryTest`, kotlinc). **Re-prueba:** Memoria → Recuerdos sin procesar → ✏️ en una nota → cambiar el texto → Guardar; debe actualizarse la tarjeta y seguir en su sitio. Archivos: `ui/memory/MemoryScreen.kt`, `data/characters/RawMemory.kt`, `data/characters/RawMemoryStore.kt`.
+> **BUG-009** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-009).
 
-### BUG-009 · 🟡 Cajón: la hamburguesa del inicio no abre el cajón (solo el swipe)
-**Esfuerzo:** S · **Escalón:** 1 · Conectar el botón al estado del `ModalNavigationDrawer`
-
-- **Archivos:** `ui/home/BoxHomeScreen.kt` (conectar botón al estado del `ModalNavigationDrawer`).
-- **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** el botón ya llamaba a `drawerState.open()`; la causa es el orden de dibujo: estaba **antes** de la `Column` (`fillMaxSize` + `verticalScroll`) dentro del `Box`, así que la `Column` quedaba encima y recibía los toques (en Compose solo el hijo superior recibe el evento). Se mueve el botón **después** de la `Column`, sin cambiar su posición. **Re-prueba:** Inicio → tocar ☰ arriba a la izquierda → debe abrirse el cajón; los botones de la pantalla siguen funcionando y el scroll también. Archivo: `ui/home/BoxHomeScreen.kt`.
-
-### BUG-010 · 🟡 Cajón: chats de personajes borrados salen como "Personaje borrado"
-**Esfuerzo:** S · **Escalón:** 1 · Requiere decisión tuya: renombrar u ocultar
-
-- **Decisión pendiente:** renombrar a "Sin personaje" u ocultarlos/moverlos a "Chat libre".
-- **Archivos:** `ui/home/` (cajón) + `data/local/` (consulta de chats agrupados).
-- **Parche aplicado (2026-11-20, decisión tuya: renombrar):** los chats de personajes borrados se agrupan bajo «Sin personaje» en lugar de «Personaje borrado»; no se pierde ningún chat. Archivo: `ui/home/BoxDrawer.kt` (`BoxDrawerViewModel.groups`). **Re-prueba:** borrar un personaje que tenga chats → abrir el cajón → el grupo se llama «Sin personaje» y sus chats siguen abriéndose.
+> **BUG-010** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-010).
 
 > **BUG-011** — cerrado y verificado el 2026-11-20 (ficha y tarjeta con la persona activa). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-011).
 
@@ -130,25 +109,9 @@
 - **Mejoras propuestas (parcial — puede haber coste inherente del encoder de visión en CPU):** redimensionado real del bitmap antes del encoder, hilos del codificador mtmd, y medir por fases (encode vs prefill) para localizar el cuello; valorar caché si se reenvía la misma imagen.
 - **Archivos:** `engine/LlamaCppEngine.kt` (`queueImages`), `runtime/LlamaCppModelHelper.kt`, `data/characters/EnginePerfStore.kt`.
 
-### BUG-019 · 🟡 Benchmark LiteRT: métrica propia no comparable con GGUF
-**Esfuerzo:** S · **Escalón:** 1 · Unificar métrica o etiquetar como no comparable
-
-- **Síntoma (Bloque 4, prueba 4.5):** el benchmark mide en ambos motores, pero la medición de LiteRT usa otra base (métrica propia del runtime) y sus cifras no son comparables con las de GGUF. Menor; arreglar más adelante.
-- **Fix propuesto:** unificar la medición (mismos prompts de prueba y misma fórmula tok/s) o etiquetar claramente que no son comparables.
-- **Archivos:** app Benchmark de modelos (GGUF: `QuickBenchDialog.kt`) y la medición del runtime LiteRT.
-- **Parche aplicado (2026-11-20, pendiente de tu comprobación visual):** se elige la opción «etiquetar como no comparable» (unificar la métrica exigiría cambiar el benchmark completo heredado y no aporta al roleplay). La pantalla «Benchmark de modelos» muestra un aviso: las cifras de GGUF y de LiteRT no son comparables entre sí, compara siempre dentro del mismo motor; y la prueba rápida GGUF aclara que sus cifras son de llama.cpp. **Re-prueba:** Apps → Benchmark de modelos: se ve el aviso arriba; Prueba rápida del motor GGUF: el texto lo menciona. Archivos: `ui/apps/BenchmarkAppScreen.kt`, `ui/apps/QuickBenchDialog.kt`.
+> **BUG-019** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-019).
 
 > **BUG-024** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-024).
-
-### BUG-041 · 🟡 Voces de Pocket TTS: no se pueden guardar varias voces propias (biblioteca de voces)
-**Esfuerzo:** L · **Escalón:** 2 · Sucede a BUG-027 (descartado); parte L si incluye grabación
-
-- **Síntoma (humano, 2026-11-19, con captura de "Voz (Pocket TTS)"):** subir la muestra `.wav` funciona, pero solo hay **una voz predeterminada** (`default.wav`) y **una por personaje** (`char_<id>.wav`); no se puede guardar cada muestra como una voz con nombre para tener varias y elegirlas.
-- **Código verificado:** `tts/TtsFiles.kt` `importVoice(context, uri, id)` guarda `voices/<id>.wav` solo con los ids `"default"` y `"char_$characterId"` (`ui/roleplay/TtsSettingsDialog.kt:76` y `:216`). No existe un almacén de voces con nombre.
-- **Referencia de funciones (la app Layla, solo como guía de funcionalidad; código propio, sin copiar nada de ella):** pantalla "Voces" con (1) origen: subir `.wav` o grabar con el micrófono; (2) reproducir la muestra antes de guardar; (3) texto de prueba editable y botón "Probar voz"; (4) nombre + etiquetas (fijas: hombre, mujer, narrador, personaje, calmado, enérgico, grave, suave, robótico, cálido, y una personalizada); (5) "Guardar voz"; (6) lista de voces con buscador por nombre/etiqueta, botón reproducir y borrar; (7) interruptor "Guardar como archivo de audio". El nombre debe autocompletarse con el nombre del archivo **sin extensión**; la duración mostrada debe ser la real (en la referencia sale "0:00" aunque dure 10 s).
-- **Fix propuesto:** `VoiceStore` (singleton Hilt con `StateFlow<List<Voice>>`, como `ScenarioStore`) que guarda `voices/<uuid>.wav` + un `voices.json` con `id`, `name`, `tags`, `createdAt`; `TtsFiles.importVoice` recibe el id de la voz; el selector de voz (por defecto y por personaje) elige de la lista en vez de importar al vuelo. Migrar `default.wav` y `char_*.wav` existentes como voces con nombre ("Predeterminada", nombre del personaje). Test de lógica pura para el almacén (alta, borrado, búsqueda por etiqueta).
-- **Archivos:** `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt`, `tts/TtsManager.kt`, nueva pantalla de voces y `VoiceStore`.
-Parche aplicado (2026-11-20, pendiente de re-prueba): biblioteca de voces (subir .wav o grabar, nombre, etiquetas, buscador, probar, borrar). Re-prueba en el teléfono: Roleplay > Voz > «Biblioteca de voces»: (1) subir un .wav y ver que el nombre es el del archivo sin extensión y la duración real; (2) grabar 5 s con el micrófono (pide permiso); (3) guardar dos voces y comprobar que ambas salen en la lista y el buscador filtra por etiqueta; (4) «Usar» una como predeterminada y «Probar voz»; (5) en un personaje, «Elegir voz» con otra distinta; (6) tras actualizar, las voces antiguas (default.wav, char_*.wav) deben aparecer ya en la lista; (7) borrar una voz pide confirmación.
 
 ## 🧩 Tanda final — Roleplay de grupo, copias y compartir *(documentado 2026-11-19, pendiente; hacer DESPUÉS de los bugs menores)*
 
@@ -220,14 +183,19 @@ Parche aplicado (2026-11-20, pendiente de re-prueba): biblioteca de voces (subir
 - **Síntoma (humano, 2.2/4.1):** el JSON `chara_card_v2` se comparte como texto plano (`EXTRA_TEXT`), así que no se puede guardar ni enviar como archivo: no hay nombre ni extensión. Con "Guardar en…" no se crea un `.json` válido.
 - **Fix:** exportar a caché un archivo `NombreDelPersonaje.json` (y, si la ficha tiene imagen, opcionalmente `.png` con la tarjeta incrustada, el formato del ecosistema SillyTavern) y compartirlo con `FileProvider` + `ACTION_SEND` (`EXTRA_STREAM`, `application/json` / `image/png`). Mantener "Copiar texto" como segunda opción. Archivos: `ui/roleplay/RoleplayScreens.kt` (líneas ~185-231), `data/characters/CharacterRepository.kt`.
 
-### BUG-040 · 🟡 Presets de motor (4.4b): confirmar que el botón de guardar cubre hilos y Flash Attention
-**Esfuerzo:** S · **Escalón:** 1 · Requiere decisión tuya antes de tocar
+> **BUG-040** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-040).
 
-- **Nota del humano:** "no hay botón que permita guardar los presets de hilos/flash como perfiles". BUG-018 ya guarda los diez campos de rendimiento dentro del preset de motor y se verificó en 4.4b; si lo que falta es un **botón propio** en la sección de rendimiento (como el de temperatura), añadirlo para que sea descubrible, sin duplicar la lógica. Revisar con el humano antes de tocar.
-- **Parche aplicado (2026-11-20, decisión tuya: botón propio):** «Rendimiento del motor» tiene ahora la sección **Guardar como preset**: nombre + botón, que guarda hilos, batch, ubatch, flash attention, caché KV, mmap, repack, contexto, respuesta máxima, visión y tamaño de imagen como un `EnginePreset` solo de rendimiento (modelo, persona y muestreo vacíos = «no cambiar», semántica ya existente de `EngineApply.applyBasics`). Aparece en **Configuración de inferencia → Motores guardados** y se aplica por la misma vía, sin lógica duplicada. **Re-prueba:** Ajustes → Rendimiento del motor → cambiar hilos/flash → nombre «Rápido» → Guardar como preset; cambiar los valores; Configuración de inferencia → tocar «Rápido»: deben volver los hilos/flash guardados y el modelo no debe cambiar. Archivo: `ui/roleplay/EnginePerfDialog.kt`.
-Re-prueba 2026-11-20: guardaba pero no se podía cargar. Corregido con una barra de presets (cargar, «Nuevo», lápiz para borrar con confirmación) en Rendimiento y en Muestreo; se quita la ficha «Custom». Pendiente de re-prueba: guardar un preset de rendimiento, cambiar valores, tocar el preset y ver que vuelven; borrar solo con el lápiz.
+### BUG-041 · 🟡 Voces de Pocket TTS: no se pueden guardar varias voces propias (biblioteca de voces)
+**Pulido pendiente (2026-11-20):** el humano la probó y funciona; queda pulirla en la tanda final (junto al roleplay de grupo y los demás «mayores»). Ideas: interruptor «Guardar como archivo de audio», nombres de las voces migradas de personajes, exportar/importar con la copia de seguridad (BUG-038).
+**Esfuerzo:** L · **Escalón:** 2 · Sucede a BUG-027 (descartado); parte L si incluye grabación
 
----
+- **Síntoma (humano, 2026-11-19, con captura de "Voz (Pocket TTS)"):** subir la muestra `.wav` funciona, pero solo hay **una voz predeterminada** (`default.wav`) y **una por personaje** (`char_<id>.wav`); no se puede guardar cada muestra como una voz con nombre para tener varias y elegirlas.
+- **Código verificado:** `tts/TtsFiles.kt` `importVoice(context, uri, id)` guarda `voices/<id>.wav` solo con los ids `"default"` y `"char_$characterId"` (`ui/roleplay/TtsSettingsDialog.kt:76` y `:216`). No existe un almacén de voces con nombre.
+- **Referencia de funciones (la app Layla, solo como guía de funcionalidad; código propio, sin copiar nada de ella):** pantalla "Voces" con (1) origen: subir `.wav` o grabar con el micrófono; (2) reproducir la muestra antes de guardar; (3) texto de prueba editable y botón "Probar voz"; (4) nombre + etiquetas (fijas: hombre, mujer, narrador, personaje, calmado, enérgico, grave, suave, robótico, cálido, y una personalizada); (5) "Guardar voz"; (6) lista de voces con buscador por nombre/etiqueta, botón reproducir y borrar; (7) interruptor "Guardar como archivo de audio". El nombre debe autocompletarse con el nombre del archivo **sin extensión**; la duración mostrada debe ser la real (en la referencia sale "0:00" aunque dure 10 s).
+- **Fix propuesto:** `VoiceStore` (singleton Hilt con `StateFlow<List<Voice>>`, como `ScenarioStore`) que guarda `voices/<uuid>.wav` + un `voices.json` con `id`, `name`, `tags`, `createdAt`; `TtsFiles.importVoice` recibe el id de la voz; el selector de voz (por defecto y por personaje) elige de la lista en vez de importar al vuelo. Migrar `default.wav` y `char_*.wav` existentes como voces con nombre ("Predeterminada", nombre del personaje). Test de lógica pura para el almacén (alta, borrado, búsqueda por etiqueta).
+- **Archivos:** `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt`, `tts/TtsManager.kt`, nueva pantalla de voces y `VoiceStore`.
+Parche aplicado (2026-11-20, pendiente de re-prueba): biblioteca de voces (subir .wav o grabar, nombre, etiquetas, buscador, probar, borrar). Re-prueba en el teléfono: Roleplay > Voz > «Biblioteca de voces»: (1) subir un .wav y ver que el nombre es el del archivo sin extensión y la duración real; (2) grabar 5 s con el micrófono (pide permiso); (3) guardar dos voces y comprobar que ambas salen en la lista y el buscador filtra por etiqueta; (4) «Usar» una como predeterminada y «Probar voz»; (5) en un personaje, «Elegir voz» con otra distinta; (6) tras actualizar, las voces antiguas (default.wav, char_*.wav) deben aparecer ya en la lista; (7) borrar una voz pide confirmación.
+
 
 ## ✅ Lo que ya funciona (Bloque 2, 2026-11-16)
 

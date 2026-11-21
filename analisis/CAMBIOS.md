@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### Escalon 1 cerrado: 008, 009, 010, 014, 019, 040 archivados; 041 a la tanda final
+
+**Qué y por qué:** el humano re-probó en el teléfono y confirmó BUG-008, 009, 010, 019, 040 (presets de rendimiento y de muestreo) y 041; BUG-014 se da por cerrado (con el modelo completo solo sale «Modelo completo.», el aviso largo aparece cuando faltan piezas). Se mueven 008, 009, 010, 014, 019 y 040 a `BUGS_CERRADOS.md` y quedan en `BUGS.md` como línea de referencia. BUG-041 (biblioteca de voces) funciona pero se deja abierto en la «Tanda final» para pulirla. **Escalón 1 completo.** Quedan 12 abiertos.
+
+**Archivos:**
+- `analisis/BUGS.md` — referencias, tabla de escalones y recuento.
+- `analisis/BUGS_CERRADOS.md` — seis bloques nuevos y filas en el resumen.
+
 ### BUG-041: biblioteca de voces de Pocket TTS (subir, grabar, nombrar, elegir)
 
 **Qué y por qué:** BUG-041 (Escalón 1). Biblioteca de voces de Pocket TTS: ahora se pueden guardar varias voces con nombre. Pantalla «Voces» (diálogo): subir un `.wav` o grabar con el micrófono (24 kHz mono, máx. 30 s), escuchar la muestra, nombre (propuesto = nombre del archivo sin extensión), etiquetas fijas + una propia, guardar; lista con buscador por nombre/etiqueta, duración real, escuchar, probar con un texto editable (usa el modelo) y borrar con confirmación. Se elige como voz predeterminada («Biblioteca de voces» en Roleplay > Voz) o por personaje («Elegir voz»). Los `default.wav` y `char_*.wav` anteriores se incorporan solos como voces («Predeterminada», «Voz de personaje xxxx»). Se quita `TtsFiles.importVoice` (sustituido por `VoiceStore`). No se añadió el interruptor «Guardar como archivo de audio» de la referencia. Pendiente de re-prueba en el teléfono. Test de lógica pura: `VoiceLibraryTest` (9 OK, compilado con kotlinc embebido).

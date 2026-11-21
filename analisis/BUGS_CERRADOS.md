@@ -30,6 +30,12 @@
 | [BUG-028](#bug-028) | Etiqueta de holgura sin espaciado estable | `3cb6de0b` · verificado 4.1c (19/11) |
 | [BUG-030](#bug-030) | Scudo al cerrar GGUF (`~LLMInference`) | `0354818` + `79eb6b4` · verificado 19/11 |
 | [BUG-031](#bug-031) | LiteRT: respuestas vacías tras cancelar | `150516be` · verificado 10:51 (19/11) |
+| [BUG-008](#bug-008) | Memoria: los recuerdos "sin procesar" no se pueden editar | `417c29d` · verificado 20/11 |
+| [BUG-009](#bug-009) | Cajón: la hamburguesa del inicio no abre el cajón (solo el swipe) | `953d549` · verificado 20/11 |
+| [BUG-010](#bug-010) | Cajón: chats de personajes borrados salen como "Personaje borrado" | `25737ea` · verificado 20/11 |
+| [BUG-014](#bug-014) | Importar carpeta del modelo de voz: solo acepta nombres antiguos (bloquea el Bloque 3) | `ade8cc8` · verificado 20/11 |
+| [BUG-019](#bug-019) | Benchmark LiteRT: métrica propia no comparable con GGUF | `50cbc8e` · verificado 20/11 |
+| [BUG-040](#bug-040) | Presets de motor (4.4b): confirmar que el botón de guardar cubre hilos y Flash Attention | `35589de + 2978408` · verificado 20/11 |
 
 ---
 
@@ -363,6 +369,72 @@
 - **Fix propuesto (histórico):** bajo `stateLock`, marcar la instancia como cerrada (o sustituirla por `null`/una nueva) **antes** de lanzar el cierre asíncrono, y dejar que `close()` lo ejecute solo la primera vía que la capturó; si agota el timeout esperando a generación/carga, **no cerrar** y dejar aviso en el log. Revisar `resetConversation` para que no cierre una instancia ya marcada.
 - **Archivos:** `engine/LlamaCppEngine.kt`, `runtime/LlamaCppModelHelper.kt`; submódulo `Android/src/llama.cpp` solo si hacía falta (no hizo falta).
 
+### BUG-014
 
+**✅ Importar carpeta del modelo de voz: solo acepta nombres antiguos (bloquea el Bloque 3)**
 
+- **✅ Verificado en el teléfono (2026-11-20):** el humano confirmó que funciona. Commit: `ade8cc8`.
+**Esfuerzo:** S · **Escalón:** 1 · Mejorar el mensaje de error con los archivos esperados
 
+- **Síntoma:** importas una carpeta con nombres v2 (`flow_lm_flow.onnx`, `flow_lm_main.onnx`, `mimi_*`, `tokenizer.model`, `bundle.json` — la del repo de KevinAHM) → toast "No se encontraron archivos de Pocket TTS en esa carpeta" y el panel sigue mostrando "Faltan: lm_flow.onnx, lm_main.onnx, encoder.onnx, decoder.onnx, vocab.json, token_scores.json" (capturas 17:07–17:08).
+- **Causa:** `PocketModelFiles.isPart()/missing()` (`tts/PocketModelFiles.kt`) solo entienden nombres v1 y `TtsFiles.importModelFolder()` filtra con `isPart` → la carpeta se descarta entera. Inconsistente con `PocketHfSelect` (que sí entiende v2) y con el propio diálogo de descarga (que convierte `tokenizer.model` → `vocab.json`/`token_scores.json` con `SentencePieceModel`).
+- **Fix recomendado:** no dar soporte v2 crudo a la importación (aunque se renombrara, los bundles KevinAHM necesitan el fix BOS de BUG-013); en su lugar, apuntar a repos compatibles sherpa-onnx y **mejorar el mensaje de error** de la importación con la lista exacta de archivos esperados (hoy es genérico y confunde).
+- **Archivos:** `tts/PocketModelFiles.kt`, `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt` (mensaje y texto de ayuda).
+- **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** sigue la decisión del fix recomendado (no dar soporte v2 crudo). Nuevo `PocketModelFiles.noPartsMessage()` y `EXPECTED_NAMES`: si la carpeta no tiene ninguna pieza, el aviso lista los 7 archivos exactos (`lm_flow.onnx`, `lm_main.onnx`, `encoder.onnx`, `decoder.onnx`, `text_conditioner.onnx`, `vocab.json`, `token_scores.json`; vale `.int8.onnx`); y si la carpeta tiene nombres v2 (`flow_lm_*`, `mimi_*`, `tokenizer.model`, `bundle.json`) explica que no se puede importar tal cual y manda a «Descargar de Hugging Face». El diálogo lee los nombres de la carpeta con `DocumentFile`. Test `PocketModelFilesTest` (3/3, kotlinc). **Re-prueba:** Ajustes → Voz → importar carpeta con la de KevinAHM (v2) → el aviso debe mencionar v2 y el botón de descarga; con una carpeta vacía → lista de archivos esperados. Archivos: `tts/PocketModelFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt`.
+
+### BUG-008
+
+**✅ Memoria: los recuerdos "sin procesar" no se pueden editar**
+
+- **✅ Verificado en el teléfono (2026-11-20):** el humano confirmó que funciona. Commit: `417c29d`.
+**Esfuerzo:** S · **Escalón:** 1 · Causa localizada en `ui/memory/MemoryScreen.kt`
+
+- **Síntoma:** solo se pueden borrar; editar no funciona (los procesados sí, verificar).
+- **Archivos:** `ui/memory/MemoryScreen.kt`, `data/characters/RawMemory.kt`.
+- **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** causa localizada: la tarjeta de cada nota solo tenía botón de borrar. Se añade el botón ✏️ «Editar nota» con diálogo, `RawMemoryStore.updateText` y `withEditedText` (conserva `id` y `createdAt`, así el orden cronológico de las tandas no cambia; un texto en blanco no guarda). Test `editingRawNoteKeepsIdAndDate` (11/11 en `RawMemoryTest`, kotlinc). **Re-prueba:** Memoria → Recuerdos sin procesar → ✏️ en una nota → cambiar el texto → Guardar; debe actualizarse la tarjeta y seguir en su sitio. Archivos: `ui/memory/MemoryScreen.kt`, `data/characters/RawMemory.kt`, `data/characters/RawMemoryStore.kt`.
+
+### BUG-009
+
+**✅ Cajón: la hamburguesa del inicio no abre el cajón (solo el swipe)**
+
+- **✅ Verificado en el teléfono (2026-11-20):** el humano confirmó que funciona. Commit: `953d549`.
+**Esfuerzo:** S · **Escalón:** 1 · Conectar el botón al estado del `ModalNavigationDrawer`
+
+- **Archivos:** `ui/home/BoxHomeScreen.kt` (conectar botón al estado del `ModalNavigationDrawer`).
+- **Parche aplicado (2026-11-20, pendiente de tu re-prueba):** el botón ya llamaba a `drawerState.open()`; la causa es el orden de dibujo: estaba **antes** de la `Column` (`fillMaxSize` + `verticalScroll`) dentro del `Box`, así que la `Column` quedaba encima y recibía los toques (en Compose solo el hijo superior recibe el evento). Se mueve el botón **después** de la `Column`, sin cambiar su posición. **Re-prueba:** Inicio → tocar ☰ arriba a la izquierda → debe abrirse el cajón; los botones de la pantalla siguen funcionando y el scroll también. Archivo: `ui/home/BoxHomeScreen.kt`.
+
+### BUG-010
+
+**✅ Cajón: chats de personajes borrados salen como "Personaje borrado"**
+
+- **✅ Verificado en el teléfono (2026-11-20):** el humano confirmó que funciona. Commit: `25737ea`.
+**Esfuerzo:** S · **Escalón:** 1 · Requiere decisión tuya: renombrar u ocultar
+
+- **Decisión pendiente:** renombrar a "Sin personaje" u ocultarlos/moverlos a "Chat libre".
+- **Archivos:** `ui/home/` (cajón) + `data/local/` (consulta de chats agrupados).
+- **Parche aplicado (2026-11-20, decisión tuya: renombrar):** los chats de personajes borrados se agrupan bajo «Sin personaje» en lugar de «Personaje borrado»; no se pierde ningún chat. Archivo: `ui/home/BoxDrawer.kt` (`BoxDrawerViewModel.groups`). **Re-prueba:** borrar un personaje que tenga chats → abrir el cajón → el grupo se llama «Sin personaje» y sus chats siguen abriéndose.
+
+### BUG-019
+
+**✅ Benchmark LiteRT: métrica propia no comparable con GGUF**
+
+- **✅ Verificado en el teléfono (2026-11-20):** el humano confirmó que funciona. Commit: `50cbc8e`.
+**Esfuerzo:** S · **Escalón:** 1 · Unificar métrica o etiquetar como no comparable
+
+- **Síntoma (Bloque 4, prueba 4.5):** el benchmark mide en ambos motores, pero la medición de LiteRT usa otra base (métrica propia del runtime) y sus cifras no son comparables con las de GGUF. Menor; arreglar más adelante.
+- **Fix propuesto:** unificar la medición (mismos prompts de prueba y misma fórmula tok/s) o etiquetar claramente que no son comparables.
+- **Archivos:** app Benchmark de modelos (GGUF: `QuickBenchDialog.kt`) y la medición del runtime LiteRT.
+- **Parche aplicado (2026-11-20, pendiente de tu comprobación visual):** se elige la opción «etiquetar como no comparable» (unificar la métrica exigiría cambiar el benchmark completo heredado y no aporta al roleplay). La pantalla «Benchmark de modelos» muestra un aviso: las cifras de GGUF y de LiteRT no son comparables entre sí, compara siempre dentro del mismo motor; y la prueba rápida GGUF aclara que sus cifras son de llama.cpp. **Re-prueba:** Apps → Benchmark de modelos: se ve el aviso arriba; Prueba rápida del motor GGUF: el texto lo menciona. Archivos: `ui/apps/BenchmarkAppScreen.kt`, `ui/apps/QuickBenchDialog.kt`.
+
+### BUG-040
+
+**✅ Presets de motor (4.4b): confirmar que el botón de guardar cubre hilos y Flash Attention**
+
+- **✅ Verificado en el teléfono (2026-11-20):** el humano confirmó que funciona. Commit: `35589de + 2978408`.
+**Esfuerzo:** S · **Escalón:** 1 · Requiere decisión tuya antes de tocar
+
+- **Nota del humano:** "no hay botón que permita guardar los presets de hilos/flash como perfiles". BUG-018 ya guarda los diez campos de rendimiento dentro del preset de motor y se verificó en 4.4b; si lo que falta es un **botón propio** en la sección de rendimiento (como el de temperatura), añadirlo para que sea descubrible, sin duplicar la lógica. Revisar con el humano antes de tocar.
+- **Parche aplicado (2026-11-20, decisión tuya: botón propio):** «Rendimiento del motor» tiene ahora la sección **Guardar como preset**: nombre + botón, que guarda hilos, batch, ubatch, flash attention, caché KV, mmap, repack, contexto, respuesta máxima, visión y tamaño de imagen como un `EnginePreset` solo de rendimiento (modelo, persona y muestreo vacíos = «no cambiar», semántica ya existente de `EngineApply.applyBasics`). Aparece en **Configuración de inferencia → Motores guardados** y se aplica por la misma vía, sin lógica duplicada. **Re-prueba:** Ajustes → Rendimiento del motor → cambiar hilos/flash → nombre «Rápido» → Guardar como preset; cambiar los valores; Configuración de inferencia → tocar «Rápido»: deben volver los hilos/flash guardados y el modelo no debe cambiar. Archivo: `ui/roleplay/EnginePerfDialog.kt`.
+Re-prueba 2026-11-20: guardaba pero no se podía cargar. Corregido con una barra de presets (cargar, «Nuevo», lápiz para borrar con confirmación) en Rendimiento y en Muestreo; se quita la ficha «Custom». Pendiente de re-prueba: guardar un preset de rendimiento, cambiar valores, tocar el preset y ver que vuelven; borrar solo con el lápiz.
+
+---
