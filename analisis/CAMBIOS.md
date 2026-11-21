@@ -41,6 +41,29 @@
 
 ## 📝 Registro
 
+### BUG-032 a 036: escenas — burbuja por turno, mensajes como contexto, enviar vacío, persona opcional
+
+**Qué y por qué:** BUG-032 a BUG-036 (Escalón 2, tanda de escenas; un solo commit porque comparten el flujo de `LlmChatScreen`/`LlmChatViewModel`).
+- **032 (causa confirmada en el código):** `generateResponse` reutilizaba como burbuja de streaming la última respuesta si era del asistente. Con «Aleatorio» o un turno forzado no hay mensaje tuyo de por medio, así que la respuesta nueva **sobrescribía la visible** (en la base de datos sí se guardaba aparte; por eso el hilo se «arreglaba» al reabrir). Ahora cada turno abre su propia burbuja (`agentBubbleStarted`).
+- **033:** en una escena, enviar un texto **ya no genera**: se muestra y se guarda como contexto. El texto llega al motor dentro del siguiente turno de Aleatorio / hablante forzado (`ScenePromptBuilder.engineInput`; `trailingUserTexts`; `previousTexts(contextTail)` para que no se duplique ni se pierda en el historial). Interruptor por escena «El modelo responde a mis mensajes» (apagado por defecto; las escenas antiguas pasan a apagado).
+- **034:** con un hablante elegido (personaje o Narrador) y el campo vacío, el botón enviar se habilita y el modelo escribe **por ese hablante** (`allowEmptySend` en `MessageInputText`/`ChatPanel`/`ChatView`).
+- **035:** interruptor por escena «Usar mi persona»: apagado, el prompt no la menciona, la conversación no se liga a ella y la barra no muestra «Yo» (se empieza como Narrador o el primer personaje). Además la barra respeta ahora «Incluir narrador» de la escena (antes el chip y las restricciones siempre lo asumían activo).
+- **036:** comprobado: el prompt de escena ya solo usa nombre, descripción y personalidad de cada ficha (`Member` no tiene más campos); se añade un test que lo fija. La acotación `[The studio lights…]` no sale de la ficha: venía del prompt de la escena o de la descripción del personaje; no se reproduce con esta lógica.
+- Nota: en LiteRT, los turnos sin mensaje tuyo hacen que la conversación se recree con el historial en cada turno (más lento, pero correcto).
+- Test de lógica pura: `ScenarioTest` 12/12 OK (kotlinc embebido, sin las pruebas que dependen de Android). La parte de UI no se pudo compilar aquí: pendiente de GitHub Actions y re-prueba en el teléfono.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` — burbuja por turno, contexto pendiente, `saveContextMessage`, `sceneOptions`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatScreen.kt` — contexto sin respuesta, envío vacío con hablante, opciones de escena.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/SceneSpeakerBar.kt` — `showMe`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/{MessageInputText,ChatPanel,ChatView}.kt` — `allowEmptySend`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/ScenePromptBuilder.kt` — `engineInput`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/ScenarioStore.kt` — `usePersona`, `replyToUser`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/local/ChatRepository.kt` — `sceneOptions`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/scenarios/ScenarioScreens.kt`, `ScenariosViewModel.kt` — interruptores y persona opcional.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/ScenarioTest.kt` — 3 tests nuevos.
+- `analisis/BUGS.md` — notas en BUG-032 a 036.
+
 ### BUG-039 y BUG-007: compartir la ficha como archivo .json (FileProvider)
 
 **Qué y por qué:** BUG-039 y BUG-007 (Escalón 2, un solo commit). «Compartir» una ficha entregaba solo texto (`EXTRA_TEXT`), sin nombre ni extensión, y «Guardar en…» no creaba un `.json` válido. Ahora se escribe `Nombre.json` en la caché (`cache/shared/`) y se comparte con `FileProvider` + `EXTRA_STREAM` (`application/json`); el JSON sigue yendo también como texto, así que «Copiar texto» se conserva. Aplica a los tres puntos de compartir (lista, hoja de detalle y editor). El nombre se limpia de caracteres prohibidos (`ShareFileName`, test 3/3). **No** se hizo la variante `.png` con la tarjeta incrustada (era «opcional» en el bug). Pendiente de re-prueba en el teléfono.

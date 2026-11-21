@@ -114,6 +114,7 @@ fun ChatView(
   composableBelowMessageList: @Composable (Model) -> Unit = {},
   showImagePicker: Boolean = false,
   showAudioPicker: Boolean = false,
+  allowEmptySend: Boolean = false,
   emptyStateComposable: @Composable (Model) -> Unit = {},
   aboveInputComposable: @Composable (Model) -> Unit = {},
   allowEditingSystemPrompt: Boolean = false,
@@ -335,6 +336,7 @@ fun ChatView(
                 showStopButtonInInputWhenInProgress = showStopButtonInInputWhenInProgress,
                 showImagePicker = showImagePicker,
                 showAudioPicker = showAudioPicker,
+                allowEmptySend = allowEmptySend,
                 emptyStateComposable = emptyStateComposable,
                 aboveInputComposable = aboveInputComposable,
               )

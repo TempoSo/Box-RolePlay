@@ -60,7 +60,8 @@ class ScenariosViewModel @Inject constructor(
                     _message.value = "Esta escena no tiene personajes: añade al menos uno."
                     return@launch
                 }
-                val persona = personaRepository.getActive()
+                // BUG-035: con «Usar mi persona» apagado la escena no la menciona ni la liga a la conversación.
+                val persona = if (scenario.usePersona) personaRepository.getActive() else null
                 val prompt = ScenePromptBuilder.build(
                     sceneName = scenario.name,
                     scenePrompt = scenario.prompt,

@@ -179,6 +179,7 @@ fun MessageInputText(
   showStopButtonWhenInProgress: Boolean = false,
   onImageLimitExceeded: () -> Unit = {},
   showDocumentPicker: Boolean = false,
+  allowEmptySend: Boolean = false,
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -724,7 +725,7 @@ fun MessageInputText(
                     enabled =
                       !inProgress &&
                         !isResettingSession &&
-                        (curMessage.isNotEmpty() || pickedAudioClips.isNotEmpty() || pendingDocument != null),
+                        (allowEmptySend || curMessage.isNotEmpty() || pickedAudioClips.isNotEmpty() || pendingDocument != null),
                     onClick = {
                       val baseMessage = curMessage.trim()
                       val doc = pendingDocument

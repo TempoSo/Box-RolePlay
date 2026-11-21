@@ -26,13 +26,16 @@ fun SceneSpeakerBar(
     onSelect: (String?) -> Unit,
     onRandom: () -> Unit,
     enabled: Boolean,
+    showMe: Boolean = true,
 ) {
     LazyRow(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item { AssistChip(onClick = onRandom, enabled = enabled, label = { Text("🎲 Aleatorio") }) }
-        item { FilterChip(selected = selected == null, onClick = { onSelect(null) }, label = { Text("Yo") }) }
+        if (showMe) {
+            item { FilterChip(selected = selected == null, onClick = { onSelect(null) }, label = { Text("Yo") }) }
+        }
         if (narrator) {
             item {
                 FilterChip(

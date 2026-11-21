@@ -129,38 +129,43 @@ Ver BUG-039. Parche aplicado (2026-11-20, pendiente de re-prueba): la ficha se c
 
 **Cómo lo hace SillyTavern (verificado en su documentación):** estrategias de orden de respuesta *Manual* (solo responde el miembro elegido; los mensajes del usuario **nunca** disparan respuesta), *Natural* (menciones → "talkativeness" → un miembro al azar), *List* y *Pooled* (azar entre los que no han hablado desde el último mensaje del usuario). Con entrada vacía en modo manual responde un miembro no silenciado al azar; el botón junto a cada miembro fuerza que hable ese personaje aunque esté silenciado. El historial es **compartido** y por defecto se incluye solo la ficha del que habla (*Swap*); *Join* mezcla todas las fichas y la propia documentación avisa de que puede confundir a los personajes. Campos que une *Join*: descripción, escenario, personalidad, ejemplos. → Para Box RolePlay encaja el modo **Manual + Swap**, con nombre/descripción/personalidad.
 
-### BUG-032 · ❌ Escena: "🎲 Aleatorio" sustituye la respuesta anterior en vez de añadir un mensaje nuevo
+### BUG-032 · 🟡 Escena: "🎲 Aleatorio" sustituye la respuesta anterior en vez de añadir un mensaje nuevo
 **Esfuerzo:** S · **Escalón:** 2 · Tanda final: agrupar con BUG-033 a BUG-036
 
 - **Síntoma (capturas 16:57–16:58, AI Chat):** el mensaje del usuario `Narrator: el mundo se encontraba en su final` se queda como último; cada pulsación de Aleatorio deja **una sola respuesta** (Akiko, luego Psicólogo…) y la anterior desaparece del hilo visible, en lugar de acumular `Akiko → KIP → Psicólogo…`. Con el campo vacío no hay mensaje de usuario nuevo y la respuesta nueva ocupa el sitio de la anterior. El contador "1/1" sugiere que el hilo la trata como respuesta alternativa (swipe) del mismo mensaje del usuario.
 - **Pistas de código (sin verificar el mecanismo exacto):** `ui/llmchat/LlmChatScreen.kt` (`onRandom`, `SendMessageTrigger(messages = emptyList(), promptSuffix…)`), `ui/llmchat/LlmChatViewModel.kt` (`generateResponse`: `persistAssistantMessage(... asSwipe = regenerate)`, `lastUserTextIndex`, la ventana de contexto/`needsReset`) y `data/local/ChatRepository.kt`. Comprobar primero en el log si el turno se persiste como mensaje nuevo o como swipe, y si `ContextWindowPlanner` descarta el turno anterior (el contexto bajó de 47 % a 40 % tras pulsar Aleatorio).
 - **Fix:** cada turno de Aleatorio/hablante forzado = mensaje AGENT **nuevo** en la lista y en la base de datos, con el nombre del hablante como encabezado; solo "Regenerar" (flechas) debe crear swipe.
+Parche aplicado (2026-11-20, pendiente de re-prueba): causa confirmada — la respuesta nueva reutilizaba la burbuja del asistente anterior cuando no había mensaje tuyo de por medio. Ahora cada turno abre su burbuja. Re-prueba: en una escena, pulsar 🎲 Aleatorio varias veces: debe acumular Akiko → KIP → … sin borrar las anteriores, y al reabrir el chat debe verse igual.
 
-### BUG-033 · ❌ Escena: el mensaje del usuario dispara respuesta del modelo con TODOS los personajes en un solo mensaje
+### BUG-033 · 🟡 Escena: el mensaje del usuario dispara respuesta del modelo con TODOS los personajes en un solo mensaje
 **Esfuerzo:** M · **Escalón:** 2 · Tanda final; reaparece BUG-004 (cerrado)
 
 - **Síntoma:** al enviar `hola amigos…` el modelo responde con KIP + Akiko + Tohru en un mismo mensaje (captura 16:57:03: KIP, Tohru, Psicólogo y Akiko en una sola burbuja). El filtro de BUG-004 solo recorta bloques de hablantes no permitidos; no impide que el usuario dispare una respuesta.
 - **Fix (diseño objetivo, puntos 1-3 de arriba):** en escenas, **enviar un texto no genera**: lo guarda como contexto. La generación se lanza solo con Aleatorio o con "enviar vacío" sobre un hablante seleccionado. Ofrecer un interruptor "El modelo responde a mis mensajes" (por defecto desactivado en escenas) por si el usuario quiere el comportamiento antiguo.
 - **Archivos probables:** `ui/llmchat/LlmChatScreen.kt` (`onSendMessage`, `SceneSpeakerBar`), `ui/llmchat/SceneSpeakerBar.kt`, `ui/llmchat/LlmChatViewModel.kt`, `data/characters/ScenePromptBuilder.kt`, y la pantalla de grupo de `ui/roleplay/` ("Political Pundits").
+Parche aplicado (2026-11-20, pendiente de re-prueba): en una escena, enviar texto solo lo guarda como contexto (el modelo no responde) y llega al motor en el siguiente turno. Interruptor por escena «El modelo responde a mis mensajes» (apagado por defecto). Re-prueba: escribir un mensaje en una escena → no hay respuesta; pulsar Aleatorio → el personaje responde teniendo en cuenta lo escrito; activar el interruptor en el editor → vuelve el comportamiento antiguo.
 
-### BUG-034 · ❌ Escena: "enviar con el campo vacío" y personaje seleccionado debería hacer hablar a ese personaje
+### BUG-034 · 🟡 Escena: "enviar con el campo vacío" y personaje seleccionado debería hacer hablar a ese personaje
 **Esfuerzo:** S · **Escalón:** 2 · Tanda final: enviar con campo vacío
 
 - **Mejora pedida:** el usuario elige un personaje en la barra, deja el texto vacío y pulsa enviar → el modelo escribe **por ese personaje** (hoy el botón de enviar no hace nada con el campo vacío). Así el usuario decide quién sigue, sin azar.
 - **Fix:** en `onSendMessage`, si `rawMessages` está vacío y hay hablante seleccionado (personaje o Narrador), lanzar el mismo `SendMessageTrigger` que Aleatorio pero con `Speaker.Character(seleccionado)` (o `Narrator`). Habilitar el botón de enviar con campo vacío solo en ese caso.
+Parche aplicado (2026-11-20, pendiente de re-prueba): con un hablante elegido (personaje o Narrador) y el campo vacío, enviar hace hablar a ese hablante. Re-prueba: elegir KIP, dejar el campo vacío, pulsar enviar → responde solo KIP; con «Yo» elegido el botón sigue deshabilitado con el campo vacío.
 
-### BUG-035 · ❌ Escena: la persona del usuario se importa como participante y estorba al interpretar a otro personaje
+### BUG-035 · 🟡 Escena: la persona del usuario se importa como participante y estorba al interpretar a otro personaje
 **Esfuerzo:** M · **Escalón:** 2 · Tanda final: persona opcional en la escena
 
 - **Síntoma (captura 17:05, "Nuevo roleplay"):** la lista de participantes incluye `User` (persona) además de las fichas, y aparece como hablante en la barra; la papelera existe en el editor, pero no está claro que al quitarla desaparezca de la barra ni que el prompt deje de llamarla "User".
 - **Fix:** hacer que la persona sea **opcional** en la escena (quitarla = el usuario interpreta a otro personaje o solo al Narrador); verificar que, al quitarla, `ScenePromptBuilder` no la nombra y `SceneSpeakerBar` no la ofrece; mantener "Yo" como atajo solo si la persona está en la escena.
+Parche aplicado (2026-11-20, pendiente de re-prueba): interruptor por escena «Usar mi persona»; apagado no se menciona la persona, no aparece «Yo» en la barra y se empieza como Narrador/primer personaje. La barra respeta además «Incluir narrador». Re-prueba: editar la escena, apagar «Usar mi persona», abrir una escena NUEVA (las ya creadas conservan su prompt) y comprobar la barra. Nota: la lista de participantes solo contiene personajes de la biblioteca; si había un personaje llamado «User» se quita con «Cambiar personajes».
 
-### BUG-036 · ❌ Escena: usar solo nombre, descripción y personalidad de cada ficha
+### BUG-036 · 🟡 Escena: usar solo nombre, descripción y personalidad de cada ficha
 **Esfuerzo:** M · **Escalón:** 2 · Tanda final: recortar campos de la ficha
 
 - **Mejora pedida:** en roleplay de grupo/escena, cada personaje aporta únicamente `name`, `description` y `personality` (ahorra contexto y mantiene mejor el hilo). El chat 1 a 1 sigue usando la ficha completa.
 - **Pista:** `ScenePromptBuilder.build()` (`data/characters/ScenePromptBuilder.kt`, líneas ~30-60) arma el prompt por personaje con `CharacterPromptBuilder.applyMacros`; revisar qué campos mete hoy (escenario, saludo, ejemplos, system prompt) y recortarlos. Valorar un interruptor "Usar ficha completa" por escena.
 - **Observación relacionada (captura 17:00, "Political Pundits"):** dos personajes distintos (The Conservative / The Libertarian) devolvieron **el mismo texto en inglés**, una acotación de escenario (`[The studio lights are bright…]`) que parece venir del escenario/saludo de la escena y no de su personalidad; recortar los campos extra debería evitarlo. Comprobar también que el idioma de respuesta sigue al usuario (español).
+Comprobado (2026-11-20): el prompt de escena ya usa solo nombre, descripción y personalidad de cada ficha (ScenePromptBuilder.Member); test sceneUsesOnlyNameDescriptionPersonality. La acotación en inglés de la captura no salía de la ficha (venía del prompt de la escena o de la descripción). Pendiente de re-prueba: abrir «Political Pundits», pulsar Aleatorio con cada personaje y comprobar que responden distinto y en español.
 
 ### BUG-037 · ⚠️ Filtro de escenas: el Narrador en español no se reconoce (`Narrador:` ≠ `Narrator`)
 **Esfuerzo:** S · **Escalón:** 0 · Re-prueba pendiente: falta el caso concreto que falla

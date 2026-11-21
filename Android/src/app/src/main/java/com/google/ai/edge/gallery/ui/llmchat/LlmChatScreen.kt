@@ -227,11 +227,25 @@ fun ChatViewWrapper(
   var sceneNames by remember(conversationId) { mutableStateOf<List<String>>(emptyList()) }
   var sceneSpeaker by remember(conversationId) { mutableStateOf<String?>(null) }
   var lastRandomSpeaker by remember(conversationId) { mutableStateOf<String?>(null) }
+  // BUG-033/035: opciones de la escena (narrador, persona del usuario, si el modelo responde al enviar).
+  var sceneNarrator by remember(conversationId) { mutableStateOf(true) }
+  var sceneUsesPersona by remember(conversationId) { mutableStateOf(true) }
+  var sceneReplies by remember(conversationId) { mutableStateOf(false) }
   var localTrigger by remember { mutableStateOf<SendMessageTrigger?>(null) }
   androidx.compose.runtime.LaunchedEffect(conversationId) {
     sceneNames =
       if (conversationId == null) emptyList()
       else runCatching { viewModel.sceneMemberNames(conversationId) }.getOrDefault(emptyList())
+    val options = if (conversationId == null) null else runCatching { viewModel.sceneOptions(conversationId) }.getOrNull()
+    if (options != null) {
+      sceneNarrator = options.narrator
+      sceneUsesPersona = options.usePersona
+      sceneReplies = options.replyToUser
+      // Sin persona no existe «Yo»: se empieza escribiendo como el narrador o el primer personaje.
+      if (!options.usePersona && sceneSpeaker == null) {
+        sceneSpeaker = if (options.narrator) com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.NARRATOR else sceneNames.firstOrNull()
+      }
+    }
   }
 
   ChatView(
@@ -242,6 +256,27 @@ fun ChatViewWrapper(
       // BUG-003: "Aleatorio" viaja en el trigger (instrucción oculta) y no crea mensajes visibles.
       val trigger = localTrigger?.takeIf { it.model.name == model.name }
       if (trigger != null) localTrigger = null
+      val hasPayload = rawMessages.any { !(it is ChatMessageText && it.content.isBlank()) }
+      // BUG-034: enviar con el campo vacío y un hablante elegido = ese hablante escribe el siguiente
+      // mensaje (sin azar). Se relanza como turno forzado, igual que «Aleatorio».
+      if (trigger == null && sceneNames.isNotEmpty() && !hasPayload) {
+        val who = sceneSpeaker
+        if (who != null) {
+          val forced =
+            com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.restriction(
+              speaker =
+                if (who == com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.NARRATOR) com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.Speaker.Narrator
+                else com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.Speaker.Character(who),
+              names = sceneNames,
+              narrator = sceneNarrator,
+            )
+          if (forced != null) {
+            localTrigger =
+              SendMessageTrigger(model = model, messages = emptyList(), promptSuffix = forced.instruction, restriction = forced)
+          }
+        }
+        return@ChatView
+      }
       // BUG-003/004: si escribes como el narrador o un personaje, la IA contesta como los demás.
       // La restricción se inyecta al prompt del turno, nunca como mensaje ni se persiste.
       val restriction =
@@ -251,6 +286,7 @@ fun ChatViewWrapper(
             com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.userTurnRestriction(
               speaker = sceneSpeaker,
               names = sceneNames,
+              narrator = sceneNarrator,
             )
       val promptSuffix = trigger?.promptSuffix ?: restriction?.instruction
       // Escena: si escribes como el narrador o un personaje, tu texto lleva su nombre delante.
@@ -265,6 +301,16 @@ fun ChatViewWrapper(
             ) ChatMessageText(content = speakerPrefix + m.content, side = m.side)
             else m
           }
+      // BUG-033: en una escena lo que escribes es contexto: se guarda y se ve, pero el modelo no
+      // responde (habla quien tú elijas con «Aleatorio» o enviando vacío). El texto llega al motor
+      // dentro del siguiente turno.
+      if (trigger == null && sceneNames.isNotEmpty() && !sceneReplies && messages.all { it is ChatMessageText }) {
+        for (message in messages) {
+          viewModel.addMessage(model = model, message = message)
+          if (message is ChatMessageText && message.content.isNotBlank()) viewModel.saveContextMessage(model, message.content)
+        }
+        return@ChatView
+      }
       for (message in messages) {
         viewModel.addMessage(model = model, message = message)
       }
@@ -357,6 +403,7 @@ fun ChatViewWrapper(
     modifier = modifier,
     composableBelowMessageList = composableBelowMessageList,
     showImagePicker = showImagePicker,
+    allowEmptySend = sceneNames.isNotEmpty() && sceneSpeaker != null,
     emptyStateComposable = emptyStateComposable,
     aboveInputComposable = { model ->
       ContextWindowIndicator(model = model, viewModel = viewModel)
@@ -364,7 +411,8 @@ fun ChatViewWrapper(
         val busy = viewModel.uiState.collectAsState().value.inProgress
         SceneSpeakerBar(
           names = sceneNames,
-          narrator = true,
+          narrator = sceneNarrator,
+          showMe = sceneUsesPersona,
           selected = sceneSpeaker,
           onSelect = { sceneSpeaker = it },
           enabled = !busy,
@@ -382,6 +430,7 @@ fun ChatViewWrapper(
                       pick
                     ),
                   names = sceneNames,
+                  narrator = sceneNarrator,
                 )
               localTrigger =
                 SendMessageTrigger(

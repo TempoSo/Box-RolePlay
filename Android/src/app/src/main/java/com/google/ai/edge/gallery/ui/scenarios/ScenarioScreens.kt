@@ -157,6 +157,8 @@ fun ScenarioEditorScreen(
     var prompt by remember { mutableStateOf(existing?.prompt ?: "") }
     var tagText by remember { mutableStateOf(existing?.tags?.joinToString(", ") ?: "") }
     var narrator by remember { mutableStateOf(existing?.narrator ?: true) }
+    var usePersona by remember { mutableStateOf(existing?.usePersona ?: true) }
+    var replyToUser by remember { mutableStateOf(existing?.replyToUser ?: false) }
     var participants by remember { mutableStateOf(existing?.participantIds ?: emptyList()) }
     var showPicker by remember { mutableStateOf(false) }
     var nameError by remember { mutableStateOf(false) }
@@ -212,6 +214,20 @@ fun ScenarioEditorScreen(
                     onClick = { narrator = !narrator },
                     trailing = { Switch(checked = narrator, onCheckedChange = { narrator = it }) },
                 )
+                BoxActionCard(
+                    icon = Icons.Rounded.PlayArrow,
+                    title = "Usar mi persona",
+                    subtitle = "Apagado: no se menciona tu persona y escribes como un personaje o el narrador",
+                    onClick = { usePersona = !usePersona },
+                    trailing = { Switch(checked = usePersona, onCheckedChange = { usePersona = it }) },
+                )
+                BoxActionCard(
+                    icon = Icons.Rounded.PlayArrow,
+                    title = "El modelo responde a mis mensajes",
+                    subtitle = "Apagado: lo que escribes solo queda como contexto; habla quien tú elijas (Aleatorio o enviar vacío)",
+                    onClick = { replyToUser = !replyToUser },
+                    trailing = { Switch(checked = replyToUser, onCheckedChange = { replyToUser = it }) },
+                )
                 androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 8.dp))
             }
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -227,6 +243,8 @@ fun ScenarioEditorScreen(
                                 tags = tagText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                                 participantIds = participants,
                                 narrator = narrator,
+                                usePersona = usePersona,
+                                replyToUser = replyToUser,
                             )
                         )
                         onBack()

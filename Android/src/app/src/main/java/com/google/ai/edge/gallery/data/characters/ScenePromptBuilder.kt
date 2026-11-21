@@ -59,6 +59,18 @@ object ScenePromptBuilder {
         return parts.joinToString("\n\n")
     }
 
+    /**
+     * Texto que recibe el motor en un turno (BUG-033). Con texto del usuario va tal cual más la
+     * instrucción oculta; sin texto (Aleatorio / hablante forzado) lleva delante los mensajes que el
+     * usuario escribió como contexto y el motor aún no ha visto.
+     */
+    fun engineInput(input: String, suffix: String?, contextTail: List<String>): String =
+        when {
+            suffix.isNullOrBlank() -> input
+            input.isBlank() -> (contextTail.filter { it.isNotBlank() } + suffix).joinToString("\n\n")
+            else -> "$input\n\n$suffix"
+        }
+
     /** Elige un personaje al azar, evitando repetir al que habló en último lugar si hay más de uno. */
     fun pickRandom(names: List<String>, last: String?, random: Random = Random.Default): String? {
         if (names.isEmpty()) return null

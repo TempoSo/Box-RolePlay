@@ -99,4 +99,30 @@ class ScenarioTest {
         val sinNarrador = ScenePromptBuilder.TurnRestriction(allowed = listOf("KIP"), known = names, instruction = "")
         assertEquals("KIP: hola\nNarrador: texto", ScenePromptBuilder.filterReply("KIP: hola\nNarrador: texto", sinNarrador))
     }
+
+    // BUG-033: sin texto del usuario, el turno lleva delante el contexto escrito y aún no enviado.
+    @Test fun engineInputCarriesContextTail() {
+        val inst = "(Next message: write ONLY as KIP.)"
+        assertEquals("hola\n\n$inst", ScenePromptBuilder.engineInput("hola", inst, listOf("ignorado")))
+        assertEquals("KIP: a\n\nTohru: b\n\n$inst", ScenePromptBuilder.engineInput("", inst, listOf("KIP: a", "Tohru: b")))
+        assertEquals(inst, ScenePromptBuilder.engineInput("", inst, emptyList()))
+        assertEquals("solo texto", ScenePromptBuilder.engineInput("solo texto", null, listOf("x")))
+    }
+
+    // BUG-035/033: las escenas antiguas (sin los campos nuevos) siguen leyéndose; persona activa y sin respuesta automática.
+    @Test fun oldScenesGetNewDefaults() {
+        val old = """[{"id":"1","name":"A","prompt":"","tags":[],"participants":[],"narrator":true,"updatedAt":1}]"""
+        val s = ScenarioJson.decode(old).single()
+        assertTrue(s.usePersona)
+        assertFalse(s.replyToUser)
+        val flipped = Scenario(id = "2", name = "B", usePersona = false, replyToUser = true, updatedAt = 3L)
+        assertEquals(listOf(flipped), ScenarioJson.decode(ScenarioJson.encode(listOf(flipped))))
+    }
+
+    // BUG-036: de cada ficha el prompt de escena solo usa nombre, descripción y personalidad.
+    @Test fun sceneUsesOnlyNameDescriptionPersonality() {
+        val p = ScenePromptBuilder.build("", "", members, "Héctor")
+        val block = p.substringAfter("Characters you control:\n").substringBefore("\n\n")
+        assertEquals("- Ana: Ana es médica. Personality: seria\n- Luis: Un ladrón.", block)
+    }
 }

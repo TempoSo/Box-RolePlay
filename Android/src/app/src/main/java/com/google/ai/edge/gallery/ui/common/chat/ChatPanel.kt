@@ -134,6 +134,7 @@ fun ChatPanel(
   showStopButtonInInputWhenInProgress: Boolean = false,
   showImagePicker: Boolean = false,
   showAudioPicker: Boolean = false,
+  allowEmptySend: Boolean = false,
   emptyStateComposable: @Composable (Model) -> Unit = {},
   aboveInputComposable: @Composable (Model) -> Unit = {},
 ) {
@@ -702,6 +703,7 @@ fun ChatPanel(
         showImagePicker = selectedModel.llmSupportImage && showImagePicker,
         showAudioPicker = selectedModel.llmSupportAudio && showAudioPicker,
         showDocumentPicker = task.id == BuiltInTaskId.LLM_CHAT,
+        allowEmptySend = allowEmptySend,
         showStopButtonWhenInProgress = showStopButtonInInputWhenInProgress,
         onImageLimitExceeded = { showImageLimitBanner = true },
       )

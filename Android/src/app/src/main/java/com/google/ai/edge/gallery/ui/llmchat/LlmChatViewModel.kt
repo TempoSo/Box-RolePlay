@@ -346,20 +346,39 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     )
   }
 
-  /** Mensajes de texto anteriores al que se envía ahora (sin el último mensaje del usuario). */
-  private fun previousTexts(model: Model): List<ChatMessageText> {
-    val texts =
-      (uiState.value.messagesByModel[model.name] ?: emptyList())
-        .filter { it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM }
-        .filterIsInstance<ChatMessageText>()
+  private fun allTexts(model: Model): List<ChatMessageText> =
+    (uiState.value.messagesByModel[model.name] ?: emptyList())
+      .filter { it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM }
+      .filterIsInstance<ChatMessageText>()
+
+  /**
+   * BUG-033: mensajes del usuario guardados solo como contexto (sin respuesta) y todavía sin enviar
+   * al motor: los USER consecutivos del final de la conversación.
+   */
+  private fun trailingUserTexts(model: Model): List<ChatMessageText> =
+    allTexts(model).takeLastWhile { it.side == ChatSide.USER }
+
+  /**
+   * Mensajes de texto anteriores al que se envía ahora. Normalmente se quita el último mensaje del
+   * usuario (es el que se envía); si el turno va sin texto (Aleatorio / hablante forzado), se quitan
+   * los [contextTail] mensajes de contexto, que viajan dentro del propio turno.
+   */
+  private fun previousTexts(model: Model, contextTail: Int = 0): List<ChatMessageText> {
+    val texts = allTexts(model)
+    if (contextTail > 0) return texts.dropLast(contextTail)
     return if (texts.lastOrNull()?.side == ChatSide.USER) texts.dropLast(1) else texts
   }
 
-  private fun applySystemPromptIfNeeded(model: Model, input: String) {
+  /** BUG-033: guarda un mensaje del usuario como contexto de la escena; el modelo no responde. */
+  fun saveContextMessage(model: Model, content: String) {
+    persistUserMessage(model, content)
+  }
+
+  private fun applySystemPromptIfNeeded(model: Model, input: String, contextTail: Int = 0) {
     val helper = model.runtimeHelper
     val basePrompt = _currentSystemPrompt.value
     try {
-      val previous = previousTexts(model)
+      val previous = previousTexts(model, contextTail)
       // Lorebook: las entradas cuyas palabras clave aparecen en las últimas charlas o en el
       // mensaje nuevo se añaden al prompt de este turno (solo en chats de personaje).
       val prompt =
@@ -483,6 +502,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     currentSceneNames = names
     return names
   }
+
+  /** Opciones de la escena abierta (narrador, persona, respuesta al usuario); null si no es una escena. */
+  suspend fun sceneOptions(conversationId: String) = chatRepository.sceneOptions(conversationId)
 
   suspend fun getConversationById(conversationId: String) =
     chatRepository.getConversationById(conversationId)
@@ -652,12 +674,15 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     // "INITIALIZED" obsoleto o un motor liberado hacían esperar 180 s y fallar el envío.
     onModelStuck: (() -> Unit)? = null,
   ) {
+    // BUG-033: un turno sin texto (Aleatorio / hablante forzado) lleva dentro los mensajes que el
+    // usuario escribió como contexto y que el motor aún no ha visto.
+    val contextTail = if (input.isBlank() && !promptSuffix.isNullOrBlank()) trailingUserTexts(model) else emptyList()
     val engineInput =
-      when {
-        promptSuffix.isNullOrBlank() -> input
-        input.isBlank() -> promptSuffix
-        else -> "$input\n\n$promptSuffix"
-      }
+      com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.engineInput(
+        input = input,
+        suffix = promptSuffix,
+        contextTail = contextTail.map { it.content },
+      )
     // Se recuerda el turno para que regenerar/swipe mantenga el mismo hablante (BUG-004).
     lastTurnRestriction = sceneRestriction
     val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
@@ -695,6 +720,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       // BUG-004: texto crudo del motor para poder filtrar bloques de otros hablantes sobre el total.
       val rawAssistant = StringBuilder()
       val sceneFilter = sceneRestriction
+      var agentBubbleStarted = false
 
       try {
         val resultListener: (String, Boolean, String?) -> Unit =
@@ -785,10 +811,14 @@ open class LlmChatViewModelBase() : ChatViewModel() {
                   }
                 }
                 currentLastMessage = getLastMessage(model = model)
+                // BUG-032: sin mensaje del usuario de por medio (Aleatorio, hablante forzado) la
+                // última burbuja puede ser la respuesta anterior: cada turno abre su propia burbuja.
                 if (
-                  currentLastMessage?.type != ChatMessageType.TEXT ||
+                  !agentBubbleStarted ||
+                    currentLastMessage?.type != ChatMessageType.TEXT ||
                     currentLastMessage.side != ChatSide.AGENT
                 ) {
+                  agentBubbleStarted = true
                   // Add an empty message that will receive streaming results.
                   addMessage(
                     model = model,
@@ -932,7 +962,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         // "⏳ cargando modelo…" durante toda la generación (no se actualiza hasta el `done`).
         _perfLine.value = "⏳ procesando…"
         delay(500)
-        applySystemPromptIfNeeded(model, engineInput)
+        applySystemPromptIfNeeded(model, engineInput, contextTail.size)
 
         model.runtimeHelper.runInference(
           model = model,

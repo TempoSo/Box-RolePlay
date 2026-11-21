@@ -7,6 +7,7 @@ import com.google.ai.edge.gallery.data.characters.AutoMemory
 import com.google.ai.edge.gallery.data.characters.RawMemory
 import com.google.ai.edge.gallery.data.characters.RawMemoryStore
 import com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore
+import com.google.ai.edge.gallery.data.characters.Scenario
 import com.google.ai.edge.gallery.data.characters.ScenarioStore
 import com.google.ai.edge.gallery.data.local.dao.ConversationDao
 import com.google.ai.edge.gallery.data.local.dao.PersonaDao
@@ -37,6 +38,13 @@ class ChatRepository @Inject constructor(
         if (!cid.startsWith("scene:")) return emptyList()
         val scenario = scenarioStore.get(cid.removePrefix("scene:")) ?: return emptyList()
         return scenario.participantIds.mapNotNull { characterDao.getById(it)?.name }
+    }
+
+    /** Opciones de la escena de la conversación (null si no es una escena). */
+    suspend fun sceneOptions(conversationId: String): Scenario? {
+        val cid = conversationDao.getConversationById(conversationId)?.characterId ?: return null
+        if (!cid.startsWith("scene:")) return null
+        return scenarioStore.get(cid.removePrefix("scene:"))
     }
 
     /**

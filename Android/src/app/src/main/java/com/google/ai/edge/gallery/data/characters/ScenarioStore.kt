@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -31,6 +32,10 @@ data class Scenario(
     /** Ids de personajes de la biblioteca. */
     val participantIds: List<String> = emptyList(),
     val narrator: Boolean = true,
+    /** BUG-035: false = el usuario no aporta su persona; escribe como un personaje o el narrador. */
+    val usePersona: Boolean = true,
+    /** BUG-033: true = el modelo contesta al enviar un mensaje (comportamiento antiguo). */
+    val replyToUser: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
@@ -47,6 +52,8 @@ object ScenarioJson {
                         put("tags", buildJsonArray { s.tags.forEach { add(JsonPrimitive(it)) } })
                         put("participants", buildJsonArray { s.participantIds.forEach { add(JsonPrimitive(it)) } })
                         put("narrator", s.narrator)
+                        put("usePersona", s.usePersona)
+                        put("replyToUser", s.replyToUser)
                         put("updatedAt", s.updatedAt)
                     }
                 )
@@ -67,6 +74,8 @@ object ScenarioJson {
                     tags = strings("tags"),
                     participantIds = strings("participants"),
                     narrator = o["narrator"]?.jsonPrimitive?.boolean ?: true,
+                    usePersona = o["usePersona"]?.jsonPrimitive?.booleanOrNull ?: true,
+                    replyToUser = o["replyToUser"]?.jsonPrimitive?.booleanOrNull ?: false,
                     updatedAt = o["updatedAt"]?.jsonPrimitive?.long ?: 0L,
                 )
             }
