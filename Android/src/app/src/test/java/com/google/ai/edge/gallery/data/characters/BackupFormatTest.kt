@@ -93,4 +93,45 @@ class BackupFormatTest {
         val m = BackupFormat.manifest(listOf(BackupSection.CHARACTERS, BackupSection.SCENES), 7)
         assertTrue(m.contains("\"characters\"") && m.contains("\"scenes\"") && m.contains("\"version\":2"))
     }
+
+    // BUG-042: un backup recién exportado debe reconocerse como idéntico (si no, se duplicaría solo).
+    @Test fun characterIsIdenticalAfterBackupRoundTrip() {
+        val card = CharacterCard(
+            name = "Akiko Fujimoto",
+            description = "Una profesora.",
+            personality = "seria",
+            scenario = "Tokio",
+            firstMessage = "Hola.",
+            alternateGreetings = listOf("Buenas."),
+            exampleMessages = "{{user}}: hola\n{{char}}: hola",
+            systemPrompt = "sé breve",
+            creatorNotes = "nota",
+            creator = "yo",
+            characterVersion = "1.0",
+            tags = listOf("profesora", "tokio"),
+            extensionsJson = "{\"a\":1}",
+        )
+        val round = CharacterCardParser.parse(CharacterCardParser.encodeV2(card).toByteArray()).card
+        assertTrue(BackupFormat.sameCharacterContent(card, round))
+    }
+
+    @Test fun addingCharMacroMakesTheCharacterDifferent() {
+        val original = CharacterCard(name = "Akiko", description = "Una profesora.")
+        val edited = original.copy(description = "{{char}} es una profesora.")
+        assertFalse(BackupFormat.sameCharacterContent(original, edited))
+    }
+
+    @Test fun whitespaceAndJsonFormattingDoNotCountAsChanges() {
+        val a = CharacterCard(name = "Akiko", description = "Una profesora.\r\n", tags = listOf("a"), extensionsJson = "{\"x\": 1}")
+        val b = CharacterCard(name = " Akiko ", description = "Una profesora.", tags = listOf(" a "), extensionsJson = "{\"x\":1}")
+        assertTrue(BackupFormat.sameCharacterContent(a, b))
+    }
+
+    @Test fun anyRealFieldChangeMakesTheCharacterDifferent() {
+        val base = CharacterCard(name = "Akiko")
+        assertFalse(BackupFormat.sameCharacterContent(base, base.copy(tags = listOf("nueva"))))
+        assertFalse(BackupFormat.sameCharacterContent(base, base.copy(alternateGreetings = listOf("otra"))))
+        assertFalse(BackupFormat.sameCharacterContent(base, base.copy(firstMessage = "otro saludo")))
+        assertFalse(BackupFormat.sameCharacterContent(base, base.copy(systemPrompt = "otro")))
+    }
 }

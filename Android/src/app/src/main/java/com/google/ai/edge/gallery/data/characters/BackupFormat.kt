@@ -36,9 +36,12 @@ data class PersonaDto(
 /**
  * Formato y reglas de fusión de la copia de seguridad (lógica pura, sin Android).
  *
- * Reglas (BUG-038): **fusionar, no reemplazar**. Lo que trae la copia sobrescribe el elemento que
- * tenga el mismo id (o el mismo nombre en los presets de muestreo); lo que ya existe y no está en la
- * copia se conserva intacto; nunca se borra nada.
+ * Reglas (BUG-038): **fusionar, no reemplazar**. En el resto de secciones, lo que trae la copia
+ * sobrescribe el elemento que tenga el mismo id (o el mismo nombre en los presets de muestreo); lo
+ * que ya existe y no está en la copia se conserva intacto; nunca se borra nada.
+ *
+ * Personajes (BUG-042): además se compara el contenido de la tarjeta. Si es idéntico no se toca;
+ * si cambió, se conserva la versión que ya tienes y la de la copia entra como personaje nuevo.
  */
 object BackupFormat {
     const val VERSION = 2
@@ -108,6 +111,51 @@ object BackupFormat {
     fun mergePersonas(existing: List<PersonaDto>, incoming: List<PersonaDto>): List<PersonaDto> {
         val activeId = existing.firstOrNull { it.isActive }?.id ?: incoming.firstOrNull { it.isActive }?.id
         return mergeById(existing, incoming) { it.id }.map { it.copy(isActive = it.id == activeId) }
+    }
+
+    // --- Identidad del personaje (BUG-042) ---
+
+    /**
+     * Firma canónica del contenido de una tarjeta: todos los campos que definen al personaje
+     * (nombre, descripción, personalidad, escenario, saludos, ejemplos, prompts, notas, etiquetas,
+     * extensiones y lorebook). Queda fuera lo que no es contenido: id, avatar, modelo y fechas.
+     *
+     * Normaliza saltos de línea, espacios en los extremos y el formato del JSON de extensiones para
+     * que un personaje recién exportado no parezca distinto por cómo se guardó.
+     */
+    fun characterSignature(card: CharacterCard): String =
+        buildJsonObject {
+            put("name", normalize(card.name))
+            put("description", normalize(card.description))
+            put("personality", normalize(card.personality))
+            put("scenario", normalize(card.scenario))
+            put("firstMessage", normalize(card.firstMessage))
+            put("alternateGreetings", buildJsonArray {
+                card.alternateGreetings.map(::normalize).filter { it.isNotEmpty() }.forEach { add(JsonPrimitive(it)) }
+            })
+            put("exampleMessages", normalize(card.exampleMessages))
+            put("systemPrompt", normalize(card.systemPrompt))
+            put("postHistoryInstructions", normalize(card.postHistoryInstructions))
+            put("creatorNotes", normalize(card.creatorNotes))
+            put("creator", normalize(card.creator))
+            put("characterVersion", normalize(card.characterVersion))
+            put("tags", buildJsonArray {
+                card.tags.map(::normalize).filter { it.isNotEmpty() }.forEach { add(JsonPrimitive(it)) }
+            })
+            put("source", normalize(card.source))
+            put("extensions", canonicalJson(card.extensionsJson))
+            put("characterBook", canonicalJson(card.characterBookJson))
+        }.toString()
+
+    /** ¿Las dos tarjetas son la misma versión del personaje? (BUG-042) */
+    fun sameCharacterContent(a: CharacterCard, b: CharacterCard): Boolean = characterSignature(a) == characterSignature(b)
+
+    private fun normalize(text: String): String = text.replace("\r\n", "\n").replace('\r', '\n').trim()
+
+    private fun canonicalJson(raw: String): String {
+        val text = raw.trim()
+        if (text.isEmpty()) return ""
+        return runCatching { Json.parseToJsonElement(text).toString() }.getOrDefault(text)
     }
 
     // --- JSON ---

@@ -133,7 +133,7 @@ fun BoxSettingsScreen(
       BoxActionCard(
         icon = Icons.Rounded.Backup,
         title = "Restaurar copia",
-        subtitle = restoreStatus ?: "Elige qué recuperar de un .zip (se fusiona, no duplica) o importa una tarjeta .json/.png",
+        subtitle = restoreStatus ?: "Elige qué recuperar de un .zip (fusiona sin perder tus cambios) o importa una tarjeta .json/.png",
         onClick = {
           restoreLauncher.launch(arrayOf("application/zip", "application/json", "image/png"))
         },

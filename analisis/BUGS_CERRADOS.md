@@ -501,7 +501,7 @@ Re-prueba 2026-11-20: guardaba pero no se podía cargar. Corregido con una barra
 
 - **✅ Verificado en el teléfono (2026-11-21):** exportar, selector con conteos, restaurar sin duplicar, borrar/restaurar elementos y `.zip` v1 funcionan. Commit `c232ed9`.
 - **Alcance:** personajes (tarjeta + avatar + modelo/fechas), recuerdos, personas, presets y escenas; `manifest.json` v2. Los chats quedan para una fase 2 (base cifrada).
-- **Pendiente:** BUG-042 (duplicar si el personaje cambió en vez de sobrescribir).
+- **Pendiente:** BUG-042 (duplicar si el personaje cambió en vez de sobrescribir), implementado el 21/11 y pendiente de re-prueba en el móvil.
 - **Archivos:** `BackupFormat.kt`, `BackupRepository.kt`, `RestoreBackupDialog.kt`, `RoleplayViewModel.kt`, `RawMemoryStore.kt`.
 
 ### BUG-039

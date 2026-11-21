@@ -41,6 +41,28 @@
 
 ## 📝 Registro
 
+### 2026-11-21 — BUG-042 implementado: la copia duplica solo si el personaje cambió
+
+**Qué y por qué:** el humano pidió que, al restaurar, un personaje **idéntico** no se duplique y que, si la copia trae una versión distinta (su caso: Akiko con y sin `{{char}}` al inicio de la descripción), se conserve la versión editada y la de la copia entre como personaje nuevo. Así no se pierde ninguna de las dos.
+
+- **Comparación:** `BackupFormat.characterSignature` arma una firma canónica con todos los campos de la tarjeta (nombre, descripción, personalidad, escenario, saludo, saludos alternativos, ejemplos, system prompt, post-history, notas, creador, versión, etiquetas, fuente, extensiones y lorebook). Quedan fuera id, avatar, modelo y fechas. Normaliza saltos de línea, espacios en los extremos y el formato del JSON de extensiones.
+- **Restauración v2:** mismo id + misma firma = no se toca; mismo id + firma distinta = se conserva el existente y la copia se inserta con un `UUID` nuevo. Un id que no existe se crea con su id original.
+- **Restauración v1:** se empareja por nombre (sin distinguir mayúsculas) y se aplica la misma regla; si cambió, se crea con un `UUID` nuevo.
+- **Resumen:** «N personaje(s) nuevo(s)», «N copia(s) de personajes editados» y «N personaje(s) sin cambios». El diálogo y el subtítulo de Ajustes ya no prometen «no duplica» a secas: explican que lo idéntico no se duplica y lo editado se conserva.
+- **Decisión:** los recuerdos no se remapean; la copia del personaje es solo la tarjeta. Los recuerdos de la copia siguen vinculados al id original (el personaje editado), no a la copia nueva.
+
+**Archivos exactos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/BackupFormat.kt` — `characterSignature`, `sameCharacterContent` y normalización.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/BackupRepository.kt` — `restoreCharacters` y `restoreLegacyCharacters` devuelven un resumen; `saveCharacter` recibe la tarjeta ya leída; resumen en `restore`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RestoreBackupDialog.kt` — texto del diálogo.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/BoxSettingsScreen.kt` — subtítulo de «Restaurar copia».
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RoleplayViewModel.kt` — comentario del flujo.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/BackupFormatTest.kt` — 4 pruebas nuevas.
+- `analisis/BUGS.md`, `analisis/BUGS_CERRADOS.md`, `analisis/PLAN_PRUEBAS.md` — estado de BUG-042.
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Verificación:** `.\gradlew.bat :app:testDebugUnitTest --tests "com.google.ai.edge.gallery.data.characters.BackupFormatTest"` desde `Android/src` → **BUILD SUCCESSFUL**. No se compiló el APK ni se probó en el móvil (el humano no tiene internet para descargarlo); queda pendiente la re-prueba del caso Akiko.
+
 ### 2026-11-21 — Re-pruebas de escenas, compartir y copia; BUG-036 descartado; BUG-042 abierto
 
 **Qué y por qué:** re-pruebas del humano tras el `pull` `c232ed9`:

@@ -15,10 +15,10 @@
 |---|---|---|---|
 | **0 · Verificación gratis** | 037 | 0 parche nuevo | 011, 015, 016, 021, 025, 026 y 030 cerrados (015/021/025/026/030 el 19/11; 011/016 el 20/11); queda un caso concreto de 037 |
 | **1 · Rápidos** | ✅ completo | S | 008, 009, 010, 014, 019 y 040 verificados y cerrados el 20/11; 041 (voces) funciona y pasa a la tanda final para pulirla |
-| **2 · Medianos con tests** | 041 (pulido), 042 (copia inteligente) | M–L | Pulir la biblioteca de voces y afinar la fusión de la copia por contenido |
+| **2 · Medianos con tests** | 041 (pulido), 042 (implementado, falta re-prueba) | M–L | Pulir la biblioteca de voces y validar en el móvil la fusión por contenido |
 | **3 · Duros / nativos** | 017, 029 | L | Visión en CPU y stop strings en `LLMInference.cpp` |
 
-> **Agrupaciones:** 032–035 (escenas) y 007/039 (compartir) quedaron verificados el 21/11. En 041 la parte «L» aparece solo si se decide incluir grabación de audio. BUG-042 nace de la re-prueba de 038: la copia ya funciona, pero debe distinguir «idéntico» de «parecido».
+> **Agrupaciones:** 032–035 (escenas) y 007/039 (compartir) quedaron verificados el 21/11. En 041 la parte «L» aparece solo si se decide incluir grabación de audio. BUG-042 nace de la re-prueba de 038: la copia ya funciona y ahora distingue «idéntico» (no toca) de «parecido» (conserva tu versión y añade la de la copia); falta validarlo en el móvil.
 
 > **Decisión de formato (21/11):** `[...]` se reserva para **narración y acciones**. El encabezado `Narrador:` se mantiene porque el filtro de escenas identifica hablantes por `Nombre:`; el narrador escribe `Narrador: [texto]` y un personaje puede usar `[acción]` dentro de su bloque. No se aceptan bloques `[...]` sueltos sin encabezado (se perdería el filtrado). Pendiente de implementar en el prompt de escena.
 
@@ -148,10 +148,11 @@
 
 - **Regla pedida (21/11):** al restaurar, un personaje **idéntico** no se duplica; si el mismo id/nombre trae **cualquier cambio de contenido** (p. ej. añadir `{{char}}` al inicio de la descripción), se conserva el existente y se crea una **copia nueva con otro id**. Así no se pierde la edición.
 - **Caso real:** Akiko Fujimoto con la descripción original y la misma descripción empezando por `{{char}}` deben quedar como dos personajes, no sobrescribirse.
-- **Propuesta:** comparar la tarjeta canónica (nombre, descripción, personalidad, escenario, saludo, ejemplos, system prompt y etiquetas; **sin** id, fechas, avatar ni `modelName`) normalizando espacios y saltos de línea. Igual → no insertar (o solo refrescar metadatos); distinto → insertar con `UUID` nuevo. En `.zip` v1, mismo criterio por nombre.
-- **UI:** resumen «X actualizados, Y nuevos»; opción avanzada «sobrescribir aunque haya cambios» **desactivada por defecto**.
-- **Archivos:** `data/characters/BackupFormat.kt` (comparación/fusión), `data/characters/BackupRepository.kt` (`restoreCharacters`, `restoreLegacyCharacters`), `test/.../BackupFormatTest.kt`.
-- **Pendiente:** implementar y probar con el caso Akiko (con y sin `{{char}}`).
+- **Regla implementada (21/11):** se compara la firma canónica de la tarjeta (todos los campos de `CharacterCard`: nombre, descripción, personalidad, escenario, saludo, saludos alternativos, ejemplos, system prompt, post-history, notas, creador, versión, etiquetas, fuente, extensiones y lorebook; **sin** id, avatar, modelo ni fechas), normalizando saltos de línea, espacios en los extremos y el formato del JSON. Igual → no se toca; distinto → se conserva el existente y la copia entra con un `UUID` nuevo. En `.zip` v1 se empareja por nombre con el mismo criterio.
+- **Caso real:** Akiko Fujimoto con la descripción original y la misma descripción empezando por `{{char}}` quedan como dos personajes.
+- **UI:** el resumen distingue «nuevo(s)», «copia(s) de personajes editados» y «sin cambios»; el diálogo avisa de que nada se borra. No se añade la opción «sobrescribir»: la regla pedida es no perder la versión editada.
+- **Archivos:** `data/characters/BackupFormat.kt` (firma y comparación), `data/characters/BackupRepository.kt` (`restoreCharacters`, `restoreLegacyCharacters`), `ui/roleplay/RestoreBackupDialog.kt`, `ui/home/BoxSettingsScreen.kt`, `ui/roleplay/RoleplayViewModel.kt`, `test/.../BackupFormatTest.kt`.
+- **Estado:** implementado el 21/11; tests JVM `characterIsIdenticalAfterBackupRoundTrip`, `addingCharMacroMakesTheCharacterDifferent`, `whitespaceAndJsonFormattingDoNotCountAsChanges` y `anyRealFieldChangeMakesTheCharacterDifferent` en verde. **Pendiente de re-prueba en el móvil** con el caso Akiko.
 
 > **BUG-039** — cerrado y verificado el 2026-11-21 (mismo fix que BUG-007: `.json` real con `FileProvider`). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-039).
 

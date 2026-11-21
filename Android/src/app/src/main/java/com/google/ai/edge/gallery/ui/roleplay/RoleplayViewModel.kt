@@ -89,7 +89,8 @@ class RoleplayViewModel @Inject constructor(
 
     /**
      * BUG-038: una tarjeta .json/.png se importa tal cual; un .zip se inspecciona y devuelve sus
-     * secciones para que el usuario elija. Restaurar siempre FUSIONA: no duplica ni borra nada.
+     * secciones para que el usuario elija. Restaurar fusiona: lo idéntico no se duplica, lo editado
+     * se conserva y la versión de la copia se añade como personaje nuevo; nada se borra.
      */
     suspend fun prepareRestore(uri: Uri): RestorePlan =
         try {

@@ -25,8 +25,14 @@ class BackupContents(val sections: Set<BackupSection>, val counts: Map<BackupSec
 
 /**
  * BUG-038: copia de seguridad completa (personajes, recuerdos, personas, presets y escenas) y
- * restauración que **fusiona** en vez de duplicar: lo de la copia sobrescribe el elemento con el
- * mismo id y lo demás se conserva. Las reglas puras viven en [BackupFormat] (con pruebas).
+ * restauración que **fusiona** en vez de duplicar: en el resto de secciones lo de la copia
+ * sobrescribe el elemento con el mismo id y lo demás se conserva. Las reglas puras viven en
+ * [BackupFormat] (con pruebas).
+ *
+ * BUG-042: los personajes se comparan por contenido. Si son idénticos no se tocan; si la copia trae
+ * una versión distinta (p. ej. sin `{{char}}` en la descripción), se conserva la que ya tienes y la
+ * de la copia se inserta como personaje nuevo para no perder ninguna de las dos.
+ *
  * Los chats (base cifrada) no entran en esta fase.
  */
 @Singleton
@@ -113,8 +119,13 @@ class BackupRepository @Inject constructor(
         val done = mutableListOf<String>()
 
         if (BackupSection.CHARACTERS in selected) {
-            val n = if (legacy) restoreLegacyCharacters(entries) else restoreCharacters(entries)
-            if (n > 0) done += "$n personaje(s)"
+            val tally = if (legacy) restoreLegacyCharacters(entries) else restoreCharacters(entries)
+            val parts = buildList {
+                if (tally.created > 0) add("${tally.created} personaje(s) nuevo(s)")
+                if (tally.duplicated > 0) add("${tally.duplicated} copia(s) de personajes editados")
+                if (tally.unchanged > 0) add("${tally.unchanged} personaje(s) sin cambios")
+            }
+            if (parts.isNotEmpty()) done += parts.joinToString(", ")
         }
         if (!legacy) {
             val charIds = characterDao.getAll().first().map { it.id }.toSet()
@@ -170,48 +181,76 @@ class BackupRepository @Inject constructor(
 
     private fun avatarFile(id: String): File = File(File(context.filesDir, "characters").apply { mkdirs() }, "$id.png")
 
-    private suspend fun saveCharacter(id: String, cardBytes: ByteArray, avatar: ByteArray?, meta: BackupFormat.CharacterMeta?): Boolean {
-        val parsed = runCatching { CharacterCardParser.parse(cardBytes) }.getOrNull() ?: return false
-        val existing = characterDao.getById(id)
+    /** Inserta una tarjeta ya leída con el id indicado; el avatar se guarda aparte. */
+    private suspend fun saveCharacter(
+        id: String,
+        parsed: ParsedCharacterCard,
+        avatar: ByteArray?,
+        meta: BackupFormat.CharacterMeta?,
+    ): Boolean {
         val png = avatar ?: parsed.avatarPng
-        val avatarPath =
-            if (png != null) avatarFile(id).also { it.writeBytes(png) }.absolutePath
-            else existing?.avatarPath ?: ""
+        val avatarPath = if (png != null) avatarFile(id).also { it.writeBytes(png) }.absolutePath else ""
         val now = System.currentTimeMillis()
         val entity: RoleplayCharacter =
             parsed.card.toEntity(id = id, avatarPath = avatarPath).copy(
-                modelName = meta?.modelName ?: existing?.modelName ?: "",
-                createdAt = meta?.createdAt ?: existing?.createdAt ?: now,
+                modelName = meta?.modelName ?: "",
+                createdAt = meta?.createdAt ?: now,
                 updatedAt = now,
             )
-        characterDao.insert(entity) // REPLACE: misma id = se sobrescribe
+        characterDao.insert(entity)
         return true
     }
 
-    private suspend fun restoreCharacters(entries: Map<String, ByteArray>): Int {
-        var n = 0
-        for ((name, data) in entries) {
-            val id = BackupFormat.characterId(name) ?: continue
-            val meta = entries[BackupFormat.characterMetaEntry(id)]?.let { BackupFormat.decodeCharacterMeta(String(it)) }
-            if (saveCharacter(id, data, entries[BackupFormat.characterAvatarEntry(id)], meta)) n++
-        }
-        return n
+    /** Resumen de personajes: nuevos, copias de versiones editadas y los que ya eran idénticos. */
+    private class CharacterTally {
+        var created = 0
+        var duplicated = 0
+        var unchanged = 0
     }
 
-    /** Copias de la versión 1 (sin ids): se identifica el personaje por su nombre para no duplicarlo. */
-    private suspend fun restoreLegacyCharacters(entries: Map<String, ByteArray>): Int {
+    /**
+     * BUG-042: mismo id y mismo contenido = no se toca; mismo id con cambios = se conserva el que ya
+     * tienes y la versión de la copia entra con un id nuevo. Un id que no existe se crea tal cual.
+     */
+    private suspend fun restoreCharacters(entries: Map<String, ByteArray>): CharacterTally {
+        val tally = CharacterTally()
+        for ((name, data) in entries) {
+            val id = BackupFormat.characterId(name) ?: continue
+            val parsed = runCatching { CharacterCardParser.parse(data) }.getOrNull() ?: continue
+            val existing = characterDao.getById(id)
+            if (existing != null && BackupFormat.sameCharacterContent(existing.toCard(), parsed.card)) {
+                tally.unchanged++
+                continue
+            }
+            val meta = entries[BackupFormat.characterMetaEntry(id)]?.let { BackupFormat.decodeCharacterMeta(String(it)) }
+            val targetId = if (existing == null) id else UUID.randomUUID().toString()
+            if (saveCharacter(targetId, parsed, entries[BackupFormat.characterAvatarEntry(id)], meta)) {
+                if (existing == null) tally.created++ else tally.duplicated++
+            }
+        }
+        return tally
+    }
+
+    /** Copias v1 (sin ids): se empareja por nombre y se aplica la misma regla de contenido (BUG-042). */
+    private suspend fun restoreLegacyCharacters(entries: Map<String, ByteArray>): CharacterTally {
+        val tally = CharacterTally()
         val byName = characterDao.getAll().first().associateBy { it.name.trim().lowercase() }.toMutableMap()
-        var n = 0
         for ((name, data) in entries) {
             if (!name.endsWith(".json")) continue
-            val cardName = runCatching { CharacterCardParser.parse(data).card.name }.getOrNull() ?: continue
-            val id = byName[cardName.trim().lowercase()]?.id ?: UUID.randomUUID().toString()
+            val parsed = runCatching { CharacterCardParser.parse(data) }.getOrNull() ?: continue
+            val key = parsed.card.name.trim().lowercase()
+            val existing = byName[key]
+            if (existing != null && BackupFormat.sameCharacterContent(existing.toCard(), parsed.card)) {
+                tally.unchanged++
+                continue
+            }
+            val id = UUID.randomUUID().toString()
             val avatar = entries[name.removeSuffix(".json") + ".avatar.png"]
-            if (saveCharacter(id, data, avatar, null)) {
-                n++
+            if (saveCharacter(id, parsed, avatar, null)) {
+                if (existing == null) tally.created++ else tally.duplicated++
                 characterDao.getById(id)?.let { byName[it.name.trim().lowercase()] = it }
             }
         }
-        return n
+        return tally
     }
 }

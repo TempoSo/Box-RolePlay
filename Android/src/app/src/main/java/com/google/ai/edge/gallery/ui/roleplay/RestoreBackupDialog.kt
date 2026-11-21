@@ -30,8 +30,8 @@ fun RestoreBackupDialog(contents: BackupContents, onConfirm: (Set<BackupSection>
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "Se fusiona con lo que ya tienes: lo de la copia sobrescribe el elemento con el mismo id " +
-                        "y nada se borra ni se duplica.",
+                    "Se fusiona con lo que ya tienes: si el personaje es idéntico no se duplica; si cambió, " +
+                        "se conserva tu versión y la de la copia se añade como personaje nuevo. Nada se borra.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

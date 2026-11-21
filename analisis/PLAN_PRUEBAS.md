@@ -84,7 +84,7 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 
 ### Bloque 2 — Re-pruebas tras corregir bugs (ver [`BUGS.md`](BUGS.md))
 - [ ] 2.41 Biblioteca de voces (BUG-041): subir/grabar, nombre, etiquetas, buscador, probar y borrar.
-- [ ] 2.42 Copia inteligente (BUG-042): un personaje idéntico no se duplica; si cambia (p. ej. `{{char}}` al inicio de la descripción) se crea una copia nueva.
+- [ ] 2.42 Copia inteligente (BUG-042): un personaje idéntico no se duplica; si cambia (p. ej. `{{char}}` al inicio de la descripción) se crea una copia nueva. Implementado el 21/11 con tests JVM; falta probarlo en el móvil.
 - [ ] Narración `[]`: implementar y probar que el narrador escribe `Narrador: [texto]` y los personajes pueden usar `[acción]` dentro de su bloque.
 
 ### Bloque 3 — Voz: re-pruebas tras cargar un modelo (desbloqueo: importar carpeta `es` de haex-space, ver arriba)
@@ -155,5 +155,5 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 - [x] **2.35 Persona opcional — ✅ OK (21/11, BUG-035):** sin «Usar mi persona» no aparece «Yo» y la barra respeta «Incluir narrador».
 - [x] **2.36 Ficha completa / `[...]` — ✅ DESCARTADO (21/11, BUG-036):** la captura era de Layla, no de Box; no había bug. Se retiró el test que fijaba ese supuesto comportamiento. `[...]` se usará para narración/acciones.
 - [x] **2.7/2.39 Compartir ficha — ✅ OK (21/11, BUG-007/039):** se genera `Nombre.json` con `FileProvider`, se puede guardar/importar y «Copiar texto» sigue disponible (acción del menú de Android, no un botón de Box).
-- [x] **2.38 Copia de seguridad — ✅ OK, base (21/11, BUG-038):** selector con conteos, fusión sin duplicar, restauración de elementos borrados y `.zip` v1 por nombre. Queda BUG-042 para el caso «parecido pero distinto».
+- [x] **2.38 Copia de seguridad — ✅ OK, base (21/11, BUG-038):** selector con conteos, fusión por id, restauración de elementos borrados y `.zip` v1 por nombre. BUG-042 (idéntico vs. editado) queda implementado con tests JVM; falta la re-prueba en el móvil.
 - [x] **2.6 Hamburguesa del inicio — ✅ OK (20/11, BUG-009).**
