@@ -23,6 +23,9 @@
         name="cache_logs"
         path="logs/" />
     <cache-path
+        name="cache_shared"
+        path="shared/" />
+    <cache-path
         name="cache_backup"
         path="backup/" />
 </paths>

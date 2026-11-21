@@ -185,12 +185,7 @@ fun RoleplayScreen(
                 },
                 onEdit = { c -> onEditCharacter(c.id) },
                 onShare = { c ->
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "application/json"
-                        putExtra(Intent.EXTRA_SUBJECT, "${c.name}.json")
-                        putExtra(Intent.EXTRA_TEXT, viewModel.exportJson(c))
-                    }
-                    context.startActivity(Intent.createChooser(send, "Compartir personaje"))
+                    CharacterShare.shareJson(context, c.name, viewModel.exportJson(c))
                 },
                 onDelete = { c -> toDelete = c },
                 onMemories = { c -> memoryFor = c },
@@ -226,12 +221,7 @@ fun RoleplayScreen(
             onDismiss = { detailFor = null },
             onEdit = { detailFor = null; onEditCharacter(c.id) },
             onShare = {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/json"
-                    putExtra(Intent.EXTRA_SUBJECT, "${c.name}.json")
-                    putExtra(Intent.EXTRA_TEXT, viewModel.exportJson(c))
-                }
-                context.startActivity(Intent.createChooser(send, "Compartir personaje"))
+                CharacterShare.shareJson(context, c.name, viewModel.exportJson(c))
             },
             onDelete = { detailFor = null; toDelete = c },
             onMemories = { detailFor = null; memoryFor = c },
@@ -680,12 +670,7 @@ fun CharacterEditorScreen(
                 OutlinedButton(
                     onClick = {
                         if (name.isBlank()) { nameError = true; tab = 0; return@OutlinedButton }
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "application/json"
-                            putExtra(Intent.EXTRA_SUBJECT, "${name.trim()}.json")
-                            putExtra(Intent.EXTRA_TEXT, viewModel.exportJson(build()))
-                        }
-                        context.startActivity(Intent.createChooser(send, "Compartir personaje"))
+                        CharacterShare.shareJson(context, name.trim(), viewModel.exportJson(build()))
                     },
                     modifier = Modifier.weight(1f),
                 ) { Text("Compartir") }

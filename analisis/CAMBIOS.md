@@ -41,6 +41,18 @@
 
 ## 📝 Registro
 
+### BUG-039 y BUG-007: compartir la ficha como archivo .json (FileProvider)
+
+**Qué y por qué:** BUG-039 y BUG-007 (Escalón 2, un solo commit). «Compartir» una ficha entregaba solo texto (`EXTRA_TEXT`), sin nombre ni extensión, y «Guardar en…» no creaba un `.json` válido. Ahora se escribe `Nombre.json` en la caché (`cache/shared/`) y se comparte con `FileProvider` + `EXTRA_STREAM` (`application/json`); el JSON sigue yendo también como texto, así que «Copiar texto» se conserva. Aplica a los tres puntos de compartir (lista, hoja de detalle y editor). El nombre se limpia de caracteres prohibidos (`ShareFileName`, test 3/3). **No** se hizo la variante `.png` con la tarjeta incrustada (era «opcional» en el bug). Pendiente de re-prueba en el teléfono.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterShare.kt` — nuevo.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/ShareFileName.kt` — nuevo.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RoleplayScreens.kt` — tres llamadas.
+- `Android/src/app/src/main/res/xml/file_paths.xml` — ruta `shared/`.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/ShareFileNameTest.kt` — nuevo.
+- `analisis/BUGS.md` — notas en BUG-039 y BUG-007.
+
 ### Escalon 1 cerrado: 008, 009, 010, 014, 019, 040 archivados; 041 a la tanda final
 
 **Qué y por qué:** el humano re-probó en el teléfono y confirmó BUG-008, 009, 010, 019, 040 (presets de rendimiento y de muestreo) y 041; BUG-014 se da por cerrado (con el modelo completo solo sale «Modelo completo.», el aviso largo aparece cuando faltan piezas). Se mueven 008, 009, 010, 014, 019 y 040 a `BUGS_CERRADOS.md` y quedan en `BUGS.md` como línea de referencia. BUG-041 (biblioteca de voces) funciona pero se deja abierto en la «Tanda final» para pulirla. **Escalón 1 completo.** Quedan 12 abiertos.

@@ -65,7 +65,7 @@
 
 ## P2 — UX
 
-### BUG-007 · ⚠️ Ficha: "Compartir" genera un texto no guardable *(2026-11-19: el humano confirma que sigue entregando texto sin tipo de archivo → ver BUG-039)*
+### BUG-007 · 🟡 Ficha: "Compartir" genera un texto no guardable *(2026-11-19: el humano confirma que sigue entregando texto sin tipo de archivo → ver BUG-039)*
 **Esfuerzo:** M · **Escalón:** 2 · Ver también BUG-039: comparten `RoleplayScreens.kt`, un solo commit
 
 - **Síntoma original:** diálogo de texto sin opción de guardar/archivo.
@@ -74,6 +74,7 @@
 - **✅ Verificado en el teléfono (2026-11-19, 2.2):** el menú "Más acciones → Compartir" de una ficha abre el chooser con el JSON `chara_card_v2`, un botón "Copiar texto" y el destino "Guardar en..." (además de Quick Share, Xiaomi Share, Bluetooth, Drive, Gmail, WhatsApp). El texto se puede guardar/copiar: **no hace falta** exportar a caché + `FileProvider`.
 - **Fix:** compartir de verdad: `ACTION_SEND` con texto plano o exportar `.json` a caché + `FileProvider` (como hace la copia de seguridad .zip). El primer mecanismo ya está implantado y verificado.
 - **Archivos:** `ui/roleplay/CharacterDetailSheet.kt`, `data/characters/CharacterRepository.kt`.
+Ver BUG-039. Parche aplicado (2026-11-20, pendiente de re-prueba): la ficha se comparte como archivo `Nombre.json` (caché + FileProvider); el texto sigue disponible. Re-prueba: menú de una ficha → Compartir → «Guardar en…» (o Quick Share / Drive) y comprobar que se crea `Nombre.json` e importarlo de nuevo en la app; probar con un nombre con caracteres raros (`a/b:c`). No incluye .png.
 
 > **BUG-008** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-008).
 
@@ -177,11 +178,12 @@
 - **Comportamiento deseado:** (1) **fusionar, no reemplazar**: lo que está en la copia **sobrescribe** el elemento existente con el mismo id/nombre, y lo que ya existe y no está en la copia (p. ej. 3 personajes creados después de la copia) **se conserva intacto**; nunca se borra nada; (2) la copia debe incluir **personajes, historial de chats, recuerdos, perfiles de persona, presets (motor, muestreo) y escenas**; (3) un **selector** al restaurar: "¿Qué quieres recuperar?" con casillas (personajes / chats / recuerdos / personas / presets / escenas / todo).
 - **Pista:** `data/characters/CharacterRepository.kt` (`exportBackupZip`, `importFromUri/Bytes`), `ui/home/BoxSettingsScreen.kt`, `ui/roleplay/RoleplayViewModel.kt` (`importFromSettings`). Cuidado con el historial: está en Room cifrado (SQLCipher); definir formato de exportación (JSON dentro del `.zip`) y evitar duplicar conversaciones (usar el id de conversación como clave).
 
-### BUG-039 · ❌ Ficha: "Compartir" entrega un texto JSON sin tipo de archivo (reabre BUG-007)
+### BUG-039 · 🟡 Ficha: "Compartir" entrega un texto JSON sin tipo de archivo (reabre BUG-007)
 **Esfuerzo:** M · **Escalón:** 2 · Reabre BUG-007: exportar a caché + FileProvider
 
 - **Síntoma (humano, 2.2/4.1):** el JSON `chara_card_v2` se comparte como texto plano (`EXTRA_TEXT`), así que no se puede guardar ni enviar como archivo: no hay nombre ni extensión. Con "Guardar en…" no se crea un `.json` válido.
 - **Fix:** exportar a caché un archivo `NombreDelPersonaje.json` (y, si la ficha tiene imagen, opcionalmente `.png` con la tarjeta incrustada, el formato del ecosistema SillyTavern) y compartirlo con `FileProvider` + `ACTION_SEND` (`EXTRA_STREAM`, `application/json` / `image/png`). Mantener "Copiar texto" como segunda opción. Archivos: `ui/roleplay/RoleplayScreens.kt` (líneas ~185-231), `data/characters/CharacterRepository.kt`.
+Parche aplicado (2026-11-20, pendiente de re-prueba): la ficha se comparte como archivo `Nombre.json` (caché + FileProvider); el texto sigue disponible. Re-prueba: menú de una ficha → Compartir → «Guardar en…» (o Quick Share / Drive) y comprobar que se crea `Nombre.json` e importarlo de nuevo en la app; probar con un nombre con caracteres raros (`a/b:c`). No incluye .png.
 
 > **BUG-040** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-040).
 
