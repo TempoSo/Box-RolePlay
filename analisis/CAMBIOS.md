@@ -41,6 +41,25 @@
 
 ## 📝 Registro
 
+### 2026-11-21 — Re-pruebas de escenas, compartir y copia; BUG-036 descartado; BUG-042 abierto
+
+**Qué y por qué:** re-pruebas del humano tras el `pull` `c232ed9`:
+- **032, 033, 034 y 035 OK:** Aleatorio acumula burbujas, enviar en escena guarda contexto, enviar vacío hace hablar al hablante elegido y la persona es opcional. Se cierran y pasan a `BUGS_CERRADOS.md`.
+- **036 descartado (falso positivo):** la captura de `[The studio lights…]` era de **Layla**, no de Box. El prompt de escena ya usaba solo nombre/descripción/personalidad; el único cambio del supuesto bug era el test `sceneUsesOnlyNameDescriptionPersonality`, que se retira. **Decisión:** `[...]` se reserva para narración/acciones; se mantiene el encabezado `Narrador:` para que el filtro sepa quién habla (`Narrador: [texto]`, y `[acción]` dentro del bloque de un personaje). Pendiente de implementar en el prompt.
+- **007 y 039 OK:** compartir genera `Nombre.json` real con `FileProvider` y se puede guardar/importar; «Copiar texto» es una acción del selector de Android porque el JSON también viaja como texto, no un botón de Box.
+- **038 OK en su alcance base:** selector, fusión sin duplicar, restauración de elementos borrados y `.zip` v1. Se cierra; la afinación pasa a **BUG-042**: si el personaje es idéntico no se duplica, pero si cambió (p. ej. `{{char}}` al inicio de la descripción de Akiko) se crea una copia nueva con otro id para no perder la edición.
+- **041** sigue pendiente de re-prueba (biblioteca de voces).
+
+**Archivos exactos:**
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/ScenarioTest.kt` — se retira el test de BUG-036.
+- `analisis/BUGS.md` — 032–035, 007, 038 y 039 cerrados; 036 descartado; nuevo BUG-042; decisión de `[...]`; contadores 37 cerrados · 5 abiertos.
+- `analisis/BUGS_CERRADOS.md` — filas y entradas de 007, 032–036, 038 y 039.
+- `analisis/PLAN_PRUEBAS.md` — re-pruebas del 21/11 archivadas; pendientes 041, 042 y narración `[]`; estado actual de bugs.
+- `README.md` — la copia de seguridad ya no es solo de personajes.
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Estado:** no se tocó código de producción; solo se retiró un test. `analisis/PRUEBAS.md` y los submódulos, sin tocar. La copia inteligente (BUG-042) y la narración `[]` quedan documentadas para la próxima sesión.
+
 ### BUG-038: copia de seguridad completa que fusiona, con selector (fase 1, sin chats)
 
 **Qué y por qué:** BUG-038 (Escalón 2), fase 1 acordada: **sin chats** (la base cifrada queda para una fase 2). Antes el `.zip` solo llevaba personajes y, al restaurar, creaba copias nuevas (duplicados). Ahora:

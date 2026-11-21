@@ -1,7 +1,7 @@
 # Plan de pruebas — Box RolePlay (rama `fase1-rendimiento`)
 
 > **Documento vivo.** Arriba queda solo lo pendiente; las re-pruebas ya verificadas se archivan al final.
-> Última actualización: 2026-11-19 (triaje) · Checklist original: [`PRUEBAS.md`](PRUEBAS.md) · Registro: [`CAMBIOS.md`](CAMBIOS.md) · Abiertos/dudosos: [`BUGS.md`](BUGS.md) · Cerrados: [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md)
+> Última actualización: 2026-11-21 (re-pruebas de escenas, compartir y copia) · Checklist original: [`PRUEBAS.md`](PRUEBAS.md) · Registro: [`CAMBIOS.md`](CAMBIOS.md) · Abiertos/dudosos: [`BUGS.md`](BUGS.md) · Cerrados: [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md)
 
 **Equipo de prueba:** Xiaomi 2311DRK48G · Android 16 (SDK 36) · arm64-v8a · app v1.0.12 (26)
 **Bloque 2 probado además en:** POCO duchamp · HyperOS 3.0.9.0 · Android 15 (fingerprint del crash de BUG-001).
@@ -48,7 +48,7 @@ El botón siempre respondía "No hay un modelo GGUF cargado (o está generando)"
 - [x] **2.5 Memoria — funciona pero con 2 bugs:** interruptores, guardado de notas automáticas sin pausa, borrado uno a uno OK. Los recuerdos sin procesar NO se pueden editar (**BUG-008**). "Absorber clústeres": **crash con GGUF** (mismo stack de BUG-001) y **timeout con LiteRT** ("modelo tardó demasiado") → **BUG-002**. Re-prueba 17/11 con la 2.ª ronda: **ya no crashea en GGUF**, pero sigue "error de demora" (el watchdog fijo de 180 s < prefill real de la tanda, ~215 s a 6.5 t/s) → **3.ª ronda**: timeout dinámico + KV reutilizada entre tandas.
 - [x] **2.6 Cajón — 1 bug:** abre deslizando desde el borde izquierdo con chats agrupados por personaje; pero la hamburguesa del inicio NO lo abre (**BUG-009**).
 
-📋 **Inventario de bugs:** 17 abiertos y 8 dudosos en [`BUGS.md`](BUGS.md); 16 cerrados en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md) (solo si quieres auditar un cierre).
+📋 **Estado actual:** 37 cerrados · 5 abiertos (017, 029, 037, 041, 042) en [`BUGS.md`](BUGS.md); el histórico está en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md).
 
 ### Bloque 3 — Voz (2026-11-16): SUSPENDIDO — la carga del modelo de voz está bloqueada
 - [x] **3.1 Descarga HF — FALLIDA (BUG-013):** cualquier repo responde "No encontré ninguna carpata con un modelo Pocket TTS completo". Causa raíz localizada: `parseFiles()` filtra solo `.gguf`/`.litertlm` y no deja ver los `.onnx`.
@@ -83,7 +83,9 @@ El botón siempre respondía "No hay un modelo GGUF cargado (o está generando)"
 _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Bloque 4, ver resultados arriba.)_
 
 ### Bloque 2 — Re-pruebas tras corregir bugs (ver [`BUGS.md`](BUGS.md))
-- [ ] 2.6 Hamburguesa del inicio abre el cajón (BUG-009).
+- [ ] 2.41 Biblioteca de voces (BUG-041): subir/grabar, nombre, etiquetas, buscador, probar y borrar.
+- [ ] 2.42 Copia inteligente (BUG-042): un personaje idéntico no se duplica; si cambia (p. ej. `{{char}}` al inicio de la descripción) se crea una copia nueva.
+- [ ] Narración `[]`: implementar y probar que el narrador escribe `Narrador: [texto]` y los personajes pueden usar `[acción]` dentro de su bloque.
 
 ### Bloque 3 — Voz: re-pruebas tras cargar un modelo (desbloqueo: importar carpeta `es` de haex-space, ver arriba)
 - [ ] 3.2 "Texto a voz" sin LLM: ¿suena?, segundos hasta la 1.ª frase, botón parar.
@@ -144,3 +146,14 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 - [x] **0.11 Tarjeta de personaje — ✅ OK (20/11, BUG-011):** `{{user}}` muestra la persona activa en la ficha y la biblioteca; `{user}` con llaves simples se conserva literal a propósito.
 - [x] **0.16 Cambio de modelo (4.2c) — ✅ OK (20/11, BUG-016):** GGUF→GGUF y LiteRT→GGUF sin «El modelo sigue cargando»; el log no trae `Timeout esperando a que cargue` ni `no está listo tras … s`.
 - [ ] **0.37 Filtro de escenas (BUG-037):** falta el caso concreto que falla (escena, hablante fijado por la app, texto que se coló y si el narrador estaba activo). El humano lo deja para más adelante.
+
+### Escalón 2 — escenas, compartir y copia (21/11)
+
+- [x] **2.32 Aleatorio acumula — ✅ OK (21/11, BUG-032):** varias pulsaciones de 🎲 dejan burbujas nuevas y el historial se mantiene al reabrir.
+- [x] **2.33 Enviar es contexto — ✅ OK (21/11, BUG-033):** escribir no genera respuesta; Aleatorio usa lo escrito; el interruptor por escena recupera el comportamiento antiguo.
+- [x] **2.34 Enviar vacío — ✅ OK (21/11, BUG-034):** con KIP/Narrador elegido responde ese hablante; con «Yo» el botón sigue deshabilitado.
+- [x] **2.35 Persona opcional — ✅ OK (21/11, BUG-035):** sin «Usar mi persona» no aparece «Yo» y la barra respeta «Incluir narrador».
+- [x] **2.36 Ficha completa / `[...]` — ✅ DESCARTADO (21/11, BUG-036):** la captura era de Layla, no de Box; no había bug. Se retiró el test que fijaba ese supuesto comportamiento. `[...]` se usará para narración/acciones.
+- [x] **2.7/2.39 Compartir ficha — ✅ OK (21/11, BUG-007/039):** se genera `Nombre.json` con `FileProvider`, se puede guardar/importar y «Copiar texto» sigue disponible (acción del menú de Android, no un botón de Box).
+- [x] **2.38 Copia de seguridad — ✅ OK, base (21/11, BUG-038):** selector con conteos, fusión sin duplicar, restauración de elementos borrados y `.zip` v1 por nombre. Queda BUG-042 para el caso «parecido pero distinto».
+- [x] **2.6 Hamburguesa del inicio — ✅ OK (20/11, BUG-009).**

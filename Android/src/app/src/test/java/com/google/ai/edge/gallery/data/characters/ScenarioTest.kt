@@ -118,11 +118,4 @@ class ScenarioTest {
         val flipped = Scenario(id = "2", name = "B", usePersona = false, replyToUser = true, updatedAt = 3L)
         assertEquals(listOf(flipped), ScenarioJson.decode(ScenarioJson.encode(listOf(flipped))))
     }
-
-    // BUG-036: de cada ficha el prompt de escena solo usa nombre, descripción y personalidad.
-    @Test fun sceneUsesOnlyNameDescriptionPersonality() {
-        val p = ScenePromptBuilder.build("", "", members, "Héctor")
-        val block = p.substringAfter("Characters you control:\n").substringBefore("\n\n")
-        assertEquals("- Ana: Ana es médica. Personality: seria\n- Luis: Un ladrón.", block)
-    }
 }

@@ -36,6 +36,14 @@
 | [BUG-014](#bug-014) | Importar carpeta del modelo de voz: solo acepta nombres antiguos (bloquea el Bloque 3) | `ade8cc8` · verificado 20/11 |
 | [BUG-019](#bug-019) | Benchmark LiteRT: métrica propia no comparable con GGUF | `50cbc8e` · verificado 20/11 |
 | [BUG-040](#bug-040) | Presets de motor (4.4b): confirmar que el botón de guardar cubre hilos y Flash Attention | `35589de + 2978408` · verificado 20/11 |
+| [BUG-007](#bug-007) | Ficha: "Compartir" entrega un `.json` guardable | `a9f0932` · verificado 21/11 |
+| [BUG-032](#bug-032) | Escena: Aleatorio sustituía la respuesta anterior | `ee78d54` · verificado 21/11 |
+| [BUG-033](#bug-033) | Escena: el mensaje del usuario disparaba a todos | `ee78d54` · verificado 21/11 |
+| [BUG-034](#bug-034) | Escena: enviar vacío con hablante elegido | `ee78d54` · verificado 21/11 |
+| [BUG-035](#bug-035) | Escena: persona opcional y barra coherente | `ee78d54` · verificado 21/11 |
+| [BUG-036](#bug-036) | Escena: ficha completa / acotación `[...]` | descartado 21/11 (falso positivo; era Layla) |
+| [BUG-038](#bug-038) | Copia: duplicaba y solo incluía personajes | `c232ed9` · verificado 21/11 (base) → BUG-042 |
+| [BUG-039](#bug-039) | Ficha: compartir texto sin archivo | `a9f0932` · verificado 21/11 |
 
 ---
 
@@ -438,3 +446,68 @@
 Re-prueba 2026-11-20: guardaba pero no se podía cargar. Corregido con una barra de presets (cargar, «Nuevo», lápiz para borrar con confirmación) en Rendimiento y en Muestreo; se quita la ficha «Custom». Pendiente de re-prueba: guardar un preset de rendimiento, cambiar valores, tocar el preset y ver que vuelven; borrar solo con el lápiz.
 
 ---
+
+### BUG-007
+
+**✅ Ficha: "Compartir" entrega un `.json` guardable**
+
+- **✅ Verificado en el teléfono (2026-11-21):** «Compartir» genera `Nombre.json`, se puede guardar/importar y funciona con nombres con caracteres raros. Commit `a9f0932`.
+- **Qué se hizo:** `CharacterShare.shareJson` escribe `cache/shared/Nombre.json` y lo comparte con `FileProvider` + `ACTION_SEND` (`EXTRA_STREAM`, `application/json`). Mantiene `EXTRA_TEXT` para que el menú de Android siga ofreciendo «Copiar texto».
+- **Aclaración:** «Copiar texto» no es un botón de Box: es una acción del selector de compartir porque el JSON viaja también como texto. No crea archivos ni afecta al `.json`.
+- **Archivos:** `ui/roleplay/CharacterShare.kt`, `data/characters/ShareFileName.kt`, `ui/roleplay/RoleplayScreens.kt`, `res/xml/file_paths.xml`.
+
+### BUG-032
+
+**✅ Escena: Aleatorio añade una burbuja nueva (no sustituye la anterior)**
+
+- **✅ Verificado en el teléfono (2026-11-21):** pulsar 🎲 Aleatorio varias veces acumula respuestas y al reabrir el chat se mantienen. Commit `ee78d54`.
+- **Causa/fix:** `generateResponse` reutilizaba la última burbuja del asistente cuando no había mensaje del usuario; ahora cada turno abre su propia burbuja (`agentBubbleStarted`).
+- **Archivos:** `ui/llmchat/LlmChatViewModel.kt`, `ui/llmchat/LlmChatScreen.kt`.
+
+### BUG-033
+
+**✅ Escena: enviar texto no genera; se guarda como contexto**
+
+- **✅ Verificado en el teléfono (2026-11-21):** escribir no dispara respuesta; Aleatorio usa lo escrito; el interruptor por escena recupera el comportamiento antiguo. Commit `ee78d54`.
+- **Fix:** `ScenePromptBuilder.engineInput` mete el contexto pendiente (`trailingUserTexts`) en el siguiente turno; `replyToUser` queda apagado por defecto en escenas.
+- **Archivos:** `ScenePromptBuilder.kt`, `LlmChatViewModel.kt`, `LlmChatScreen.kt`, `ScenarioStore.kt`, `ChatRepository.kt`.
+
+### BUG-034
+
+**✅ Escena: enviar con el campo vacío hace hablar al hablante elegido**
+
+- **✅ Verificado en el teléfono (2026-11-21):** con KIP/Narrador elegido y campo vacío responde ese hablante; con «Yo» el botón sigue deshabilitado. Commit `ee78d54`.
+- **Fix:** `allowEmptySend` en `MessageInputText`/`ChatPanel`/`ChatView` y `SendMessageTrigger` con el `Speaker` seleccionado.
+- **Archivos:** `ui/common/chat/MessageInputText.kt`, `ChatPanel.kt`, `ChatView.kt`, `ui/llmchat/LlmChatScreen.kt`.
+
+### BUG-035
+
+**✅ Escena: persona opcional y barra coherente con «Incluir narrador»**
+
+- **✅ Verificado en el teléfono (2026-11-21):** al apagar «Usar mi persona» desaparece «Yo», el prompt no la menciona y la barra respeta el narrador. Commit `ee78d54`.
+- **Fix:** `Scenario.usePersona` y `SceneSpeakerBar.showMe`; las escenas antiguas conservan su prompt.
+- **Archivos:** `ScenarioStore.kt`, `ScenarioScreens.kt`, `ScenariosViewModel.kt`, `SceneSpeakerBar.kt`, `ScenePromptBuilder.kt`.
+
+### BUG-036
+
+**✅ Descartado: la captura de `[...]` era de Layla, no de Box**
+
+- **Descartado (2026-11-21):** no era un bug del fork. El prompt de escena ya usaba solo nombre, descripción y personalidad; el único cambio de este supuesto bug era el test `sceneUsesOnlyNameDescriptionPersonality`, que se retiró.
+- **Decisión:** `[...]` se reserva para narración/acciones; el encabezado `Narrador:` se mantiene para que el filtro sepa quién habla. Pendiente de implementar en el prompt de escena (ver `BUGS.md`).
+
+### BUG-038
+
+**✅ Copia de seguridad v2: fusiona, incluye secciones y permite elegir qué restaurar (sin chats)**
+
+- **✅ Verificado en el teléfono (2026-11-21):** exportar, selector con conteos, restaurar sin duplicar, borrar/restaurar elementos y `.zip` v1 funcionan. Commit `c232ed9`.
+- **Alcance:** personajes (tarjeta + avatar + modelo/fechas), recuerdos, personas, presets y escenas; `manifest.json` v2. Los chats quedan para una fase 2 (base cifrada).
+- **Pendiente:** BUG-042 (duplicar si el personaje cambió en vez de sobrescribir).
+- **Archivos:** `BackupFormat.kt`, `BackupRepository.kt`, `RestoreBackupDialog.kt`, `RoleplayViewModel.kt`, `RawMemoryStore.kt`.
+
+### BUG-039
+
+**✅ Ficha: "Compartir" entrega un `.json` real (reabre BUG-007)**
+
+- **✅ Verificado en el teléfono (2026-11-21):** mismo fix que BUG-007; commit `a9f0932`.
+- **Fix:** archivo `Nombre.json` en caché + `FileProvider` (`EXTRA_STREAM`, `application/json`); el texto se conserva como segunda opción. No incluye `.png`.
+- **Archivos:** `ui/roleplay/CharacterShare.kt`, `data/characters/ShareFileName.kt`, `ui/roleplay/RoleplayScreens.kt`.

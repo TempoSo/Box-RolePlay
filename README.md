@@ -34,7 +34,7 @@ Los modelos corren en el dispositivo (LiteRT y llama.cpp con GGUF), así que pue
 - **Ficha de personaje** (resumen): estadísticas de uso, recuerdos, editar/compartir/borrar, elegir saludo y "continuar chat" con la última conversación.
 - **Grupos y etiquetas** para filtrar la biblioteca (un personaje puede estar en varios grupos).
 - **Tu persona activa**: tu propio perfil con nombre y descripción, que la IA usa para saber quién eres.
-- **Copia de seguridad** de todos los personajes en un `.zip` (con avatares) e importación.
+- **Copia de seguridad** en un `.zip` con personajes, recuerdos, personas, presets y escenas (con avatares) e importación selectiva que fusiona sin duplicar.
 
 ### 🎭 Escenas multipersonaje
 - Crea **escenarios** con nombre, prompt, etiquetas y 2+ personajes.

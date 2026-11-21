@@ -1,6 +1,6 @@
 # 🐞 Inventario de bugs — Box RolePlay
 
-> **Triaje 2026-11-20:** 29 cerrados · 12 abiertos. Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
+> **Triaje 2026-11-21:** 37 cerrados · 5 abiertos (017, 029, 037, 041, 042). Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
 >
 > **Documento vivo.** Un bug = una entrada. Al cerrar uno: **no se marca ✅ dentro del texto**; se mueve el bloque entero a [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md), se deja aquí solo una línea de referencia y se añade una entrada en [`CAMBIOS.md`](CAMBIOS.md) con fecha, archivos tocados y motivo.
 > Origen: pruebas del Bloque 2 (2026-11-16, POCO duchamp, HyperOS 3.0.9.0, Android 15 — fingerprint del crash) y de los Bloques 4 y 5 (2026-11-17, Xiaomi 2311DRK48G / POCO duchamp).
@@ -15,10 +15,12 @@
 |---|---|---|---|
 | **0 · Verificación gratis** | 037 | 0 parche nuevo | 011, 015, 016, 021, 025, 026 y 030 cerrados (015/021/025/026/030 el 19/11; 011/016 el 20/11); queda un caso concreto de 037 |
 | **1 · Rápidos** | ✅ completo | S | 008, 009, 010, 014, 019 y 040 verificados y cerrados el 20/11; 041 (voces) funciona y pasa a la tanda final para pulirla |
-| **2 · Medianos con tests** | 007, 032–036, 038, 039, 041 (pulido) | M–L | FileProvider, Tanda final de escenas, copia/Room, pulido de la biblioteca de voces |
+| **2 · Medianos con tests** | 041 (pulido), 042 (copia inteligente) | M–L | Pulir la biblioteca de voces y afinar la fusión de la copia por contenido |
 | **3 · Duros / nativos** | 017, 029 | L | Visión en CPU y stop strings en `LLMInference.cpp` |
 
-> **Agrupaciones:** 007 y 039 comparten `RoleplayScreens.kt` → un solo commit. 032–036 comparten el flujo de escenas → una sola tanda. En 038 y 041 la parte «L» aparece solo si se decide incluir chats cifrados o grabación de audio.
+> **Agrupaciones:** 032–035 (escenas) y 007/039 (compartir) quedaron verificados el 21/11. En 041 la parte «L» aparece solo si se decide incluir grabación de audio. BUG-042 nace de la re-prueba de 038: la copia ya funciona, pero debe distinguir «idéntico» de «parecido».
+
+> **Decisión de formato (21/11):** `[...]` se reserva para **narración y acciones**. El encabezado `Narrador:` se mantiene porque el filtro de escenas identifica hablantes por `Nombre:`; el narrador escribe `Narrador: [texto]` y un personaje puede usar `[acción]` dentro de su bloque. No se aceptan bloques `[...]` sueltos sin encabezado (se perdería el filtrado). Pendiente de implementar en el prompt de escena.
 
 ---
 
@@ -65,16 +67,7 @@
 
 ## P2 — UX
 
-### BUG-007 · 🟡 Ficha: "Compartir" genera un texto no guardable *(2026-11-19: el humano confirma que sigue entregando texto sin tipo de archivo → ver BUG-039)*
-**Esfuerzo:** M · **Escalón:** 2 · Ver también BUG-039: comparten `RoleplayScreens.kt`, un solo commit
-
-- **Síntoma original:** diálogo de texto sin opción de guardar/archivo.
-- **Estado verificado (2026-11-19):** el código ya no abre un diálogo propio: `ui/roleplay/RoleplayScreens.kt:185-191` y `:225-231` hacen `ACTION_SEND` tipo `application/json` con el JSON en `EXTRA_TEXT` y el nombre en `EXTRA_SUBJECT`.
-- **Revisión 2026-11-19 (Tanda 3):** confirmado de nuevo en código, **sin cambios**.
-- **✅ Verificado en el teléfono (2026-11-19, 2.2):** el menú "Más acciones → Compartir" de una ficha abre el chooser con el JSON `chara_card_v2`, un botón "Copiar texto" y el destino "Guardar en..." (además de Quick Share, Xiaomi Share, Bluetooth, Drive, Gmail, WhatsApp). El texto se puede guardar/copiar: **no hace falta** exportar a caché + `FileProvider`.
-- **Fix:** compartir de verdad: `ACTION_SEND` con texto plano o exportar `.json` a caché + `FileProvider` (como hace la copia de seguridad .zip). El primer mecanismo ya está implantado y verificado.
-- **Archivos:** `ui/roleplay/CharacterDetailSheet.kt`, `data/characters/CharacterRepository.kt`.
-Ver BUG-039. Parche aplicado (2026-11-20, pendiente de re-prueba): la ficha se comparte como archivo `Nombre.json` (caché + FileProvider); el texto sigue disponible. Re-prueba: menú de una ficha → Compartir → «Guardar en…» (o Quick Share / Drive) y comprobar que se crea `Nombre.json` e importarlo de nuevo en la app; probar con un nombre con caracteres raros (`a/b:c`). No incluye .png.
+> **BUG-007** — cerrado y verificado el 2026-11-21 (se comparte `Nombre.json` con `FileProvider`; el texto sigue disponible). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-007).
 
 > **BUG-008** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-008).
 
@@ -129,43 +122,15 @@ Ver BUG-039. Parche aplicado (2026-11-20, pendiente de re-prueba): la ficha se c
 
 **Cómo lo hace SillyTavern (verificado en su documentación):** estrategias de orden de respuesta *Manual* (solo responde el miembro elegido; los mensajes del usuario **nunca** disparan respuesta), *Natural* (menciones → "talkativeness" → un miembro al azar), *List* y *Pooled* (azar entre los que no han hablado desde el último mensaje del usuario). Con entrada vacía en modo manual responde un miembro no silenciado al azar; el botón junto a cada miembro fuerza que hable ese personaje aunque esté silenciado. El historial es **compartido** y por defecto se incluye solo la ficha del que habla (*Swap*); *Join* mezcla todas las fichas y la propia documentación avisa de que puede confundir a los personajes. Campos que une *Join*: descripción, escenario, personalidad, ejemplos. → Para Box RolePlay encaja el modo **Manual + Swap**, con nombre/descripción/personalidad.
 
-### BUG-032 · 🟡 Escena: "🎲 Aleatorio" sustituye la respuesta anterior en vez de añadir un mensaje nuevo
-**Esfuerzo:** S · **Escalón:** 2 · Tanda final: agrupar con BUG-033 a BUG-036
+> **BUG-032** — cerrado y verificado el 2026-11-21 (cada turno de Aleatorio añade una burbuja nueva). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-032).
 
-- **Síntoma (capturas 16:57–16:58, AI Chat):** el mensaje del usuario `Narrator: el mundo se encontraba en su final` se queda como último; cada pulsación de Aleatorio deja **una sola respuesta** (Akiko, luego Psicólogo…) y la anterior desaparece del hilo visible, en lugar de acumular `Akiko → KIP → Psicólogo…`. Con el campo vacío no hay mensaje de usuario nuevo y la respuesta nueva ocupa el sitio de la anterior. El contador "1/1" sugiere que el hilo la trata como respuesta alternativa (swipe) del mismo mensaje del usuario.
-- **Pistas de código (sin verificar el mecanismo exacto):** `ui/llmchat/LlmChatScreen.kt` (`onRandom`, `SendMessageTrigger(messages = emptyList(), promptSuffix…)`), `ui/llmchat/LlmChatViewModel.kt` (`generateResponse`: `persistAssistantMessage(... asSwipe = regenerate)`, `lastUserTextIndex`, la ventana de contexto/`needsReset`) y `data/local/ChatRepository.kt`. Comprobar primero en el log si el turno se persiste como mensaje nuevo o como swipe, y si `ContextWindowPlanner` descarta el turno anterior (el contexto bajó de 47 % a 40 % tras pulsar Aleatorio).
-- **Fix:** cada turno de Aleatorio/hablante forzado = mensaje AGENT **nuevo** en la lista y en la base de datos, con el nombre del hablante como encabezado; solo "Regenerar" (flechas) debe crear swipe.
-Parche aplicado (2026-11-20, pendiente de re-prueba): causa confirmada — la respuesta nueva reutilizaba la burbuja del asistente anterior cuando no había mensaje tuyo de por medio. Ahora cada turno abre su burbuja. Re-prueba: en una escena, pulsar 🎲 Aleatorio varias veces: debe acumular Akiko → KIP → … sin borrar las anteriores, y al reabrir el chat debe verse igual.
+> **BUG-033** — cerrado y verificado el 2026-11-21 (enviar en escena guarda contexto y no genera; interruptor por escena). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-033).
 
-### BUG-033 · 🟡 Escena: el mensaje del usuario dispara respuesta del modelo con TODOS los personajes en un solo mensaje
-**Esfuerzo:** M · **Escalón:** 2 · Tanda final; reaparece BUG-004 (cerrado)
+> **BUG-034** — cerrado y verificado el 2026-11-21 (enviar vacío con hablante elegido). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-034).
 
-- **Síntoma:** al enviar `hola amigos…` el modelo responde con KIP + Akiko + Tohru en un mismo mensaje (captura 16:57:03: KIP, Tohru, Psicólogo y Akiko en una sola burbuja). El filtro de BUG-004 solo recorta bloques de hablantes no permitidos; no impide que el usuario dispare una respuesta.
-- **Fix (diseño objetivo, puntos 1-3 de arriba):** en escenas, **enviar un texto no genera**: lo guarda como contexto. La generación se lanza solo con Aleatorio o con "enviar vacío" sobre un hablante seleccionado. Ofrecer un interruptor "El modelo responde a mis mensajes" (por defecto desactivado en escenas) por si el usuario quiere el comportamiento antiguo.
-- **Archivos probables:** `ui/llmchat/LlmChatScreen.kt` (`onSendMessage`, `SceneSpeakerBar`), `ui/llmchat/SceneSpeakerBar.kt`, `ui/llmchat/LlmChatViewModel.kt`, `data/characters/ScenePromptBuilder.kt`, y la pantalla de grupo de `ui/roleplay/` ("Political Pundits").
-Parche aplicado (2026-11-20, pendiente de re-prueba): en una escena, enviar texto solo lo guarda como contexto (el modelo no responde) y llega al motor en el siguiente turno. Interruptor por escena «El modelo responde a mis mensajes» (apagado por defecto). Re-prueba: escribir un mensaje en una escena → no hay respuesta; pulsar Aleatorio → el personaje responde teniendo en cuenta lo escrito; activar el interruptor en el editor → vuelve el comportamiento antiguo.
+> **BUG-035** — cerrado y verificado el 2026-11-21 (persona opcional y barra que respeta «Incluir narrador»). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-035).
 
-### BUG-034 · 🟡 Escena: "enviar con el campo vacío" y personaje seleccionado debería hacer hablar a ese personaje
-**Esfuerzo:** S · **Escalón:** 2 · Tanda final: enviar con campo vacío
-
-- **Mejora pedida:** el usuario elige un personaje en la barra, deja el texto vacío y pulsa enviar → el modelo escribe **por ese personaje** (hoy el botón de enviar no hace nada con el campo vacío). Así el usuario decide quién sigue, sin azar.
-- **Fix:** en `onSendMessage`, si `rawMessages` está vacío y hay hablante seleccionado (personaje o Narrador), lanzar el mismo `SendMessageTrigger` que Aleatorio pero con `Speaker.Character(seleccionado)` (o `Narrator`). Habilitar el botón de enviar con campo vacío solo en ese caso.
-Parche aplicado (2026-11-20, pendiente de re-prueba): con un hablante elegido (personaje o Narrador) y el campo vacío, enviar hace hablar a ese hablante. Re-prueba: elegir KIP, dejar el campo vacío, pulsar enviar → responde solo KIP; con «Yo» elegido el botón sigue deshabilitado con el campo vacío.
-
-### BUG-035 · 🟡 Escena: la persona del usuario se importa como participante y estorba al interpretar a otro personaje
-**Esfuerzo:** M · **Escalón:** 2 · Tanda final: persona opcional en la escena
-
-- **Síntoma (captura 17:05, "Nuevo roleplay"):** la lista de participantes incluye `User` (persona) además de las fichas, y aparece como hablante en la barra; la papelera existe en el editor, pero no está claro que al quitarla desaparezca de la barra ni que el prompt deje de llamarla "User".
-- **Fix:** hacer que la persona sea **opcional** en la escena (quitarla = el usuario interpreta a otro personaje o solo al Narrador); verificar que, al quitarla, `ScenePromptBuilder` no la nombra y `SceneSpeakerBar` no la ofrece; mantener "Yo" como atajo solo si la persona está en la escena.
-Parche aplicado (2026-11-20, pendiente de re-prueba): interruptor por escena «Usar mi persona»; apagado no se menciona la persona, no aparece «Yo» en la barra y se empieza como Narrador/primer personaje. La barra respeta además «Incluir narrador». Re-prueba: editar la escena, apagar «Usar mi persona», abrir una escena NUEVA (las ya creadas conservan su prompt) y comprobar la barra. Nota: la lista de participantes solo contiene personajes de la biblioteca; si había un personaje llamado «User» se quita con «Cambiar personajes».
-
-### BUG-036 · 🟡 Escena: usar solo nombre, descripción y personalidad de cada ficha
-**Esfuerzo:** M · **Escalón:** 2 · Tanda final: recortar campos de la ficha
-
-- **Mejora pedida:** en roleplay de grupo/escena, cada personaje aporta únicamente `name`, `description` y `personality` (ahorra contexto y mantiene mejor el hilo). El chat 1 a 1 sigue usando la ficha completa.
-- **Pista:** `ScenePromptBuilder.build()` (`data/characters/ScenePromptBuilder.kt`, líneas ~30-60) arma el prompt por personaje con `CharacterPromptBuilder.applyMacros`; revisar qué campos mete hoy (escenario, saludo, ejemplos, system prompt) y recortarlos. Valorar un interruptor "Usar ficha completa" por escena.
-- **Observación relacionada (captura 17:00, "Political Pundits"):** dos personajes distintos (The Conservative / The Libertarian) devolvieron **el mismo texto en inglés**, una acotación de escenario (`[The studio lights are bright…]`) que parece venir del escenario/saludo de la escena y no de su personalidad; recortar los campos extra debería evitarlo. Comprobar también que el idioma de respuesta sigue al usuario (español).
-Comprobado (2026-11-20): el prompt de escena ya usa solo nombre, descripción y personalidad de cada ficha (ScenePromptBuilder.Member); test sceneUsesOnlyNameDescriptionPersonality. La acotación en inglés de la captura no salía de la ficha (venía del prompt de la escena o de la descripción). Pendiente de re-prueba: abrir «Political Pundits», pulsar Aleatorio con cada personaje y comprobar que responden distinto y en español.
+> **BUG-036** — **descartado el 2026-11-21 (falso positivo):** la captura de `[The studio lights…]` era de **Layla**, no de Box, y el prompt de escena ya usaba solo nombre/descripción/personalidad. El único cambio de este supuesto bug era el test `sceneUsesOnlyNameDescriptionPersonality`, que se ha retirado. Decisión: `[...]` se usará para narración/acciones, no para recortar campos de la ficha (ver «Decisión de formato» arriba).
 
 ### BUG-037 · ⚠️ Filtro de escenas: el Narrador en español no se reconoce (`Narrador:` ≠ `Narrator`)
 **Esfuerzo:** S · **Escalón:** 0 · Re-prueba pendiente: falta el caso concreto que falla
@@ -176,20 +141,19 @@ Comprobado (2026-11-20): el prompt de escena ya usa solo nombre, descripción y 
 - **Re-prueba 19/11 (humano):** «un poco dando más problemas» al probarlo en un escalón más fuerte (el 4). No se pudo identificar el caso: sin saber qué escena, qué hablante estaba fijado y qué texto se coló, no hay nada que corregir sin adivinar. **Pendiente:** captura o texto exacto y si la escena tenía el narrador activo.
 - **Caso aportado el 20/11 (captura 07:46, GGUF `gemma-4-E…PURE`, escena con Narrador en la barra y KIP seleccionado):** el usuario escribe `KIP: Muchachos tenemos un problema` y la respuesta trae tres bloques en la misma burbuja: `Narrator:`, `Tohru:` y `Psicólogo Digital:`. **Aclaración:** ese turno es del **usuario**, y `ScenePromptBuilder.userTurnRestriction` permite justo a *todos* los demás hablantes de la escena (menos el que firmó) + narrador si está activo; es el comportamiento que pide cambiar **BUG-033** («un mensaje del usuario no debería disparar a todos»), no un fallo de los alias del narrador. Es decir: la captura no reproduce el síntoma de este bug. El humano lo deja para más adelante (necesita tiempo); no se toca nada aquí hasta tener un caso con el hablante fijado por la app (Aleatorio o envío vacío) y el narrador activo/desactivado.
 
-### BUG-038 · 🟡 Copia de seguridad: duplica en vez de fusionar, y no incluye todo ni permite elegir qué restaurar
-**Esfuerzo:** L · **Escalón:** 2 · Sucede a BUG-023 (cerrado); parte L si incluye chats Room
+> **BUG-038** — cerrado y verificado el 2026-11-21 en su alcance base (copia v2 con selector y fusión por id). La afinación de identidad pasa a **BUG-042**. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-038).
 
-- **Estado (5.6b, probado por el humano 2026-11-19):** "Restaurar copia" funciona, pero al restaurar el `.zip` **duplica** los personajes existentes en lugar de sobrescribirlos, y el `.zip` contiene **solo personajes** (BUG-023).
-- **Comportamiento deseado:** (1) **fusionar, no reemplazar**: lo que está en la copia **sobrescribe** el elemento existente con el mismo id/nombre, y lo que ya existe y no está en la copia (p. ej. 3 personajes creados después de la copia) **se conserva intacto**; nunca se borra nada; (2) la copia debe incluir **personajes, historial de chats, recuerdos, perfiles de persona, presets (motor, muestreo) y escenas**; (3) un **selector** al restaurar: "¿Qué quieres recuperar?" con casillas (personajes / chats / recuerdos / personas / presets / escenas / todo).
-- **Pista:** `data/characters/CharacterRepository.kt` (`exportBackupZip`, `importFromUri/Bytes`), `ui/home/BoxSettingsScreen.kt`, `ui/roleplay/RoleplayViewModel.kt` (`importFromSettings`). Cuidado con el historial: está en Room cifrado (SQLCipher); definir formato de exportación (JSON dentro del `.zip`) y evitar duplicar conversaciones (usar el id de conversación como clave).
-Parche aplicado, fase 1 (2026-11-20, pendiente de re-prueba): la copia lleva personajes, recuerdos, personas, presets y escenas (sin chats) y restaurar FUSIONA por id con un selector de secciones. Re-prueba: (1) Ajustes > Copia de seguridad y compartir/guardar el .zip; (2) sin borrar nada, Restaurar copia con ese .zip: debe salir el selector con conteos y, al restaurar, la lista NO debe duplicar personajes; (3) borrar un personaje y un preset, restaurar: solo vuelven esos; (4) editar un personaje, restaurar la copia vieja: ese personaje vuelve a la versión de la copia y los demás quedan igual; (5) restaurar un .zip antiguo (v1): empareja por nombre, sin duplicar. Fase 2 pendiente: historial de chats (base cifrada).
+### BUG-042 · 🟡 Copia de seguridad: duplicar si el personaje cambió, no sobrescribir
+**Esfuerzo:** M · **Escalón:** 2 · Sucede a BUG-038 (cerrado)
 
-### BUG-039 · 🟡 Ficha: "Compartir" entrega un texto JSON sin tipo de archivo (reabre BUG-007)
-**Esfuerzo:** M · **Escalón:** 2 · Reabre BUG-007: exportar a caché + FileProvider
+- **Regla pedida (21/11):** al restaurar, un personaje **idéntico** no se duplica; si el mismo id/nombre trae **cualquier cambio de contenido** (p. ej. añadir `{{char}}` al inicio de la descripción), se conserva el existente y se crea una **copia nueva con otro id**. Así no se pierde la edición.
+- **Caso real:** Akiko Fujimoto con la descripción original y la misma descripción empezando por `{{char}}` deben quedar como dos personajes, no sobrescribirse.
+- **Propuesta:** comparar la tarjeta canónica (nombre, descripción, personalidad, escenario, saludo, ejemplos, system prompt y etiquetas; **sin** id, fechas, avatar ni `modelName`) normalizando espacios y saltos de línea. Igual → no insertar (o solo refrescar metadatos); distinto → insertar con `UUID` nuevo. En `.zip` v1, mismo criterio por nombre.
+- **UI:** resumen «X actualizados, Y nuevos»; opción avanzada «sobrescribir aunque haya cambios» **desactivada por defecto**.
+- **Archivos:** `data/characters/BackupFormat.kt` (comparación/fusión), `data/characters/BackupRepository.kt` (`restoreCharacters`, `restoreLegacyCharacters`), `test/.../BackupFormatTest.kt`.
+- **Pendiente:** implementar y probar con el caso Akiko (con y sin `{{char}}`).
 
-- **Síntoma (humano, 2.2/4.1):** el JSON `chara_card_v2` se comparte como texto plano (`EXTRA_TEXT`), así que no se puede guardar ni enviar como archivo: no hay nombre ni extensión. Con "Guardar en…" no se crea un `.json` válido.
-- **Fix:** exportar a caché un archivo `NombreDelPersonaje.json` (y, si la ficha tiene imagen, opcionalmente `.png` con la tarjeta incrustada, el formato del ecosistema SillyTavern) y compartirlo con `FileProvider` + `ACTION_SEND` (`EXTRA_STREAM`, `application/json` / `image/png`). Mantener "Copiar texto" como segunda opción. Archivos: `ui/roleplay/RoleplayScreens.kt` (líneas ~185-231), `data/characters/CharacterRepository.kt`.
-Parche aplicado (2026-11-20, pendiente de re-prueba): la ficha se comparte como archivo `Nombre.json` (caché + FileProvider); el texto sigue disponible. Re-prueba: menú de una ficha → Compartir → «Guardar en…» (o Quick Share / Drive) y comprobar que se crea `Nombre.json` e importarlo de nuevo en la app; probar con un nombre con caracteres raros (`a/b:c`). No incluye .png.
+> **BUG-039** — cerrado y verificado el 2026-11-21 (mismo fix que BUG-007: `.json` real con `FileProvider`). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-039).
 
 > **BUG-040** — cerrado y verificado el 2026-11-20. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-040).
 
