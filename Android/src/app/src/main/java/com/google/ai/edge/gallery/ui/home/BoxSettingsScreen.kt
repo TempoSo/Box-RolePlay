@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.data.characters.LogExporter
 import com.google.ai.edge.gallery.ui.roleplay.EnginePerfDialog
+import com.google.ai.edge.gallery.ui.roleplay.RestoreBackupDialog
 import com.google.ai.edge.gallery.ui.roleplay.RoleplayViewModel
 import com.google.ai.edge.gallery.ui.roleplay.SamplerDialog
 import com.google.ai.edge.gallery.ui.roleplay.TtsSettingsDialog
@@ -47,12 +48,28 @@ fun BoxSettingsScreen(
   var status by remember { mutableStateOf<String?>(null) }
   // BUG-023: el backend de restauración ya existe; solo faltaba la UI. Estado propio de Ajustes.
   var restoreStatus by remember { mutableStateOf<String?>(null) }
+  var restorePlan by remember { mutableStateOf<RoleplayViewModel.RestorePlan.Choose?>(null) }
   val restoreLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
       if (uri != null) {
-        scope.launch { restoreStatus = viewModel.importFromSettings(uri) }
+        scope.launch {
+          when (val plan = viewModel.prepareRestore(uri)) {
+            is RoleplayViewModel.RestorePlan.Done -> restoreStatus = plan.message
+            is RoleplayViewModel.RestorePlan.Choose -> restorePlan = plan
+          }
+        }
       }
     }
+  restorePlan?.let { plan ->
+    RestoreBackupDialog(
+      contents = plan.contents,
+      onDismiss = { restorePlan = null },
+      onConfirm = { sections ->
+        restorePlan = null
+        scope.launch { restoreStatus = viewModel.restoreBackup(plan.bytes, sections) }
+      },
+    )
+  }
 
   if (showTts) TtsSettingsDialog(onDismiss = { showTts = false })
   if (showSampler) SamplerDialog(onDismiss = { showSampler = false })
@@ -90,15 +107,15 @@ fun BoxSettingsScreen(
       BoxSectionLabel("Soporte y datos")
       BoxActionCard(
         icon = Icons.Rounded.Backup,
-        title = "Copia de seguridad de personajes",
-        subtitle = status ?: "Exporta todos tus personajes en un .zip",
+        title = "Copia de seguridad",
+        subtitle = status ?: "Personajes, recuerdos, personas, presets y escenas en un .zip (sin chats)",
         onClick = {
           scope.launch {
             runCatching {
               val zip = viewModel.backupZip()
               val dir = java.io.File(context.cacheDir, "backup").apply { mkdirs() }
               dir.listFiles()?.forEach { it.delete() }
-              val f = java.io.File(dir, "box-roleplay-personajes.zip").apply { writeBytes(zip) }
+              val f = java.io.File(dir, "box-roleplay-copia.zip").apply { writeBytes(zip) }
               val uri =
                 androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
               val send =
@@ -116,7 +133,7 @@ fun BoxSettingsScreen(
       BoxActionCard(
         icon = Icons.Rounded.Backup,
         title = "Restaurar copia",
-        subtitle = restoreStatus ?: "Importa personajes de un .zip o una tarjeta .json/.png",
+        subtitle = restoreStatus ?: "Elige qué recuperar de un .zip (se fusiona, no duplica) o importa una tarjeta .json/.png",
         onClick = {
           restoreLauncher.launch(arrayOf("application/zip", "application/json", "image/png"))
         },

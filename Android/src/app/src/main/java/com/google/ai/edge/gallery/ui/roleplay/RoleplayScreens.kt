@@ -281,7 +281,7 @@ fun RoleplayScreen(
                         val zip = viewModel.backupZip()
                         val dir = java.io.File(context.cacheDir, "backup").apply { mkdirs() }
                         dir.listFiles()?.forEach { it.delete() }
-                        val f = java.io.File(dir, "box-roleplay-personajes.zip").apply { writeBytes(zip) }
+                        val f = java.io.File(dir, "box-roleplay-copia.zip").apply { writeBytes(zip) }
                         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "application/zip"

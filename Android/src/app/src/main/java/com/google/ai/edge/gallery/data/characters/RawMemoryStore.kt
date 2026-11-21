@@ -14,6 +14,16 @@ class RawMemoryStore(context: Context) {
     fun forCharacter(characterId: String): List<RawMemory> =
         load().filter { it.characterId == characterId }.sortedByDescending { it.createdAt }
 
+    /** Todas las notas (para la copia de seguridad). */
+    @Synchronized
+    fun all(): List<RawMemory> = load()
+
+    /** BUG-038: fusiona las de una copia (misma id = se sobrescribe; el resto se conserva). */
+    @Synchronized
+    fun merge(incoming: List<RawMemory>) {
+        file.writeText(RawMemoryJson.encode(BackupFormat.mergeById(load(), incoming) { it.id }))
+    }
+
     @Synchronized
     fun add(m: RawMemory) { file.writeText(RawMemoryJson.encode(load() + m)) }
 

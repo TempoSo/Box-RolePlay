@@ -46,6 +46,14 @@ class CharacterRepository @Inject constructor(
         importFromBytes(bytes)
     }
 
+    /** Lee el archivo elegido (tarjeta o copia de seguridad) con el tope de tamaño de las copias. */
+    suspend fun readBackupBytes(uri: Uri): ByteArray = withContext(Dispatchers.IO) {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readNBytes(BACKUP_MAX_BYTES + 1) }
+            ?: throw CharacterCardException("No se pudo abrir el archivo")
+        if (bytes.size > BACKUP_MAX_BYTES) throw CharacterCardException("El archivo es demasiado grande")
+        bytes
+    }
+
     /**
      * Importa un archivo: una tarjeta (.json/.png) o una copia de seguridad (.zip) con varias.
      * Devuelve los personajes creados.
@@ -85,28 +93,6 @@ class CharacterRepository @Inject constructor(
         }
         if (created.isEmpty()) throw CharacterCardException("El zip no contiene tarjetas válidas")
         created
-    }
-
-    /** Copia de seguridad: un .zip con cada personaje (.json chara_card_v2) y su avatar. */
-    suspend fun exportBackupZip(): ByteArray = withContext(Dispatchers.IO) {
-        val all = characterDao.getAll().first()
-        val out = java.io.ByteArrayOutputStream()
-        java.util.zip.ZipOutputStream(out).use { zip ->
-            all.forEachIndexed { i, c ->
-                val safe = c.name.replace(Regex("[^A-Za-z0-9._-]+"), "_").take(40).ifEmpty { "personaje" }
-                val key = "%03d-%s".format(i + 1, safe)
-                zip.putNextEntry(java.util.zip.ZipEntry("$key.json"))
-                zip.write(exportJson(c).toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
-                val av = if (c.avatarPath.isNotEmpty()) File(c.avatarPath) else null
-                if (av != null && av.exists()) {
-                    zip.putNextEntry(java.util.zip.ZipEntry("$key.avatar.png"))
-                    zip.write(av.readBytes())
-                    zip.closeEntry()
-                }
-            }
-        }
-        out.toByteArray()
     }
 
     suspend fun importFromBytes(bytes: ByteArray): RoleplayCharacter = withContext(Dispatchers.IO) {

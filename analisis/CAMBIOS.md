@@ -41,6 +41,26 @@
 
 ## 📝 Registro
 
+### BUG-038: copia de seguridad completa que fusiona, con selector (fase 1, sin chats)
+
+**Qué y por qué:** BUG-038 (Escalón 2), fase 1 acordada: **sin chats** (la base cifrada queda para una fase 2). Antes el `.zip` solo llevaba personajes y, al restaurar, creaba copias nuevas (duplicados). Ahora:
+- **Contenido:** personajes (tarjeta chara_card_v2 + avatar + modelo propio y fechas, guardados con su **id**), recuerdos (de la base y los «sin procesar»), personas, presets (de motor y de muestreo con nombre) y escenas. Lleva un `manifest.json` (versión 2).
+- **Restaurar fusiona:** lo de la copia sobrescribe el elemento con el mismo id (o el mismo nombre en los presets de muestreo); lo que ya tenías y no está en la copia se conserva; no se borra nada ni se duplica. La persona activa sigue siendo la que ya lo era. Los recuerdos de personajes que no existen se descartan.
+- **Selector:** tras elegir el `.zip` sale «¿Qué quieres restaurar?» con casillas por sección y su número de elementos.
+- **Compatibilidad:** los `.zip` antiguos (v1, sin ids) se siguen leyendo y cada personaje se empareja por **nombre** con el existente para no duplicarlo. Una tarjeta suelta `.json/.png` se importa como antes.
+- Lógica pura en `BackupFormat` (fusión, detección de secciones, JSON); test `BackupFormatTest` 10/10 OK (kotlinc embebido). `BackupRepository`, el diálogo y el cableado no se pudieron compilar aquí: pendiente de GitHub Actions y re-prueba. Se elimina `CharacterRepository.exportBackupZip` (sustituido) y `RoleplayViewModel.importFromSettings` (sustituido por `prepareRestore`/`restoreBackup`).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/BackupFormat.kt` — nuevo, lógica pura.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/BackupRepository.kt` — nuevo, exportar/inspeccionar/restaurar.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/RawMemoryStore.kt` — `all()` y `merge()`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/CharacterRepository.kt` — `readBackupBytes`; se quita `exportBackupZip`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RoleplayViewModel.kt` — `prepareRestore`, `restoreBackup`, `backupZip`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/RestoreBackupDialog.kt` — nuevo.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/BoxSettingsScreen.kt`, `ui/roleplay/RoleplaySettingsDialog.kt`, `ui/roleplay/RoleplayScreens.kt` — textos y flujo.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/BackupFormatTest.kt` — nuevo.
+- `analisis/BUGS.md` — nota en BUG-038 (y 023).
+
 ### BUG-032 a 036: escenas — burbuja por turno, mensajes como contexto, enviar vacío, persona opcional
 
 **Qué y por qué:** BUG-032 a BUG-036 (Escalón 2, tanda de escenas; un solo commit porque comparten el flujo de `LlmChatScreen`/`LlmChatViewModel`).

@@ -3,6 +3,9 @@ package com.google.ai.edge.gallery.ui.roleplay
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.ai.edge.gallery.data.characters.BackupContents
+import com.google.ai.edge.gallery.data.characters.BackupRepository
+import com.google.ai.edge.gallery.data.characters.BackupSection
 import com.google.ai.edge.gallery.data.characters.CharacterCardException
 import com.google.ai.edge.gallery.data.characters.CharacterRepository
 import com.google.ai.edge.gallery.data.characters.PersonaRepository
@@ -26,6 +29,7 @@ class RoleplayViewModel @Inject constructor(
     private val personaRepository: PersonaRepository,
     private val memoryRepository: com.google.ai.edge.gallery.data.characters.MemoryRepository,
     scenarioStore: ScenarioStore,
+    private val backup: BackupRepository,
 ) : ViewModel() {
 
     /** BUG-006: etiquetas de escenas para los chips del editor de personajes. */
@@ -77,18 +81,35 @@ class RoleplayViewModel @Inject constructor(
         }
     }
 
+    /** Resultado de abrir un archivo para restaurar: ya hecho (tarjeta suelta) o hay que elegir qué recuperar. */
+    sealed class RestorePlan {
+        class Done(val message: String) : RestorePlan()
+        class Choose(val bytes: ByteArray, val contents: BackupContents) : RestorePlan()
+    }
+
     /**
-     * BUG-023: restauración desde Ajustes. Devuelve el resultado en vez de escribir [_message],
-     * que es el canal que consume la biblioteca de personajes. Duplica por defecto (el importador
-     * asigna ids nuevos): es la opción segura, no sobrescribe personajes existentes.
+     * BUG-038: una tarjeta .json/.png se importa tal cual; un .zip se inspecciona y devuelve sus
+     * secciones para que el usuario elija. Restaurar siempre FUSIONA: no duplica ni borra nada.
      */
-    suspend fun importFromSettings(uri: Uri): String =
+    suspend fun prepareRestore(uri: Uri): RestorePlan =
         try {
-            val list = repository.importAnyFromUri(uri)
-            if (list.size == 1) "Personaje restaurado: ${list[0].name}"
-            else "Se restauraron ${list.size} personajes"
+            val bytes = repository.readBackupBytes(uri)
+            if (!backup.isZip(bytes)) {
+                RestorePlan.Done("Personaje importado: ${repository.importFromBytes(bytes).name}")
+            } else {
+                val contents = backup.inspect(bytes)
+                if (contents.sections.isEmpty()) RestorePlan.Done("El .zip no contiene nada que restaurar.")
+                else RestorePlan.Choose(bytes, contents)
+            }
         } catch (e: CharacterCardException) {
-            e.message ?: "No se pudo importar la tarjeta"
+            RestorePlan.Done(e.message ?: "No se pudo importar la tarjeta")
+        } catch (e: Exception) {
+            RestorePlan.Done("No se pudo restaurar: ${e.message ?: "error desconocido"}")
+        }
+
+    suspend fun restoreBackup(bytes: ByteArray, selected: Set<BackupSection>): String =
+        try {
+            backup.restore(bytes, selected)
         } catch (e: Exception) {
             "No se pudo restaurar: ${e.message ?: "error desconocido"}"
         }
@@ -147,7 +168,7 @@ class RoleplayViewModel @Inject constructor(
     suspend fun getById(id: String): RoleplayCharacter? = repository.getById(id)
 
     /** Copia de seguridad de todos los personajes (.zip) lista para compartir. */
-    suspend fun backupZip(): ByteArray = repository.exportBackupZip()
+    suspend fun backupZip(): ByteArray = backup.exportZip()
 
     fun exportJson(character: RoleplayCharacter): String = repository.exportJson(character)
 

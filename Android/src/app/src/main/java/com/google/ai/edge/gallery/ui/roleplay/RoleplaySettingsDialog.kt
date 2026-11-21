@@ -116,7 +116,7 @@ fun RoleplaySettingsDialog(
                 TextButton(onClick = onOpenSampler) { Text("Ajustes de muestreo (presets)") }
                 TextButton(onClick = onOpenEnginePerf) { Text("Rendimiento del motor (GGUF)") }
                 TextButton(onClick = onOpenTts) { Text("Voz (Pocket TTS)") }
-                TextButton(onClick = onBackup) { Text("Copia de seguridad: exportar personajes (.zip)") }
+                TextButton(onClick = onBackup) { Text("Copia de seguridad: exportar todo (.zip)") }
                 val scope = androidx.compose.runtime.rememberCoroutineScope()
                 TextButton(
                     onClick = {
