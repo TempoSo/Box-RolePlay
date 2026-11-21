@@ -140,7 +140,7 @@
 
 > **BUG-024** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-024).
 
-### BUG-041 · ❌ Voces de Pocket TTS: no se pueden guardar varias voces propias (biblioteca de voces)
+### BUG-041 · 🟡 Voces de Pocket TTS: no se pueden guardar varias voces propias (biblioteca de voces)
 **Esfuerzo:** L · **Escalón:** 2 · Sucede a BUG-027 (descartado); parte L si incluye grabación
 
 - **Síntoma (humano, 2026-11-19, con captura de "Voz (Pocket TTS)"):** subir la muestra `.wav` funciona, pero solo hay **una voz predeterminada** (`default.wav`) y **una por personaje** (`char_<id>.wav`); no se puede guardar cada muestra como una voz con nombre para tener varias y elegirlas.
@@ -148,6 +148,7 @@
 - **Referencia de funciones (la app Layla, solo como guía de funcionalidad; código propio, sin copiar nada de ella):** pantalla "Voces" con (1) origen: subir `.wav` o grabar con el micrófono; (2) reproducir la muestra antes de guardar; (3) texto de prueba editable y botón "Probar voz"; (4) nombre + etiquetas (fijas: hombre, mujer, narrador, personaje, calmado, enérgico, grave, suave, robótico, cálido, y una personalizada); (5) "Guardar voz"; (6) lista de voces con buscador por nombre/etiqueta, botón reproducir y borrar; (7) interruptor "Guardar como archivo de audio". El nombre debe autocompletarse con el nombre del archivo **sin extensión**; la duración mostrada debe ser la real (en la referencia sale "0:00" aunque dure 10 s).
 - **Fix propuesto:** `VoiceStore` (singleton Hilt con `StateFlow<List<Voice>>`, como `ScenarioStore`) que guarda `voices/<uuid>.wav` + un `voices.json` con `id`, `name`, `tags`, `createdAt`; `TtsFiles.importVoice` recibe el id de la voz; el selector de voz (por defecto y por personaje) elige de la lista en vez de importar al vuelo. Migrar `default.wav` y `char_*.wav` existentes como voces con nombre ("Predeterminada", nombre del personaje). Test de lógica pura para el almacén (alta, borrado, búsqueda por etiqueta).
 - **Archivos:** `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt`, `tts/TtsManager.kt`, nueva pantalla de voces y `VoiceStore`.
+Parche aplicado (2026-11-20, pendiente de re-prueba): biblioteca de voces (subir .wav o grabar, nombre, etiquetas, buscador, probar, borrar). Re-prueba en el teléfono: Roleplay > Voz > «Biblioteca de voces»: (1) subir un .wav y ver que el nombre es el del archivo sin extensión y la duración real; (2) grabar 5 s con el micrófono (pide permiso); (3) guardar dos voces y comprobar que ambas salen en la lista y el buscador filtra por etiqueta; (4) «Usar» una como predeterminada y «Probar voz»; (5) en un personaje, «Elegir voz» con otra distinta; (6) tras actualizar, las voces antiguas (default.wav, char_*.wav) deben aparecer ya en la lista; (7) borrar una voz pide confirmación.
 
 ## 🧩 Tanda final — Roleplay de grupo, copias y compartir *(documentado 2026-11-19, pendiente; hacer DESPUÉS de los bugs menores)*
 

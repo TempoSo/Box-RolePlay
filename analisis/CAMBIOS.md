@@ -41,6 +41,21 @@
 
 ## 📝 Registro
 
+### BUG-041: biblioteca de voces de Pocket TTS (subir, grabar, nombrar, elegir)
+
+**Qué y por qué:** BUG-041 (Escalón 1). Biblioteca de voces de Pocket TTS: ahora se pueden guardar varias voces con nombre. Pantalla «Voces» (diálogo): subir un `.wav` o grabar con el micrófono (24 kHz mono, máx. 30 s), escuchar la muestra, nombre (propuesto = nombre del archivo sin extensión), etiquetas fijas + una propia, guardar; lista con buscador por nombre/etiqueta, duración real, escuchar, probar con un texto editable (usa el modelo) y borrar con confirmación. Se elige como voz predeterminada («Biblioteca de voces» en Roleplay > Voz) o por personaje («Elegir voz»). Los `default.wav` y `char_*.wav` anteriores se incorporan solos como voces («Predeterminada», «Voz de personaje xxxx»). Se quita `TtsFiles.importVoice` (sustituido por `VoiceStore`). No se añadió el interruptor «Guardar como archivo de audio» de la referencia. Pendiente de re-prueba en el teléfono. Test de lógica pura: `VoiceLibraryTest` (9 OK, compilado con kotlinc embebido).
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/VoiceLibrary.kt` — nuevo, lógica pura (nombres, búsqueda, JSON, migración).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/VoiceStore.kt` — nuevo, almacén (`tts/voices.json` + `tts/voices/<id>.wav`).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/WavWriter.kt` — nuevo, WAV de la grabación.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/TtsFiles.kt` — se elimina `importVoice`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/TtsManager.kt` — `speakAs` para probar una voz concreta.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/VoiceLibraryDialog.kt` — nuevo, pantalla de voces.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/TtsSettingsDialog.kt` — voz predeterminada y voz de personaje usan la biblioteca.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/tts/VoiceLibraryTest.kt` — nuevo.
+- `analisis/BUGS.md` — nota en BUG-041.
+
 ### BUG-040: barra de presets (cargar / Nuevo / editar) en Rendimiento y Muestreo
 
 **Qué y por qué:** re-prueba de BUG-040 en el teléfono: el preset de rendimiento se guardaba pero no había forma de cargarlo desde su diálogo. Además, en «Muestreo (GGUF)» la ficha «Custom» sobraba en la fila de Default/Creative/Precise (ocupaba espacio y siempre salía marcada). Se crea una barra de presets compartida estilo Layla: fichas para cargar, botón «Nuevo» (guarda los valores actuales con un nombre) y lápiz de edición; borrar solo se puede en modo edición y pide confirmación. «Custom» deja de ser una ficha: es el estado «valores tocados a mano» y se muestra en una línea de estado («Usando «X»» o «Valores personalizados (sin guardar)»). Se retiran los botones antiguos de guardar. No se añade importar/exportar: irá con la copia de seguridad (BUG-038). Pendiente de re-prueba en el teléfono.

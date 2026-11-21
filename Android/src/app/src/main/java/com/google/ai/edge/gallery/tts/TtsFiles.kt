@@ -42,14 +42,4 @@ object TtsFiles {
       }
     return copied
   }
-
-  /** Copia un .wav elegido a la app y devuelve la ruta, o null si no es un WAV legible. */
-  fun importVoice(context: Context, uri: Uri, id: String): String? {
-    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-    com.google.ai.edge.gallery.data.characters.WavReader.parse(bytes) ?: return null
-    val safe = id.replace(Regex("[^A-Za-z0-9_-]"), "_")
-    val out = File(voicesDir(context), "$safe.wav")
-    out.writeBytes(bytes)
-    return out.absolutePath
-  }
 }

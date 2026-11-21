@@ -118,10 +118,24 @@ object TtsManager {
 
   private class Inputs(val voicePath: String, val files: PocketModelFiles)
 
+  /** Voz concreta para una prueba (biblioteca de voces); solo vale durante la llamada a [speakAs]. */
+  @Volatile private var voiceOverride: String? = null
+
+  /** Lee [message] con la muestra [voicePath] en vez de la del personaje o la predeterminada. */
+  fun speakAs(context: Context, message: String, voicePath: String) {
+    voiceOverride = voicePath
+    try {
+      speak(context, message)
+    } finally {
+      voiceOverride = null
+    }
+  }
+
   /** Comprueba voz y modelo; si falta algo avisa con un mensaje y devuelve null. */
   private fun resolveInputs(app: Context, settings: TtsSettingsStore): Inputs? {
     val voicePath =
-      settings.characterVoicePath(currentCharacterId)?.takeIf { File(it).exists() }
+      voiceOverride?.takeIf { File(it).exists() }
+        ?: settings.characterVoicePath(currentCharacterId)?.takeIf { File(it).exists() }
         ?: settings.defaultVoicePath()?.takeIf { File(it).exists() }
     if (voicePath == null) {
       toast(app, "Elige una muestra de voz (.wav) en Roleplay > Voz, o en el personaje.")

@@ -41,6 +41,7 @@ import com.google.ai.edge.gallery.tts.PocketModelFiles
 import com.google.ai.edge.gallery.tts.SherpaPocketEngine
 import com.google.ai.edge.gallery.tts.TtsFiles
 import com.google.ai.edge.gallery.tts.TtsManager
+import com.google.ai.edge.gallery.tts.VoiceStore
 import java.io.File
 
 /** Voz (Pocket TTS): modelo, voz predeterminada, qué se lee, velocidad y lectura automática. */
@@ -71,25 +72,24 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                 refresh++
             }
         }
-    val pickVoice =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-            if (uri != null) {
-                val path = runCatching { TtsFiles.importVoice(context, uri, "default") }.getOrNull()
-                if (path == null) {
-                    Toast.makeText(context, "Ese archivo no es un WAV legible (PCM de 16/24/32 bits).", Toast.LENGTH_LONG).show()
-                } else {
-                    store.setDefaultVoicePath(path)
-                }
-                refresh++
-            }
-        }
-
+    var showVoices by remember { mutableStateOf(false) }
     var showDownload by remember { mutableStateOf(false) }
     if (showDownload) TtsModelDownloadDialog(onDismiss = { showDownload = false }, onDone = { refresh++ })
 
+    if (showVoices) {
+        VoiceLibraryDialog(
+            onDismiss = { showVoices = false; refresh++ },
+            currentPath = store.defaultVoicePath(),
+            onPick = { _, path -> store.setDefaultVoicePath(path); refresh++ },
+        )
+    }
+
     val missing = remember(refresh) { PocketModelFiles.missing(TtsFiles.modelDir(context)) }
     val libOk = remember { SherpaPocketEngine.isLibraryAvailable() }
-    val voice = remember(refresh) { store.defaultVoicePath()?.takeIf { File(it).exists() } }
+    val voice = remember(refresh, showVoices) { store.defaultVoicePath()?.takeIf { File(it).exists() } }
+    val voiceName = remember(refresh, showVoices) {
+        voice?.let { p -> VoiceStore(context).all().firstOrNull { VoiceStore(context).pathOf(it.id) == p }?.name }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -122,10 +122,10 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
 
                 Text("Voz predeterminada", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    voice?.let { "Muestra cargada: ${File(it).name}" } ?: "Sin muestra. Sube un .wav de unos 5-12 s de una sola voz.",
+                    voice?.let { "Voz: ${voiceName ?: File(it).name}" } ?: "Sin voz. Abre la biblioteca para subir o grabar una.",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                OutlinedButton(onClick = { pickVoice.launch(arrayOf("audio/*")) }) { Text("Elegir muestra de voz (.wav)") }
+                OutlinedButton(onClick = { showVoices = true }) { Text("Biblioteca de voces") }
 
                 Text("Qué se lee", style = MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -211,18 +211,14 @@ fun CharacterVoiceRow(characterId: String) {
     val store = remember { TtsSettingsStore(context) }
     var refresh by remember { mutableIntStateOf(0) }
     val current = remember(refresh) { store.characterVoicePath(characterId)?.takeIf { File(it).exists() } }
-    val pick =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-            if (uri != null) {
-                val path = runCatching { TtsFiles.importVoice(context, uri, "char_$characterId") }.getOrNull()
-                if (path == null) {
-                    Toast.makeText(context, "Ese archivo no es un WAV legible (PCM de 16/24/32 bits).", Toast.LENGTH_LONG).show()
-                } else {
-                    store.setCharacterVoicePath(characterId, path)
-                }
-                refresh++
-            }
-        }
+    var showVoices by remember { mutableStateOf(false) }
+    if (showVoices) {
+        VoiceLibraryDialog(
+            onDismiss = { showVoices = false; refresh++ },
+            currentPath = current,
+            onPick = { _, path -> store.setCharacterVoicePath(characterId, path); refresh++ },
+        )
+    }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(vertical = 4.dp)) {
         Text("Voz de este personaje", style = MaterialTheme.typography.titleSmall)
         if (characterId == "new") {
@@ -234,12 +230,12 @@ fun CharacterVoiceRow(characterId: String) {
             return@Column
         }
         Text(
-            current?.let { "Muestra propia: ${File(it).name}" } ?: "Usa la voz predeterminada de Roleplay.",
+            current?.let { p -> "Voz propia: " + (VoiceStore(context).all().firstOrNull { VoiceStore(context).pathOf(it.id) == p }?.name ?: File(p).name) } ?: "Usa la voz predeterminada de Roleplay.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { pick.launch(arrayOf("audio/*")) }) { Text("Elegir .wav") }
+            OutlinedButton(onClick = { showVoices = true }) { Text("Elegir voz") }
             if (current != null) {
                 TextButton(onClick = { store.setCharacterVoicePath(characterId, null); refresh++ }) { Text("Quitar") }
             }
