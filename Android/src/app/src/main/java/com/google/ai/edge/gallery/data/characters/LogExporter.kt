@@ -201,6 +201,9 @@ object LogExporter {
         }
         sb.appendLine("--- Log persistente (sesiones guardadas, filtrado) ---")
         sb.append(persistedLogs(context).ifBlank { "(todavía no hay sesiones guardadas)\n" })
+        sb.appendLine()
+        sb.appendLine("--- Modo diagnóstico: últimas generaciones (prompt, respuesta cruda, tokens/s, motivo de parada) ---")
+        sb.append(DiagLog.report(context).ifBlank { "(sin generaciones guardadas o modo diagnóstico apagado)\n" })
         return sb.toString()
     }
 

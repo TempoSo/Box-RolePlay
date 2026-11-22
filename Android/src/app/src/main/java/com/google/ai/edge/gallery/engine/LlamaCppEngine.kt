@@ -477,6 +477,13 @@ class LlamaCppEngine {
                 // Callback final (completo, cancelado o error). Se ejecuta DESPUÉS de soltar la
                 // puerta del nativo, para que quien lo reciba pueda llamar a otros métodos del motor.
                 var finish: (suspend () -> Unit)? = null
+                // BUG-044 (diagnóstico): lo que se necesita para registrar la generación pase lo que pase.
+                var fullResponse = ""
+                var diagPrompt = ""
+                var diagLabel = ""
+                var diagStopSeq: String? = null
+                var diagFirstMs = -1L
+                val diagStartNs = System.nanoTime()
                 try {
                     gateHeld = nativeGate.tryAcquire(GATE_WAIT_MS, TimeUnit.MILLISECONDS)
                     if (!gateHeld) {
@@ -485,7 +492,6 @@ class LlamaCppEngine {
                         )
                     }
                     ensureActive()
-                    var fullResponse = ""
                     var lastDisplayed = ""
 
                     // Stop generation at any of these tokens — covers ChatML (Qwen/Mistral),
@@ -507,6 +513,18 @@ class LlamaCppEngine {
                             if (useGemma4Template) {
                                 GgufChatTemplate.build(lastSystemPrompt, lastHistory, query, thinkingEnabled)
                             } else query
+                        if (useGemma4Template) {
+                            diagLabel = "COMPLETO, tal como se envía al modelo (plantilla Gemma 4 armada en Kotlin)"
+                            diagPrompt = prompt
+                        } else {
+                            diagLabel = "SOLO PIEZAS: el prompt final lo arma el código nativo con la plantilla del modelo"
+                            diagPrompt = buildString {
+                                appendLine("[SISTEMA]"); appendLine(lastSystemPrompt)
+                                appendLine("[HISTORIAL: ${lastHistory.size} turnos]")
+                                lastHistory.forEach { (role, text) -> appendLine("<$role> $text") }
+                                appendLine("[MENSAJE ACTUAL]"); append(query)
+                            }
+                        }
                         // Diagnostico de crashes (BUG-002): estado del prompt justo antes de
                         // tokenizar. Solo tamanos, nunca el contenido.
                         Log.i(
@@ -517,6 +535,7 @@ class LlamaCppEngine {
                         instance.getResponseAsFlow(prompt)
                             .takeWhile { !shouldStop }
                             .collect { piece ->
+                                if (diagFirstMs < 0) diagFirstMs = (System.nanoTime() - diagStartNs) / 1_000_000
                                 fullResponse += piece
 
                                 // Detect the earliest stop sequence and truncate
@@ -524,6 +543,7 @@ class LlamaCppEngine {
                                     .mapNotNull { seq -> fullResponse.indexOf(seq).takeIf { it >= 0 } }
                                     .minOrNull()
                                 if (stopIdx != null) {
+                                    diagStopSeq = stopSequences.firstOrNull { fullResponse.indexOf(it) == stopIdx }
                                     fullResponse = fullResponse.substring(0, stopIdx)
                                     shouldStop = true
                                     return@collect
@@ -565,10 +585,16 @@ class LlamaCppEngine {
                         durationSeconds = duration.inWholeSeconds.toInt(),
                         contextLengthUsed = instance.getContextLengthUsed(),
                     )
+                    diagRecord(diagPrompt, diagLabel, fullResponse, false, null, diagStopSeq, diagFirstMs,
+                        (System.nanoTime() - diagStartNs) / 1_000_000, runCatching { instance.getPerfStats() }.getOrNull(), result.contextLengthUsed)
                     finish = { onComplete(result) }
                 } catch (e: CancellationException) {
+                    diagRecord(diagPrompt, diagLabel, fullResponse, true, null, diagStopSeq, diagFirstMs,
+                        (System.nanoTime() - diagStartNs) / 1_000_000, null, -1)
                     finish = { onCancelled() }
                 } catch (e: Exception) {
+                    diagRecord(diagPrompt, diagLabel, fullResponse, false, "${e.javaClass.simpleName}: ${e.message}", diagStopSeq, diagFirstMs,
+                        (System.nanoTime() - diagStartNs) / 1_000_000, null, -1)
                     finish = { onError(e) }
                 } finally {
                     if (gateHeld) {
@@ -588,6 +614,30 @@ class LlamaCppEngine {
                 if (generationEpoch.get() == epoch) isGenerating = false
             }
         }
+    }
+
+    /** BUG-044: guarda la generación en el modo diagnóstico (no hace nada si está apagado). */
+    private fun diagRecord(
+        prompt: String, label: String, response: String, cancelled: Boolean, error: String?, stopSeq: String?,
+        firstMs: Long, totalMs: Long, st: SmolLM.PerfStats?, ctxUsed: Int,
+    ) {
+        val lp = lastLoadParams
+        val maxResp = lp?.engine?.maxResponse ?: -1
+        val ctxSize = lp?.contextSize?.toInt() ?: -1
+        val gen = st?.generatedTokens ?: -1
+        com.google.ai.edge.gallery.data.characters.DiagLog.record(
+            com.google.ai.edge.gallery.data.characters.DiagRecord(
+                engine = "GGUF",
+                model = lastModelPath?.let { java.io.File(it).name } ?: "?",
+                params = "ctx=$ctxSize hilos=${lp?.numThreads} tope=$maxResp temp=${lp?.temperature} topP=${lp?.topP} topK=${lp?.topK} " +
+                    "minP=${lp?.minP} repeat=${lp?.repeatPenalty} plantilla4=$useGemma4Template pensar=$thinkingEnabled",
+                promptLabel = label, prompt = prompt, response = response,
+                stopReason = com.google.ai.edge.gallery.data.characters.DiagFormat.stopReason(cancelled, error, stopSeq, gen, maxResp, ctxUsed, ctxSize),
+                promptTokens = st?.promptTokens ?: -1, promptSeconds = st?.promptSeconds ?: -1f,
+                generatedTokens = gen, generationSeconds = st?.generationSeconds ?: -1f,
+                firstTokenMs = firstMs, totalMs = totalMs, contextUsed = ctxUsed, contextSize = ctxSize,
+            ),
+        )
     }
 
     private fun cleanModelOutput(raw: String, isFinal: Boolean): String {

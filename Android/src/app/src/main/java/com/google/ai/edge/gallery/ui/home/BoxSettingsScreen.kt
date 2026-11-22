@@ -46,6 +46,7 @@ fun BoxSettingsScreen(
   var showSampler by remember { mutableStateOf(false) }
   var showPerf by remember { mutableStateOf(false) }
   var status by remember { mutableStateOf<String?>(null) }
+  var diagOn by remember { mutableStateOf(com.google.ai.edge.gallery.data.characters.DiagLog.isEnabled(context)) }
   // BUG-023: el backend de restauración ya existe; solo faltaba la UI. Estado propio de Ajustes.
   var restoreStatus by remember { mutableStateOf<String?>(null) }
   var restorePlan by remember { mutableStateOf<RoleplayViewModel.RestorePlan.Choose?>(null) }
@@ -141,9 +142,27 @@ fun BoxSettingsScreen(
       BoxActionCard(
         icon = Icons.Rounded.BugReport,
         title = "Exportar logs",
-        subtitle = "Para reportar errores: logcat, equipo y último cierre",
+        subtitle = "Para reportar errores: log de las últimas sesiones, equipo, último cierre y modo diagnóstico",
         onClick = {
           scope.launch(Dispatchers.IO) { runCatching { LogExporter.share(context) } }
+        },
+      )
+      BoxActionCard(
+        icon = Icons.Rounded.BugReport,
+        title = "Modo diagnóstico",
+        subtitle = "Guarda en el log el prompt exacto, la respuesta cruda, los tokens/s y por qué paró cada respuesta (últimas 30). Incluye tus chats: revisa el reporte antes de compartirlo.",
+        onClick = {
+          diagOn = !diagOn
+          com.google.ai.edge.gallery.data.characters.DiagLog.setEnabled(context, diagOn)
+        },
+        trailing = {
+          androidx.compose.material3.Switch(
+            checked = diagOn,
+            onCheckedChange = {
+              diagOn = it
+              com.google.ai.edge.gallery.data.characters.DiagLog.setEnabled(context, it)
+            },
+          )
         },
       )
       androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 24.dp))
