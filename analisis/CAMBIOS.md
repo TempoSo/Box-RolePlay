@@ -41,6 +41,32 @@
 
 ## 📝 Registro
 
+### 2026-11-22 — BUG-029: el motor nativo informa de *por qué* terminó cada generación
+
+**Qué y por qué:** el análisis del log de las 16:18 dejó claro que el diagnóstico no podía distinguir el fin de turno del propio modelo de un corte provocado por un stop string nuestro (`###` es el sospechoso): `LLMInference.cpp` devolvía el mismo `[EOG]` en los dos casos. Ahora el nativo guarda el motivo y la app lo muestra en el diagnóstico y en el log persistente. **No cambia el comportamiento de la generación**: los mismos stops, el mismo `[EOG]`, el mismo texto en pantalla.
+
+- **Nativo:** nuevo `LLMInference::getStopReason()` con tres valores: `token` (el modelo emitió su EOG), `stop:<texto>` (lo cerró un stop string propio) y `max_tokens` (tope de respuesta). Se limpia en `startCompletion` y en `resetChat`. El **token EOG manda sobre los stops** porque el marcador de fin de turno (`<turn|`) está en las dos listas; si el marcador llega troceado en varios tokens, sale como `stop:<turn|`. La cadena se sanea a ASCII imprimible antes de cruzar el JNI (`NewStringUTF` usa UTF-8 modificado).
+- **Kotlin:** `SmolLM.getStopReason()` + `external fun getStopReason`. `LlamaCppEngine` lo lee con la puerta del nativo aún en la mano y lo pasa a `DiagFormat.stopReason(...)`, que ahora traduce:
+  - `token` → «fin de turno del modelo (token EOG)».
+  - `stop:<turn|` (y los demás marcadores de plantilla) → «fin de turno del modelo (marcador «<turn|»)»; no es un stop nuestro.
+  - `stop:###` / `stop:System instruction:` → «secuencia de parada propia «###» (la detectó el motor nativo)».
+  - `max_tokens` → «TOPE DE RESPUESTA (lo cortó el motor nativo)».
+  - Vacío (motor sin el cambio) → se mantiene el texto anterior, «fin natural del modelo (EOS)».
+- **Log persistente:** la línea `AGLlamaPerf` del turno termina ahora en `| parada: <motivo>`, así que el motivo sale también en «Exportar logs» sin depender del modo diagnóstico.
+- **Prueba nueva:** `motivoDeParadaDelMotorNativo` (8 comprobaciones: los cuatro motivos, la prioridad de cancelación/error y la compatibilidad con el texto viejo).
+
+**Archivos exactos:**
+- `Android/src/smollm/src/main/cpp/LLMInference.h` — `getStopReason()` y `_stopReason`.
+- `Android/src/smollm/src/main/cpp/LLMInference.cpp` — cálculo del motivo en el bucle de generación, saneado y limpieza en `startCompletion`/`resetChat`.
+- `Android/src/smollm/src/main/cpp/smollm.cpp` — binding JNI `SmolLM_getStopReason`.
+- `Android/src/smollm/src/main/java/com/jegly/offlineLLM/smollm/SmolLM.kt` — `getStopReason()` público y su `external`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/DiagLog.kt` — `stopReason(..., nativeStop)`, `describeNativeStop`, `TURN_MARKERS`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — lectura del motivo, línea `AGLlamaPerf` y paso al diagnóstico.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/DiagFormatTest.kt` — prueba nueva.
+- `analisis/BUGS.md`, `analisis/CAMBIOS.md` — estado de BUG-029 y esta entrada.
+
+**Verificación:** `.\gradlew.bat :app:testDebugUnitTest --tests "…DiagFormatTest"` desde `Android/src` → **BUILD SUCCESSFUL**. Los dos `.cpp` pasan `clang++ --target=aarch64-linux-android24 -std=c++17 -fsyntax-only` con las rutas de `CMakeLists.txt` (sin errores). **Re-prueba pendiente en el móvil:** provocar el corte y mirar «MOTIVO DE PARADA»; si sale `stop:###`, el arreglo de BUG-029 es quitar ese stop o condicionarlo a la familia Gemma.
+
 ### 2026-11-22 — Análisis del log 16:18: el corte de BUG-029 también aparece en el Q4_K_M y la KV se tira en cada turno
 
 **Qué y por qué:** `git pull` de `origin/fase1-rendimiento` (conflicto en `analisis/CAMBIOS.md`, resuelto conservando las dos entradas) y análisis del reporte nuevo `box-log-20261122-161812.txt` (app v1.0.12 (26), Xiaomi 2311DRK48G, dos sesiones: 16:03 y 16:06). **Sin cambios de código.**

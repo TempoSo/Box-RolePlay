@@ -139,6 +139,15 @@ LLMInference::getPerf(float *out4) const {
     out4[3] = (float) _genTimeUs / 1e6f;
 }
 
+std::string
+LLMInference::getStopReason() const {
+    // Solo ASCII imprimible: el motivo viaja a Java como cadena UTF-8 modificada.
+    std::string out;
+    out.reserve(_stopReason.size());
+    for (char c: _stopReason) out.push_back((c >= 32 && c < 127) ? c : '?');
+    return out;
+}
+
 int
 LLMInference::getContextSizeUsed() const {
     return _nCtxUsed;
@@ -377,6 +386,7 @@ LLMInference::resetChat() {
     _cacheResponseTokens.clear();
     _nCtxUsed = 0;
     _kvDirty = false;
+    _stopReason.clear();
     _clearPendingBitmaps();
     if (_ctx) llama_memory_clear(llama_get_memory(_ctx), false);
     if (_sampler) llama_sampler_reset(_sampler); // olvida las penalizaciones del chat anterior
@@ -464,6 +474,7 @@ LLMInference::startCompletion(const char *query) {
     _genTokens = 0;
     _response.clear();
     _cacheResponseTokens.clear();
+    _stopReason.clear();
 
     std::string queryString(query);
     if (_mtmd && !_pendingBitmaps.empty()) {
@@ -570,6 +581,7 @@ LLMInference::completionLoop() {
     
     // Check if token is EOG or if the text so far contains stop markers
     bool is_eog = llama_vocab_is_eog(llama_model_get_vocab(_model), _currToken);
+    const bool eogToken = is_eog;
     
     std::string piece = common_token_to_piece(_ctx, _currToken, true);
     
@@ -579,16 +591,28 @@ LLMInference::completionLoop() {
     };
 
     std::string current_full = _response + _cacheResponseTokens + piece;
+    std::string matchedStop;
     for (const auto& stop : stop_sequences) {
         if (current_full.find(stop) != std::string::npos) {
             is_eog = true;
+            matchedStop = stop;
             break;
         }
     }
 
-    if (!is_eog && _maxResponse > 0 && _responseNumTokens >= _maxResponse) is_eog = true;
+    bool maxTokensHit = false;
+    if (!is_eog && _maxResponse > 0 && _responseNumTokens >= _maxResponse) {
+        is_eog = true;
+        maxTokensHit = true;
+    }
 
     if (is_eog) {
+        // BUG-029: se guarda QUE cerro la generacion para que la app pueda distinguir el fin de
+        // turno del modelo de un stop propio (p. ej. "###"). El token EOG manda sobre los stops
+        // porque el marcador de fin de turno (<turn|>) esta en las dos listas.
+        if (eogToken) _stopReason = "token";
+        else if (!matchedStop.empty()) _stopReason = "stop:" + matchedStop;
+        else if (maxTokensHit) _stopReason = "max_tokens";
         addChatMessage(_response.c_str(), "assistant");
         _response.clear();
         return "[EOG]";

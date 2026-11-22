@@ -63,7 +63,11 @@ object DiagFormat {
 
     /**
      * Motivo de parada deducido de lo que se sabe. Orden: cancelación/error, secuencia de parada,
-     * tope de tokens, contexto lleno y, si nada de eso, fin natural del modelo (EOS).
+     * motivo que informa el motor nativo (BUG-029), tope de tokens, contexto lleno y, si nada de
+     * eso, fin natural del modelo (EOS).
+     *
+     * [nativeStop] es lo que devuelve `SmolLM.getStopReason()`: `"token"` (EOG del modelo),
+     * `"stop:<texto>"` (stop string propio) o `"max_tokens"` (tope del motor).
      */
     fun stopReason(
         cancelled: Boolean,
@@ -73,13 +77,39 @@ object DiagFormat {
         maxResponse: Int,
         contextUsed: Int,
         contextSize: Int,
-    ): String = when {
-        error != null -> "ERROR: $error"
-        cancelled -> "CANCELADA (el usuario o la app la cortó)"
-        stopSequence != null -> "secuencia de parada «$stopSequence» (la detectó la app)"
-        maxResponse > 0 && generatedTokens >= maxResponse -> "TOPE DE RESPUESTA alcanzado ($generatedTokens de $maxResponse tokens)"
-        contextSize > 0 && contextUsed >= contextSize * 0.97 -> "CONTEXTO LLENO ($contextUsed de $contextSize)"
-        else -> "fin natural del modelo (EOS)"
+        nativeStop: String? = null,
+    ): String {
+        val native = describeNativeStop(nativeStop)
+        return when {
+            error != null -> "ERROR: $error"
+            cancelled -> "CANCELADA (el usuario o la app la cortó)"
+            stopSequence != null -> "secuencia de parada «$stopSequence» (la detectó la app)"
+            native != null -> native
+            maxResponse > 0 && generatedTokens >= maxResponse -> "TOPE DE RESPUESTA alcanzado ($generatedTokens de $maxResponse tokens)"
+            contextSize > 0 && contextUsed >= contextSize * 0.97 -> "CONTEXTO LLENO ($contextUsed de $contextSize)"
+            else -> "fin natural del modelo (EOS)"
+        }
+    }
+
+    /**
+     * Marcadores de fin de turno de la plantilla. Si el motor corta por uno de ellos, el turno lo
+     * cerró el modelo (es su marcador), no un stop nuestro.
+     */
+    private val TURN_MARKERS = setOf(
+        "<turn|", "<|turn_end|>", "<turn_end|>", "<start_of_turn>", "<end_of_turn>",
+    )
+
+    /** Traduce el motivo nativo a texto legible; `null` si el motor no informó de nada. */
+    fun describeNativeStop(nativeStop: String?): String? = when {
+        nativeStop.isNullOrBlank() -> null
+        nativeStop == "token" -> "fin de turno del modelo (token EOG)"
+        nativeStop == "max_tokens" -> "TOPE DE RESPUESTA (lo cortó el motor nativo)"
+        nativeStop.startsWith("stop:") -> {
+            val s = nativeStop.removePrefix("stop:")
+            if (s in TURN_MARKERS) "fin de turno del modelo (marcador «$s»)"
+            else "secuencia de parada propia «$s» (la detectó el motor nativo)"
+        }
+        else -> "motivo del motor: $nativeStop"
     }
 }
 

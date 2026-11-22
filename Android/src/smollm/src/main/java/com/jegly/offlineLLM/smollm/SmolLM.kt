@@ -252,6 +252,16 @@ class SmolLM {
         return getContextSizeUsed(nativePtr)
     }
 
+    /**
+     * BUG-029: motivo del fin del ultimo turno tal como lo decidio el motor nativo:
+     * `"token"` (el modelo emitio su EOG), `"stop:<texto>"` (lo cerro un stop string propio),
+     * `"max_tokens"` (tope de respuesta) o `""` si sigue generando.
+     */
+    fun getStopReason(): String {
+        verifyHandle()
+        return getStopReason(nativePtr)
+    }
+
     fun getResponseAsFlow(query: String): Flow<String> = flow {
         verifyHandle()
         startCompletion(nativePtr, query)
@@ -321,6 +331,7 @@ class SmolLM {
     private external fun setSampler(modelPtr: Long, values: FloatArray)
     private external fun setMaxResponse(modelPtr: Long, maxTokens: Int)
     private external fun getPerfStats(modelPtr: Long): FloatArray
+    private external fun getStopReason(modelPtr: Long): String
     private external fun loadMmproj(modelPtr: Long, path: String, nThreads: Int): Boolean
     private external fun supportsVision(modelPtr: Long): Boolean
     private external fun addImage(modelPtr: Long, rgb: ByteArray, width: Int, height: Int): Boolean

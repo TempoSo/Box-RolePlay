@@ -566,6 +566,9 @@ class LlamaCppEngine {
                     val finalResponse = cleanModelOutput(fullResponse, isFinal = true).ifBlank {
                         if (fullResponse.isNotBlank()) "(No visible content produced)" else "(Empty response)"
                     }
+                    // BUG-029: motivo real del corte segun el motor nativo (token EOG / stop propio /
+                    // tope). Se lee antes de soltar la puerta del nativo.
+                    val nativeStop = runCatching { instance.getStopReason() }.getOrNull()
 
                     runCatching {
                         val st = instance.getPerfStats()
@@ -575,7 +578,8 @@ class LlamaCppEngine {
                             "prompt: ${st.promptTokens} tok en ${"%.1f".format(st.promptSeconds)} s " +
                                 "(${"%.1f".format(st.promptTokensPerSecond)} t/s) | " +
                                 "generacion: ${st.generatedTokens} tok en ${"%.1f".format(st.generationSeconds)} s " +
-                                "(${"%.2f".format(st.generationTokensPerSecond)} t/s)",
+                                "(${"%.2f".format(st.generationTokensPerSecond)} t/s)" +
+                                (nativeStop?.takeIf { it.isNotBlank() }?.let { " | parada: $it" } ?: ""),
                         )
                     }
                     // Las lecturas nativas se hacen aquí, con la puerta aún en la mano.
@@ -586,7 +590,7 @@ class LlamaCppEngine {
                         contextLengthUsed = instance.getContextLengthUsed(),
                     )
                     diagRecord(diagPrompt, diagLabel, fullResponse, false, null, diagStopSeq, diagFirstMs,
-                        (System.nanoTime() - diagStartNs) / 1_000_000, runCatching { instance.getPerfStats() }.getOrNull(), result.contextLengthUsed)
+                        (System.nanoTime() - diagStartNs) / 1_000_000, runCatching { instance.getPerfStats() }.getOrNull(), result.contextLengthUsed, nativeStop)
                     finish = { onComplete(result) }
                 } catch (e: CancellationException) {
                     diagRecord(diagPrompt, diagLabel, fullResponse, true, null, diagStopSeq, diagFirstMs,
@@ -619,7 +623,7 @@ class LlamaCppEngine {
     /** BUG-044: guarda la generación en el modo diagnóstico (no hace nada si está apagado). */
     private fun diagRecord(
         prompt: String, label: String, response: String, cancelled: Boolean, error: String?, stopSeq: String?,
-        firstMs: Long, totalMs: Long, st: SmolLM.PerfStats?, ctxUsed: Int,
+        firstMs: Long, totalMs: Long, st: SmolLM.PerfStats?, ctxUsed: Int, nativeStop: String? = null,
     ) {
         val lp = lastLoadParams
         val maxResp = lp?.engine?.maxResponse ?: -1
@@ -632,7 +636,9 @@ class LlamaCppEngine {
                 params = "ctx=$ctxSize hilos=${lp?.numThreads} tope=$maxResp temp=${lp?.temperature} topP=${lp?.topP} topK=${lp?.topK} " +
                     "minP=${lp?.minP} repeat=${lp?.repeatPenalty} plantilla4=$useGemma4Template pensar=$thinkingEnabled",
                 promptLabel = label, prompt = prompt, response = response,
-                stopReason = com.google.ai.edge.gallery.data.characters.DiagFormat.stopReason(cancelled, error, stopSeq, gen, maxResp, ctxUsed, ctxSize),
+                stopReason = com.google.ai.edge.gallery.data.characters.DiagFormat.stopReason(
+                    cancelled, error, stopSeq, gen, maxResp, ctxUsed, ctxSize, nativeStop,
+                ),
                 promptTokens = st?.promptTokens ?: -1, promptSeconds = st?.promptSeconds ?: -1f,
                 generatedTokens = gen, generationSeconds = st?.generationSeconds ?: -1f,
                 firstTokenMs = firstMs, totalMs = totalMs, contextUsed = ctxUsed, contextSize = ctxSize,

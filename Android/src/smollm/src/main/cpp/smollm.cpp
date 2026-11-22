@@ -153,6 +153,13 @@ Java_com_jegly_offlineLLM_smollm_SmolLM_getPerfStats(JNIEnv* env, jobject thiz, 
     return out;
 }
 
+// BUG-029: motivo del fin del ultimo turno ("token", "stop:<texto>", "max_tokens" o "").
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_getStopReason(JNIEnv* env, jobject thiz, jlong modelPtr) {
+    std::string reason = reinterpret_cast<LLMInference*>(modelPtr)->getStopReason();
+    return env->NewStringUTF(reason.c_str());
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_jegly_offlineLLM_smollm_SmolLM_loadMmproj(JNIEnv* env, jobject thiz, jlong modelPtr, jstring path, jint nThreads) {
     const char* cpath = env->GetStringUTFChars(path, nullptr);

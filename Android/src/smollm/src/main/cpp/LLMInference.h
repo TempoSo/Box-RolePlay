@@ -35,6 +35,10 @@ public:
     void setMaxResponse(int maxTokens) { _maxResponse = maxTokens; }
     // [tokens del prompt procesados, segundos, tokens generados, segundos] del ultimo turno.
     void getPerf(float *out4) const;
+    // BUG-029: motivo del fin del ultimo turno. "token" (el modelo emitio su EOG),
+    // "stop:<texto>" (lo cerro un stop string propio) o "max_tokens" (tope de respuesta).
+    // Cadena vacia mientras genera o si aun no ha terminado ningun turno.
+    std::string getStopReason() const;
     // Vision (mmproj): carga el proyector multimodal; false si no es valido o no admite imagenes.
     bool loadMmproj(const char *mmprojPath, int nThreads);
     bool supportsVision() const { return _mtmd != nullptr && mtmd_support_vision(_mtmd); }
@@ -70,6 +74,7 @@ private:
     int64_t _genTimeUs = 0;
     int _genTokens = 0;
     int64_t _turnStartUs = 0;
+    std::string _stopReason; // BUG-029: por que termino el ultimo turno (ver getStopReason)
 
     llama_batch g_batch;
 
