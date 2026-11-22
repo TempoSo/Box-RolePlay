@@ -155,6 +155,7 @@ class LlamaCppEngine {
         lastLoadParams = params
         lastModelPath = modelPath
         lastSystemPrompt = systemPrompt
+        com.google.ai.edge.gallery.data.characters.PersistentLog.mark("GGUF", "cargando ${java.io.File(modelPath).name} (${java.io.File(modelPath).length() shr 20} MB) ctx=${params.contextSize} hilos=${params.numThreads}")
 
         stateLock.withLock {
             loadJob?.cancel()
@@ -179,6 +180,7 @@ class LlamaCppEngine {
                         instance.addChatMessage(role, content)
                     }
 
+                    com.google.ai.edge.gallery.data.characters.PersistentLog.mark("GGUF", "modelo cargado en ${"%.1f".format(loadTime.inWholeMilliseconds / 1000f)} s")
                     withContext(Dispatchers.Main) {
                         isModelLoaded.set(true)
                         onSuccess()
@@ -186,6 +188,7 @@ class LlamaCppEngine {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    com.google.ai.edge.gallery.data.characters.PersistentLog.mark("GGUF", "ERROR al cargar: ${e.javaClass.simpleName}: ${e.message}")
                     withContext(Dispatchers.Main) {
                         onError(e)
                     }
@@ -195,6 +198,7 @@ class LlamaCppEngine {
     }
 
     fun unloadModel() {
+        com.google.ai.edge.gallery.data.characters.PersistentLog.mark("GGUF", "descargando modelo")
         stateLock.withLock {
             val gen = generationJob
             val load = loadJob
@@ -463,6 +467,7 @@ class LlamaCppEngine {
             // I-3: la anterior se cancela, pero la nueva no toca el nativo hasta que aquella haya
             // terminado de verdad (nativeGate). isGenerating se marca YA, aquí, y no dentro de la
             // corrutina: antes quedaba una ventana en la que seedConversation podía colarse.
+            com.google.ai.edge.gallery.data.characters.PersistentLog.mark("GGUF", "generando (consulta de ${query.length} caracteres)")
             generationJob?.cancel()
             val epoch = generationEpoch.incrementAndGet()
             isGenerating = true
@@ -611,6 +616,7 @@ class LlamaCppEngine {
     }
 
     fun stopGeneration() {
+        com.google.ai.edge.gallery.data.characters.PersistentLog.mark("GGUF", "stopGeneration")
         stateLock.withLock {
             generationJob?.cancel()
             isGenerating = false
