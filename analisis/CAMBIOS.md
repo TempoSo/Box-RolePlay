@@ -170,7 +170,7 @@
 - `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/EnginePerfDialog.kt` — barra de presets de rendimiento (cargar/nuevo/borrar) en vez de la sección de guardado.
 - `analisis/BUGS.md` — nota en BUG-040.
 
-### 2026-11-22 — BUG-042: log persistente por sesión (sobrevive a cierres del proceso)
+### 2026-11-22 — BUG-043: log persistente por sesión (sobrevive a cierres del proceso)
 
 **Qué y por qué:** el humano notó que el log exportado «se pierde» al reiniciarse la app. Causa: una app solo puede leer el logcat de su propio proceso y ese buffer empieza de cero en cada arranque, así que tras un cierre (MIUI por memoria, deslizar para cerrar, crash) el log de «antes» ya no existía. Ahora se copia el logcat del proceso en vivo, filtrado, a `files/logs/session-<fecha>.log` (últimas 5 sesiones, trozos de ~1,5 MB), con cabecera (versión, dispositivo, motivo de la salida anterior), estado de memoria cada 20 s, avisos `onTrimMemory`/`onLowMemory`, hitos del motor GGUF (cargar, descargar, generar, parar) y el crash de Java. El reporte exportado incluye ahora la sesión actual y las 2 anteriores en lugar de `logcat -d`. El filtro descarta el ruido de MIUI/HWUI/Skia y los volcados JSON del gestor de modelos. Los crashes nativos siguen sin traza propia, pero la última línea de memoria/hito y el motivo de salida permiten distinguirlos de un cierre por memoria. Probado: `LogLineFilterTest` (5 OK); `PersistentLog` y `LogExporter` sin compilar (Android), pendientes del build.
 

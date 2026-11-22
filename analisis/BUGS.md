@@ -170,7 +170,7 @@
 Parche aplicado (2026-11-20, pendiente de re-prueba): biblioteca de voces (subir .wav o grabar, nombre, etiquetas, buscador, probar, borrar). Re-prueba en el teléfono: Roleplay > Voz > «Biblioteca de voces»: (1) subir un .wav y ver que el nombre es el del archivo sin extensión y la duración real; (2) grabar 5 s con el micrófono (pide permiso); (3) guardar dos voces y comprobar que ambas salen en la lista y el buscador filtra por etiqueta; (4) «Usar» una como predeterminada y «Probar voz»; (5) en un personaje, «Elegir voz» con otra distinta; (6) tras actualizar, las voces antiguas (default.wav, char_*.wav) deben aparecer ya en la lista; (7) borrar una voz pide confirmación.
 
 
-### BUG-042 · 🟡 Logs: se pierden al reiniciarse la app (sin diagnóstico de cierres)
+### BUG-043 · 🟡 Logs: se pierden al reiniciarse la app (sin diagnóstico de cierres)
 **Esfuerzo:** M · **Escalón:** 2
 
 - **Síntoma (humano, 2026-11-22):** el log exportado solo cubre la sesión actual; tras un cierre no hay rastro de lo anterior.
