@@ -48,7 +48,7 @@ El botón siempre respondía "No hay un modelo GGUF cargado (o está generando)"
 - [x] **2.5 Memoria — funciona pero con 2 bugs:** interruptores, guardado de notas automáticas sin pausa, borrado uno a uno OK. Los recuerdos sin procesar NO se pueden editar (**BUG-008**). "Absorber clústeres": **crash con GGUF** (mismo stack de BUG-001) y **timeout con LiteRT** ("modelo tardó demasiado") → **BUG-002**. Re-prueba 17/11 con la 2.ª ronda: **ya no crashea en GGUF**, pero sigue "error de demora" (el watchdog fijo de 180 s < prefill real de la tanda, ~215 s a 6.5 t/s) → **3.ª ronda**: timeout dinámico + KV reutilizada entre tandas.
 - [x] **2.6 Cajón — 1 bug:** abre deslizando desde el borde izquierdo con chats agrupados por personaje; pero la hamburguesa del inicio NO lo abre (**BUG-009**).
 
-📋 **Estado actual (21/11):** 40 cerrados · 2 abiertos (017, 029) en [`BUGS.md`](BUGS.md); el histórico está en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md). BUG-029 quedó acotado al GGUF qat/heretic; no se corta con GGUF puro ni con LiteRT.
+📋 **Estado actual (22/11):** 40 cerrados · 2 abiertos (017, 029) + 2 herramientas (043, 044) + BUG-045 (rendimiento) en [`BUGS.md`](BUGS.md); el histórico está en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md). **BUG-029 ya no está acotado al GGUF qat/heretic:** con el modo diagnóstico (log del 22/11) también cortó `gemma-4-E4B-it-Q4_K_M.gguf`, las dos veces justo donde iba a abrir un encabezado de sección. El motivo que da la app sigue siendo el cajón «fin natural (EOS)» porque el nativo no distingue el EOG del modelo de un stop string propio. Nuevo **BUG-045**: cada turno re-prefilla toda la conversación (2,5–5,4 t/s y primer token de 9–65 s).
 
 ### Bloque 3 — Voz (2026-11-16): SUSPENDIDO — la carga del modelo de voz está bloqueada
 - [x] **3.1 Descarga HF — FALLIDA (BUG-013):** cualquier repo responde "No encontré ninguna carpata con un modelo Pocket TTS completo". Causa raíz localizada: `parseFiles()` filtra solo `.gguf`/`.litertlm` y no deja ver los `.onnx`.
@@ -100,7 +100,7 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 
 ### Bloque 4 — Re-pruebas tras corregir bugs
 - [ ] 4.3b Visión: tiempo con lado 256 y 512 tras las optimizaciones (BUG-017).
-- [ ] **2.1c BUG-029 — solo si vuelve a cortar con el GGUF qat/heretic:** (1) reproducir el corte con `gemma-4-E4B-it-qat-q4_0-heretic-Q4_0_PURE.gguf` en chat 1:1 con personaje y en «Toca para chatear»; (2) comparar con el GGUF puro y con `.litertlm` (no deben cortar); (3) exportar logs **inmediatamente** tras el turno que se corta, sin navegar antes, o copiar el contador del chat. Con esos datos se decidirá el cambio nativo de stops en `LLMInference.cpp`. **No aplicar parche a ciegas.**
+- [ ] **2.1c BUG-029 — solo si vuelve a cortar:** (1) reproducir el corte con el GGUF con el que aparezca (ya no es exclusivo de `gemma-4-E4B-it-qat-q4_0-heretic-Q4_0_PURE.gguf`: el 22/11 también cortó el Q4_K_M); (2) exportar logs **inmediatamente** tras el turno que se corta, sin navegar antes; (3) con el modo diagnóstico encendido, mirar «MOTIVO DE PARADA» de esa generación. **Lo que falta:** que el nativo diga si cerró un token EOG del modelo o un stop string propio (`###` es el sospechoso). **No aplicar parche a ciegas.**
 
 ### Bloque 5 — Re-pruebas tras corregir bugs (la base ya está probada, ver resultados arriba)
 - [ ] 5.1b Benchmark de modelos → "Prueba rápida del motor GGUF" (requiere compilar el cambio pendiente): nombre del modelo y PP/TG; sin cargar → explica cómo proceder.
