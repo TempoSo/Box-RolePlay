@@ -41,6 +41,21 @@
 
 ## 📝 Registro
 
+### 2026-11-21 — Cierre documental de 037/041/042 y acotación de BUG-029 al GGUF qat/heretic
+
+**Qué y por qué:** el humano re-probó en el móvil y confirmó: BUG-042 OK (caso Akiko), BUG-041 «todo funciona» y BUG-037 corregido. Se cierran los tres y el inventario queda en **40 cerrados · 2 abiertos (017, 029)**. BUG-029 sigue abierto, pero la nueva evidencia lo acota: con `gemma-4-E4B-it-qat-q4_0-heretic-Q4_0_PURE.gguf` corta en 1:1 con personaje y en «Toca para chatear» (sin personaje); con el GGUF puro y con `.litertlm` no corta, y los tokens son similares. Eso descarta una regla general de la app y apunta a la cuantización del modelo. Se revisaron las tres exportaciones de logs adjuntas (19/11, 20/11 y 21/11): se leen bien, pero no contienen `AGLlamaPerf` ni el motivo del EOG, así que **no se afirma** que los logs se guarden mal ni se aplica el parche nativo de stops a ciegas. Hace falta una exportación hecha justo tras el turno que se corta, o el contador del chat.
+
+- **Anotado para después (NO implementado):** al duplicar un personaje, vincular sus recuerdos a la copia cuando exista; si el personaje no cambió, añadirlos al original. **Nunca sobrescribir**: se borrarían recuerdos nuevos.
+- **Tampoco se implementa ahora:** la narración con `[]` ni el cambio de stops en `LLMInference.cpp`.
+
+**Archivos exactos:**
+- `analisis/BUGS.md` — cierres 037/041/042, contador 40/2, nota de recuerdos futuros y evidencia qat vs. puro/LiteRT en BUG-029.
+- `analisis/BUGS_CERRADOS.md` — filas de resumen y textos íntegros de BUG-037, BUG-041 y BUG-042; nota de cierre en BUG-038.
+- `analisis/PLAN_PRUEBAS.md` — 0.37, 2.41 y 2.42 marcados como OK, estado general actualizado y checklist de re-captura para BUG-029.
+- `analisis/CAMBIOS.md` — esta entrada.
+
+**Motivo:** dejar el registro al día tras la re-prueba humana y conservar la pista real de BUG-029 sin documentar una causa no demostrada. **Sin cambios de código.**
+
 ### 2026-11-21 — BUG-042 implementado: la copia duplica solo si el personaje cambió
 
 **Qué y por qué:** el humano pidió que, al restaurar, un personaje **idéntico** no se duplique y que, si la copia trae una versión distinta (su caso: Akiko con y sin `{{char}}` al inicio de la descripción), se conserve la versión editada y la de la copia entre como personaje nuevo. Así no se pierde ninguna de las dos.

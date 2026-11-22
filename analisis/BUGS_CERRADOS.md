@@ -44,6 +44,9 @@
 | [BUG-036](#bug-036) | Escena: ficha completa / acotación `[...]` | descartado 21/11 (falso positivo; era Layla) |
 | [BUG-038](#bug-038) | Copia: duplicaba y solo incluía personajes | `c232ed9` · verificado 21/11 (base) → BUG-042 |
 | [BUG-039](#bug-039) | Ficha: compartir texto sin archivo | `a9f0932` · verificado 21/11 |
+| [BUG-037](#bug-037) | Filtro de escenas: `Narrador:` no se reconocía | alias en `headerSpeaker` · verificado 21/11 |
+| [BUG-041](#bug-041) | Biblioteca de voces de Pocket TTS | parche 20/11 · verificado 21/11 |
+| [BUG-042](#bug-042) | Copia: conservar edición y duplicar si cambia el personaje | `b632d83` · verificado 21/11 |
 
 ---
 
@@ -501,7 +504,7 @@ Re-prueba 2026-11-20: guardaba pero no se podía cargar. Corregido con una barra
 
 - **✅ Verificado en el teléfono (2026-11-21):** exportar, selector con conteos, restaurar sin duplicar, borrar/restaurar elementos y `.zip` v1 funcionan. Commit `c232ed9`.
 - **Alcance:** personajes (tarjeta + avatar + modelo/fechas), recuerdos, personas, presets y escenas; `manifest.json` v2. Los chats quedan para una fase 2 (base cifrada).
-- **Pendiente:** BUG-042 (duplicar si el personaje cambió en vez de sobrescribir), implementado el 21/11 y pendiente de re-prueba en el móvil.
+- **Cerrado el 21/11:** la afinación de identidad pasó a BUG-042 y quedó verificada el mismo día (ver más abajo).
 - **Archivos:** `BackupFormat.kt`, `BackupRepository.kt`, `RestoreBackupDialog.kt`, `RoleplayViewModel.kt`, `RawMemoryStore.kt`.
 
 ### BUG-039
@@ -511,3 +514,38 @@ Re-prueba 2026-11-20: guardaba pero no se podía cargar. Corregido con una barra
 - **✅ Verificado en el teléfono (2026-11-21):** mismo fix que BUG-007; commit `a9f0932`.
 - **Fix:** archivo `Nombre.json` en caché + `FileProvider` (`EXTRA_STREAM`, `application/json`); el texto se conserva como segunda opción. No incluye `.png`.
 - **Archivos:** `ui/roleplay/CharacterShare.kt`, `data/characters/ShareFileName.kt`, `ui/roleplay/RoleplayScreens.kt`.
+
+### BUG-037
+
+**✅ Filtro de escenas: el Narrador en español ya se reconoce**
+
+- **✅ Verificado en el teléfono (2026-11-21):** corregido; el humano dio por cerrado el caso pendiente del filtro de escenas.
+- **Hallazgo de la revisión de código (2026-11-19):** `ScenePromptBuilder.NARRATOR = "Narrator"` pero la barra muestra "Narrador" y el modelo suele responder `Narrador:`. `headerSpeaker` no lo reconoce como encabezado conocido, así que `filterReply` deja pasar ese bloque en turnos que no lo permiten (comprobado con una prueba en JVM: con el hablante `KIP` fijo se descarta Tohru, pero un `Narrador:` justo detrás de KIP se conserva como si fuera de KIP).
+- **Fix:** aceptar ambos alias (`Narrator`, `Narrador`, y `Narradora`) en `headerSpeaker`, y añadir test en `ScenarioTest.kt`.
+- **Fix aplicado (2026-11-19):** `ScenePromptBuilder.headerSpeaker` acepta `Narrator`, `Narrador` y `Narradora` (sin distinguir mayúsculas) y devuelve el nombre canónico `NARRATOR`, solo si el narrador forma parte de la escena. Test `filterRecognisesSpanishNarratorAlias` en `ScenarioTest.kt` (falla con el código anterior, pasa con el nuevo; 9/9 pruebas de `ScenarioTest` OK con Gradle el 19/11). Archivos: `data/characters/ScenePromptBuilder.kt`, `test/.../ScenarioTest.kt`.
+- **Re-prueba 19/11 (humano):** «un poco dando más problemas» al probarlo en un escalón más fuerte (el 4). No se pudo identificar el caso: sin saber qué escena, qué hablante estaba fijado y qué texto se coló, no hay nada que corregir sin adivinar.
+- **Caso aportado el 20/11 (captura 07:46, GGUF `gemma-4-E…PURE`, escena con Narrador en la barra y KIP seleccionado):** el usuario escribe `KIP: Muchachos tenemos un problema` y la respuesta trae tres bloques en la misma burbuja: `Narrator:`, `Tohru:` y `Psicólogo Digital:`. **Aclaración:** ese turno es del **usuario**, y `ScenePromptBuilder.userTurnRestriction` permite justo a *todos* los demás hablantes de la escena (menos el que firmó) + narrador si está activo; es el comportamiento que pide cambiar **BUG-033** («un mensaje del usuario no debería disparar a todos»), no un fallo de los alias del narrador. El humano lo dejó para después; el 21/11 confirmó que el problema estaba corregido.
+
+### BUG-042
+
+**✅ Copia de seguridad: conserva tu versión y duplica solo si el personaje cambió**
+
+- **✅ Verificado en el teléfono (2026-11-21):** con el caso real de Akiko Fujimoto, la copia conserva la edición y crea la copia; sin sobrescritura. Commit `b632d83`. Tests JVM `BackupFormatTest` 14/14 en verde.
+- **Regla pedida (21/11):** al restaurar, un personaje **idéntico** no se duplica; si el mismo id/nombre trae **cualquier cambio de contenido** (p. ej. añadir `{{char}}` al inicio de la descripción), se conserva el existente y se crea una **copia nueva con otro id**. Así no se pierde la edición.
+- **Caso real:** Akiko Fujimoto con la descripción original y la misma descripción empezando por `{{char}}` deben quedar como dos personajes, no sobrescribirse.
+- **Regla implementada (21/11):** se compara la firma canónica de la tarjeta (todos los campos de `CharacterCard`: nombre, descripción, personalidad, escenario, saludo, saludos alternativos, ejemplos, system prompt, post-history, notas, creador, versión, etiquetas, fuente, extensiones y lorebook; **sin** id, avatar, modelo ni fechas), normalizando saltos de línea, espacios en los extremos y el formato del JSON. Igual → no se toca; distinto → se conserva el existente y la copia entra con un `UUID` nuevo. En `.zip` v1 se empareja por nombre con el mismo criterio.
+- **UI:** el resumen distingue «nuevo(s)», «copia(s) de personajes editados» y «sin cambios»; el diálogo avisa de que nada se borra. No se añade la opción «sobrescribir»: la regla pedida es no perder la versión editada.
+- **Archivos:** `data/characters/BackupFormat.kt` (firma y comparación), `data/characters/BackupRepository.kt` (`restoreCharacters`, `restoreLegacyCharacters`), `ui/roleplay/RestoreBackupDialog.kt`, `ui/home/BoxSettingsScreen.kt`, `ui/roleplay/RoleplayViewModel.kt`, `test/.../BackupFormatTest.kt`.
+- **Mejora futura (anotada, NO implementada):** al duplicar, vincular los recuerdos a la copia cuando exista; si el personaje no cambió, añadirlos al original. **Nunca sobrescribir**: se perderían los recuerdos nuevos.
+
+### BUG-041
+
+**✅ Voces de Pocket TTS: biblioteca de voces propias**
+
+- **✅ Verificado en el teléfono (2026-11-21):** «todo funciona». Queda pendiente solo el pulido opcional (grabación de audio como archivo, nombres de las voces migradas, exportar/importar con la copia de seguridad) para una tanda final. El humano lo dio por cerrado.
+- **Síntoma (humano, 2026-11-19, con captura de "Voz (Pocket TTS)"):** subir la muestra `.wav` funciona, pero solo hay **una voz predeterminada** (`default.wav`) y **una por personaje** (`char_<id>.wav`); no se puede guardar cada muestra como una voz con nombre para tener varias y elegirlas.
+- **Código verificado:** `tts/TtsFiles.kt` `importVoice(context, uri, id)` guarda `voices/<id>.wav` solo con los ids `"default"` y `"char_$characterId"` (`ui/roleplay/TtsSettingsDialog.kt:76` y `:216`). No existe un almacén de voces con nombre.
+- **Referencia de funciones (la app Layla, solo como guía de funcionalidad; código propio, sin copiar nada de ella):** pantalla "Voces" con (1) origen: subir `.wav` o grabar con el micrófono; (2) reproducir la muestra antes de guardar; (3) texto de prueba editable y botón "Probar voz"; (4) nombre + etiquetas (fijas: hombre, mujer, narrador, personaje, calmado, enérgico, grave, suave, robótico, cálido, y una personalizada); (5) "Guardar voz"; (6) lista de voces con buscador por nombre/etiqueta, botón reproducir y borrar; (7) interruptor "Guardar como archivo de audio". El nombre debe autocompletarse con el nombre del archivo **sin extensión**; la duración mostrada debe ser la real (en la referencia sale "0:00" aunque dure 10 s).
+- **Fix propuesto:** `VoiceStore` (singleton Hilt con `StateFlow<List<Voice>>`, como `ScenarioStore`) que guarda `voices/<uuid>.wav` + un `voices.json` con `id`, `name`, `tags`, `createdAt`; `TtsFiles.importVoice` recibe el id de la voz; el selector de voz (por defecto y por personaje) elige de la lista en vez de importar al vuelo. Migrar `default.wav` y `char_*.wav` existentes como voces con nombre ("Predeterminada", nombre del personaje). Test de lógica pura para el almacén (alta, borrado, búsqueda por etiqueta).
+- **Archivos:** `tts/TtsFiles.kt`, `ui/roleplay/TtsSettingsDialog.kt`, `tts/TtsManager.kt`, nueva pantalla de voces y `VoiceStore`.
+- **Parche aplicado (2026-11-20):** biblioteca de voces (subir .wav o grabar, nombre, etiquetas, buscador, probar, borrar). Re-prueba en el teléfono completada el 21/11 con resultado OK.

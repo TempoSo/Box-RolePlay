@@ -48,7 +48,7 @@ El botón siempre respondía "No hay un modelo GGUF cargado (o está generando)"
 - [x] **2.5 Memoria — funciona pero con 2 bugs:** interruptores, guardado de notas automáticas sin pausa, borrado uno a uno OK. Los recuerdos sin procesar NO se pueden editar (**BUG-008**). "Absorber clústeres": **crash con GGUF** (mismo stack de BUG-001) y **timeout con LiteRT** ("modelo tardó demasiado") → **BUG-002**. Re-prueba 17/11 con la 2.ª ronda: **ya no crashea en GGUF**, pero sigue "error de demora" (el watchdog fijo de 180 s < prefill real de la tanda, ~215 s a 6.5 t/s) → **3.ª ronda**: timeout dinámico + KV reutilizada entre tandas.
 - [x] **2.6 Cajón — 1 bug:** abre deslizando desde el borde izquierdo con chats agrupados por personaje; pero la hamburguesa del inicio NO lo abre (**BUG-009**).
 
-📋 **Estado actual:** 37 cerrados · 5 abiertos (017, 029, 037, 041, 042) en [`BUGS.md`](BUGS.md); el histórico está en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md).
+📋 **Estado actual (21/11):** 40 cerrados · 2 abiertos (017, 029) en [`BUGS.md`](BUGS.md); el histórico está en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md). BUG-029 quedó acotado al GGUF qat/heretic; no se corta con GGUF puro ni con LiteRT.
 
 ### Bloque 3 — Voz (2026-11-16): SUSPENDIDO — la carga del modelo de voz está bloqueada
 - [x] **3.1 Descarga HF — FALLIDA (BUG-013):** cualquier repo responde "No encontré ninguna carpata con un modelo Pocket TTS completo". Causa raíz localizada: `parseFiles()` filtra solo `.gguf`/`.litertlm` y no deja ver los `.onnx`.
@@ -83,8 +83,8 @@ El botón siempre respondía "No hay un modelo GGUF cargado (o está generando)"
 _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Bloque 4, ver resultados arriba.)_
 
 ### Bloque 2 — Re-pruebas tras corregir bugs (ver [`BUGS.md`](BUGS.md))
-- [ ] 2.41 Biblioteca de voces (BUG-041): subir/grabar, nombre, etiquetas, buscador, probar y borrar.
-- [ ] 2.42 Copia inteligente (BUG-042): un personaje idéntico no se duplica; si cambia (p. ej. `{{char}}` al inicio de la descripción) se crea una copia nueva. Implementado el 21/11 con tests JVM; falta probarlo en el móvil.
+- [x] **2.41 Biblioteca de voces — ✅ OK (21/11, BUG-041):** «todo funciona» (subir/grabar, nombre, etiquetas, buscador, probar y borrar). Queda pulir opcionalmente la grabación como archivo, los nombres migrados y exportar/importar con la copia.
+- [x] **2.42 Copia inteligente — ✅ OK (21/11, BUG-042):** un personaje idéntico no se duplica; si cambia (p. ej. `{{char}}` al inicio de la descripción) se conserva el original y se crea una copia nueva. Verificado en el móvil con el caso Akiko; 14/14 tests JVM en verde.
 - [ ] Narración `[]`: implementar y probar que el narrador escribe `Narrador: [texto]` y los personajes pueden usar `[acción]` dentro de su bloque.
 
 ### Bloque 3 — Voz: re-pruebas tras cargar un modelo (desbloqueo: importar carpeta `es` de haex-space, ver arriba)
@@ -100,6 +100,7 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 
 ### Bloque 4 — Re-pruebas tras corregir bugs
 - [ ] 4.3b Visión: tiempo con lado 256 y 512 tras las optimizaciones (BUG-017).
+- [ ] **2.1c BUG-029 — solo si vuelve a cortar con el GGUF qat/heretic:** (1) reproducir el corte con `gemma-4-E4B-it-qat-q4_0-heretic-Q4_0_PURE.gguf` en chat 1:1 con personaje y en «Toca para chatear»; (2) comparar con el GGUF puro y con `.litertlm` (no deben cortar); (3) exportar logs **inmediatamente** tras el turno que se corta, sin navegar antes, o copiar el contador del chat. Con esos datos se decidirá el cambio nativo de stops en `LLMInference.cpp`. **No aplicar parche a ciegas.**
 
 ### Bloque 5 — Re-pruebas tras corregir bugs (la base ya está probada, ver resultados arriba)
 - [ ] 5.1b Benchmark de modelos → "Prueba rápida del motor GGUF" (requiere compilar el cambio pendiente): nombre del modelo y PP/TG; sin cargar → explica cómo proceder.
@@ -145,7 +146,7 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 - [x] **Cerrar GGUF (Scudo) — ✅ OK (19/11, BUG-030):** sin crash nativo nuevo tras el cierre atómico y las esperas acotadas.
 - [x] **0.11 Tarjeta de personaje — ✅ OK (20/11, BUG-011):** `{{user}}` muestra la persona activa en la ficha y la biblioteca; `{user}` con llaves simples se conserva literal a propósito.
 - [x] **0.16 Cambio de modelo (4.2c) — ✅ OK (20/11, BUG-016):** GGUF→GGUF y LiteRT→GGUF sin «El modelo sigue cargando»; el log no trae `Timeout esperando a que cargue` ni `no está listo tras … s`.
-- [ ] **0.37 Filtro de escenas (BUG-037):** falta el caso concreto que falla (escena, hablante fijado por la app, texto que se coló y si el narrador estaba activo). El humano lo deja para más adelante.
+- [x] **0.37 Filtro de escenas — ✅ CORREGIDO (21/11, BUG-037):** el humano confirmó que el caso pendiente del filtro ya funciona. Alias `Narrador`/`Narradora` reconocidos en `ScenePromptBuilder.headerSpeaker`; 9/9 tests de `ScenarioTest` en verde.
 
 ### Escalón 2 — escenas, compartir y copia (21/11)
 
@@ -155,5 +156,5 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 - [x] **2.35 Persona opcional — ✅ OK (21/11, BUG-035):** sin «Usar mi persona» no aparece «Yo» y la barra respeta «Incluir narrador».
 - [x] **2.36 Ficha completa / `[...]` — ✅ DESCARTADO (21/11, BUG-036):** la captura era de Layla, no de Box; no había bug. Se retiró el test que fijaba ese supuesto comportamiento. `[...]` se usará para narración/acciones.
 - [x] **2.7/2.39 Compartir ficha — ✅ OK (21/11, BUG-007/039):** se genera `Nombre.json` con `FileProvider`, se puede guardar/importar y «Copiar texto» sigue disponible (acción del menú de Android, no un botón de Box).
-- [x] **2.38 Copia de seguridad — ✅ OK, base (21/11, BUG-038):** selector con conteos, fusión por id, restauración de elementos borrados y `.zip` v1 por nombre. BUG-042 (idéntico vs. editado) queda implementado con tests JVM; falta la re-prueba en el móvil.
+- [x] **2.38 Copia de seguridad — ✅ OK (21/11, BUG-038 + BUG-042):** selector con conteos, fusión por id, restauración de elementos borrados y `.zip` v1 por nombre. BUG-042 (idéntico vs. editado) verificado en el móvil con el caso Akiko.
 - [x] **2.6 Hamburguesa del inicio — ✅ OK (20/11, BUG-009).**
