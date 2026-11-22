@@ -1,4 +1,4 @@
-# 📓 Registro de cambios — Box RolePlay
+﻿# 📓 Registro de cambios — Box RolePlay
 
 > **Documento vivo para continuidad de memoria** entre sesiones de trabajo (humano, Claude, OpenCode u otros agentes).
 >
@@ -40,6 +40,20 @@
 ---
 
 ## 📝 Registro
+
+### 2026-11-22 — BUG-044: modo diagnóstico (prompt, respuesta cruda, tokens/s y motivo de parada)
+
+**Qué y por qué:** para cazar BUG-029 (respuesta que se corta) y BUG-017 (visión lenta) hacen falta datos de cada generación, no solo el logcat. Nuevo modo diagnóstico, **encendido por defecto** mientras dure la caza y con interruptor en Ajustes. Cada generación se guarda en `files/diag/gen-*.txt` (últimas 30, campos largos recortados a 60 000 caracteres) con: modelo y motor, parámetros (contexto, hilos, tope, muestreo), tokens y t/s de prompt y de generación, primer token, total, contexto usado/tamaño, **motivo de parada** (fin natural EOS / secuencia de parada / tope de respuesta / contexto lleno / cancelada / error), prompt y respuesta cruda. Va aparte del log normal (BUG-043) y se añade al reporte exportado. **Limitación:** en GGUF con plantilla Gemma 4 el prompt se guarda COMPLETO; con las demás plantillas el prompt final lo arma el código nativo (`llama_chat_apply_template`) y desde Kotlin solo se ven las piezas (sistema, historial, mensaje actual). Para ver el texto final haría falta un getter nativo: no se toca sin tu confirmación. LiteRT se registra desde el ViewModel (historial + mensaje; sin motivo de parada, el motor no lo informa). Probado: `DiagFormatTest` (3 OK); el resto es Android y queda para el build.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/DiagLog.kt` — nuevo (`DiagRecord`, `DiagFormat`, `DiagLog`).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — registro en completar/cancelar/error.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` — registro LiteRT.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/LogExporter.kt` — sección en el reporte.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/home/BoxSettingsScreen.kt` — interruptor.
+- `Android/src/app/src/main/java/com/box/gallery/GalleryApplication.kt` — `DiagLog.init`.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/DiagFormatTest.kt` — nuevo.
+- `analisis/BUGS.md` — BUG-044.
 
 ### 2026-11-21 — Cierre documental de 037/041/042 y acotación de BUG-029 al GGUF qat/heretic
 
@@ -184,6 +198,19 @@
 - `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/SamplerDialog.kt` — usa la barra; sin ficha Custom.
 - `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/EnginePerfDialog.kt` — barra de presets de rendimiento (cargar/nuevo/borrar) en vez de la sección de guardado.
 - `analisis/BUGS.md` — nota en BUG-040.
+
+### 2026-11-22 — BUG-043: log persistente por sesión (sobrevive a cierres del proceso)
+
+**Qué y por qué:** el humano notó que el log exportado «se pierde» al reiniciarse la app. Causa: una app solo puede leer el logcat de su propio proceso y ese buffer empieza de cero en cada arranque, así que tras un cierre (MIUI por memoria, deslizar para cerrar, crash) el log de «antes» ya no existía. Ahora se copia el logcat del proceso en vivo, filtrado, a `files/logs/session-<fecha>.log` (últimas 5 sesiones, trozos de ~1,5 MB), con cabecera (versión, dispositivo, motivo de la salida anterior), estado de memoria cada 20 s, avisos `onTrimMemory`/`onLowMemory`, hitos del motor GGUF (cargar, descargar, generar, parar) y el crash de Java. El reporte exportado incluye ahora la sesión actual y las 2 anteriores en lugar de `logcat -d`. El filtro descarta el ruido de MIUI/HWUI/Skia y los volcados JSON del gestor de modelos. Los crashes nativos siguen sin traza propia, pero la última línea de memoria/hito y el motivo de salida permiten distinguirlos de un cierre por memoria. Probado: `LogLineFilterTest` (5 OK); `PersistentLog` y `LogExporter` sin compilar (Android), pendientes del build.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/LogLineFilter.kt` — nuevo, filtro puro.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/PersistentLog.kt` — nuevo.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/LogExporter.kt` — `lastExitSummary`, sesiones en el reporte, crash al log.
+- `Android/src/app/src/main/java/com/box/gallery/GalleryApplication.kt` — arranca `PersistentLog`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — hitos.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/LogLineFilterTest.kt` — nuevo.
+- `analisis/BUGS.md` — BUG-042.
 
 ### 2026-11-20 — BUG-040: «Guardar como preset» en Rendimiento del motor (Escalón 1)
 

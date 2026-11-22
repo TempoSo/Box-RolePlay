@@ -721,6 +721,19 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       val rawAssistant = StringBuilder()
       val sceneFilter = sceneRestriction
       var agentBubbleStarted = false
+      // BUG-044 (diagnóstico): LiteRT no pasa por LlamaCppEngine, así que se registra aquí. Lo que
+      // se guarda es lo que la app le da al motor (historial + mensaje); el formateo interno de
+      // LiteRT no se ve desde Kotlin.
+      val diagIsGguf = model.runtimeHelper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper
+      val diagPrompt =
+        if (!diagIsGguf && com.google.ai.edge.gallery.data.characters.DiagLog.isEnabled()) {
+          runCatching {
+            buildString {
+              previousTexts(model, contextTail.size).forEach { appendLine("<${it.side}> ${it.content}") }
+              appendLine("[MENSAJE ACTUAL]"); append(engineInput)
+            }
+          }.getOrDefault(engineInput)
+        } else ""
 
       try {
         val resultListener: (String, Boolean, String?) -> Unit =
@@ -751,6 +764,20 @@ open class LlmChatViewModelBase() : ChatViewModel() {
               }
               if (done) {
                 val now = System.currentTimeMillis()
+                if (!diagIsGguf) {
+                  val ttft = if (perfFirstAt > 0) perfFirstAt - start else -1L
+                  com.google.ai.edge.gallery.data.characters.DiagLog.record(
+                    com.google.ai.edge.gallery.data.characters.DiagRecord(
+                      engine = "LiteRT", model = model.name, params = "acelerador=$accelerator",
+                      promptLabel = "SOLO PIEZAS: historial + mensaje; LiteRT arma la plantilla por dentro",
+                      prompt = diagPrompt, response = rawAssistant.toString() + partialResult,
+                      stopReason = "terminó la respuesta (LiteRT no informa el motivo)",
+                      generatedTokens = perfChunks, generationSeconds = if (perfFirstAt > 0) (now - perfFirstAt) / 1000f else -1f,
+                      firstTokenMs = ttft, totalMs = now - start,
+                      extra = "los tokens son trozos de texto del streaming, no tokens exactos",
+                    ),
+                  )
+                }
                 _perfLine.value =
                   formatPerf(
                     isGguf = model.runtimeHelper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper,

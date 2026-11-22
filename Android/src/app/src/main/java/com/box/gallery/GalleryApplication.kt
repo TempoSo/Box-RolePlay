@@ -32,6 +32,8 @@ class GalleryApplication : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    com.google.ai.edge.gallery.data.characters.DiagLog.init(this)
+    com.google.ai.edge.gallery.data.characters.PersistentLog.start(this)
     com.google.ai.edge.gallery.data.characters.LogExporter.installCrashRecorder(this)
 
     // Load saved theme.

@@ -24,6 +24,7 @@ object LogExporter {
         val app = context.applicationContext
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching { PersistentLog.mark("CRASH", "hilo '${thread.name}': " + error.stackTraceToString().take(4000)) }
             runCatching {
                 val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
                 File(app.filesDir, CRASH_FILE)
@@ -111,6 +112,34 @@ object LogExporter {
         }.getOrElse { "(no se pudo leer ApplicationExitInfo: ${it.message})" }
     }
 
+    /** BUG-042: una línea con la última salida del proceso (para la cabecera de cada sesión del log). */
+    fun lastExitSummary(context: Context): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return "(no disponible)"
+        return runCatching {
+            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val info = manager.getHistoricalProcessExitReasons(context.packageName, 0, 1).firstOrNull()
+                ?: return@runCatching "(sin registros)"
+            val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(info.timestamp))
+            "$stamp ${exitReasonName(info.reason)} ${info.description.orEmpty().take(160)}".trim()
+        }.getOrElse { "(error: ${it.message})" }
+    }
+
+    /** Últimas [maxLines] líneas de las sesiones guardadas, de la más reciente a la más antigua. */
+    private fun persistedLogs(context: Context, sessions: Int = 3, maxLines: Int = 2500): String {
+        val bySession = PersistentLog.files(context).groupBy { it.name.substringBefore(".log") }
+        val sb = StringBuilder()
+        bySession.entries.take(sessions).forEachIndexed { i, (name, parts) ->
+            sb.appendLine("##### ${if (i == 0) "Sesión actual" else "Sesión anterior $i"}: $name #####")
+            // `.log.1` es la parte más antigua de la sesión; `.log` la más reciente.
+            val lines = parts.sortedBy { if (it.name.endsWith(".1")) 0 else 1 }
+                .flatMap { f -> runCatching { f.readLines() }.getOrDefault(emptyList()) }
+            if (lines.size > maxLines) sb.appendLine("(… ${lines.size - maxLines} líneas anteriores omitidas)")
+            lines.takeLast(maxLines).forEach { sb.appendLine(it) }
+            sb.appendLine()
+        }
+        return sb.toString()
+    }
+
     /** Nombre legible del motivo de `ApplicationExitInfo` (constantes de `android.app`). */
     private fun exitReasonName(reason: Int): String =
         when (reason) {
@@ -170,16 +199,11 @@ object LogExporter {
             sb.appendLine(exitReasons)
             sb.appendLine()
         }
-        sb.appendLine("--- logcat (últimas líneas) ---")
-        val log =
-            runCatching {
-                val p = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", MAX_LINES.toString())
-                    .redirectErrorStream(true).start()
-                val text = p.inputStream.bufferedReader().readText()
-                p.destroy()
-                text
-            }.getOrElse { "(no se pudo leer logcat: ${it.message})" }
-        sb.append(log)
+        sb.appendLine("--- Log persistente (sesiones guardadas, filtrado) ---")
+        sb.append(persistedLogs(context).ifBlank { "(todavía no hay sesiones guardadas)\n" })
+        sb.appendLine()
+        sb.appendLine("--- Modo diagnóstico: últimas generaciones (prompt, respuesta cruda, tokens/s, motivo de parada) ---")
+        sb.append(DiagLog.report(context).ifBlank { "(sin generaciones guardadas o modo diagnóstico apagado)\n" })
         return sb.toString()
     }
 

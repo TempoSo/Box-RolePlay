@@ -148,6 +148,21 @@
 > **BUG-041** — cerrado y verificado el 2026-11-21 (biblioteca de voces: «todo funciona»). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-041).
 
 
+### BUG-043 · 🟡 Logs: se pierden al reiniciarse la app (sin diagnóstico de cierres)
+**Esfuerzo:** M · **Escalón:** 2
+
+- **Síntoma (humano, 2026-11-22):** el log exportado solo cubre la sesión actual; tras un cierre no hay rastro de lo anterior.
+- **Causa:** logcat sin permisos de sistema es solo del proceso propio y se reinicia con él. Los logs de la app de referencia se guardan en archivos.
+- **Parche aplicado (2026-11-22, pendiente de re-prueba):** log persistente por sesión, ver CAMBIOS. Re-prueba: (1) usar la app un rato, cerrarla deslizando y reabrirla; (2) Ajustes > exportar log: debe traer «Sesión actual» y «Sesión anterior 1» con líneas de memoria (MEM) y hitos (GGUF); (3) la cabecera de la sesión nueva dice el motivo de la salida anterior; (4) comprobar que no hay ruido de MIUI y que el tamaño del reporte es razonable.
+- **Archivos:** `data/characters/PersistentLog.kt`, `LogLineFilter.kt`, `LogExporter.kt`, `GalleryApplication.kt`, `engine/LlamaCppEngine.kt`.
+
+### BUG-044 · 🟡 Modo diagnóstico para cazar BUG-029 y BUG-017 (temporal)
+**Esfuerzo:** M · **Escalón:** herramienta · Temporal: apagar/quitar cuando 029 y 017 estén cerrados
+
+- **Qué es:** registro por generación (prompt, respuesta cruda, tokens/s, motivo de parada), ver CAMBIOS 2026-11-22.
+- **Parche aplicado (2026-11-22, pendiente de re-prueba):** (1) tras el build, Ajustes > «Modo diagnóstico» aparece encendido; (2) conversa con un GGUF y un LiteRT; (3) «Exportar logs»: al final debe haber «Modo diagnóstico» con una entrada por respuesta; (4) provoca una respuesta cortada y mira «MOTIVO DE PARADA»; (5) con el modo apagado no debe guardar nada nuevo. Reenvía ese reporte para atacar 029 y 017.
+- **Archivos:** `data/characters/DiagLog.kt`, `engine/LlamaCppEngine.kt`, `ui/llmchat/LlmChatViewModel.kt`, `LogExporter.kt`, `BoxSettingsScreen.kt`.
+
 ## ✅ Lo que ya funciona (Bloque 2, 2026-11-16)
 
 Ficha de personaje (stats, descripción, escenario) · **chat 1 a 1: persona usada, personaje correcto, sin hablar por ti (GGUF y LiteRT, re-prueba OK)** · grupos con chips y persistencia · escenas: crear/guardar/chatear con varios personajes y narrador · barra de escena SOLO en chats de escena (correcto) · memoria: botones, guardado y borrado de recuerdos · cajón por swipe con chats agrupados por personaje · contador de rendimiento en escenas (743 tok @ 5 t/s, gen 3.7 t/s).
