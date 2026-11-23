@@ -665,6 +665,12 @@ class LlamaCppEngine {
             .replace("System instruction:", "")
 
         if (isFinal) {
+            // BUG-029: si el modelo inventa un turno ("### User:"), el nativo corta ahí; aquí se quita
+            // lo que llegó a mostrarse de esa cabecera (con ':' o, a final de texto, sin ella).
+            // Un encabezado markdown normal ("### 1. Luz") no se toca.
+            cleaned = cleaned
+                .replace(Regex("(?is)(^|\\n)###\\s*(user|human|instruction|assistant|system|response|input|model)\\s*:.*$"), "")
+                .replace(Regex("(?is)\\n###\\s*(user|human|instruction|assistant|system|response|input|model)\\s*$"), "")
             cleaned = cleaned.replace(Regex("<.*$", RegexOption.IGNORE_CASE), "")
         }
 

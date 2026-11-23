@@ -74,6 +74,8 @@
 
 > **BUG-031** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-031).
 
+- **Parche aplicado (2026-11-22, pendiente de re-prueba):** `###` y `System instruction:` ya no cortan por sí solos; solo como cabecera de turno inventada (`### User:`), ver CAMBIOS. Re-prueba: pedir en GGUF «explícame cuatro áreas de la fotografía usando encabezados ###» 3–4 veces con el heretic y con el Q4_K_M; deben salir completas y el reporte de diagnóstico no debe decir `stop:###`.
+
 ## P2 — UX
 
 > **BUG-007** — cerrado y verificado el 2026-11-21 (se comparte `Nombre.json` con `FileProvider`; el texto sigue disponible). Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-007).

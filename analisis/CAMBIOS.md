@@ -41,6 +41,17 @@
 
 ## 📝 Registro
 
+### 2026-11-22 — BUG-029: «###» deja de cortar la respuesta (parche, pendiente de re-prueba)
+
+**Qué y por qué:** causa confirmada leyendo `LLMInference.cpp`: la lista de paradas fija del nativo incluía `"###"` y `"System instruction:"` y se comprobaba sobre **todo el texto acumulado**; cualquier encabezado markdown `### 1. …` (muy usado por Gemma) cerraba el turno, descartaba la pieza y devolvía `[EOG]`. Los dos cortes del log 16:18 caen justo antes de un posible `###`; la respuesta larga que salió completa usaba `##`. Ahora la lógica vive en `StopMarkers.h` (cabecera pura): los marcadores de turno de las plantillas (`<turn|`, `<end_of_turn>`…) siguen cortando donde aparezcan, pero `###` solo corta como **cabecera de turno inventada**: al inicio de línea, seguida de un rol (user, human, instruction, assistant, system, response, input, model) y `:` (p. ej. `### User:`). `System instruction:` solo al inicio de línea. En Kotlin, `cleanModelOutput` quita del resultado final lo que llegó a mostrarse de esa cabecera. Probado: `StopMarkersTest.cpp` compilado con g++ (14 comprobaciones OK). El nativo y el cambio de Kotlin no se pueden compilar aquí; quedan para el build. Re-prueba: en GGUF (heretic y Q4_K_M) pedir «explícame cuatro áreas de la fotografía usando encabezados ###»: debe salir completa y el motivo de parada ya no debe ser `stop:###`. Repetir 3–4 veces.
+
+**Archivos:**
+- `Android/src/smollm/src/main/cpp/StopMarkers.h` — nuevo.
+- `Android/src/smollm/src/main/cpp/LLMInference.cpp` — usa `stopmarkers::find`.
+- `Android/src/smollm/src/test/cpp/StopMarkersTest.cpp` — nuevo.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — limpieza final de cabecera inventada.
+- `analisis/BUGS.md` — nota en BUG-029.
+
 ### 2026-11-22 — BUG-029: el motor nativo informa de *por qué* terminó cada generación
 
 **Qué y por qué:** el análisis del log de las 16:18 dejó claro que el diagnóstico no podía distinguir el fin de turno del propio modelo de un corte provocado por un stop string nuestro (`###` es el sospechoso): `LLMInference.cpp` devolvía el mismo `[EOG]` en los dos casos. Ahora el nativo guarda el motivo y la app lo muestra en el diagnóstico y en el log persistente. **No cambia el comportamiento de la generación**: los mismos stops, el mismo `[EOG]`, el mismo texto en pantalla.

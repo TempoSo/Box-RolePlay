@@ -1,6 +1,7 @@
 #include "LLMInference.h"
 #include "ContextWindow.h"
 #include "ChatFormats.h"
+#include "StopMarkers.h"
 #include <android/log.h>
 #include <cstring>
 #include <iomanip>
@@ -585,20 +586,11 @@ LLMInference::completionLoop() {
     
     std::string piece = common_token_to_piece(_ctx, _currToken, true);
     
-    // Check for stop sequences in the cumulative response
-    static const std::vector<std::string> stop_sequences = {
-        "<turn|", "<|turn_end|>", "<turn_end|>", "<start_of_turn>", "<end_of_turn>", "###", "System instruction:"
-    };
-
+    // BUG-029: paradas por texto (ver StopMarkers.h). "###" ya NO corta por si solo: un encabezado
+    // markdown es texto normal; solo cuenta una cabecera de turno inventada ("### User:").
     std::string current_full = _response + _cacheResponseTokens + piece;
-    std::string matchedStop;
-    for (const auto& stop : stop_sequences) {
-        if (current_full.find(stop) != std::string::npos) {
-            is_eog = true;
-            matchedStop = stop;
-            break;
-        }
-    }
+    std::string matchedStop = stopmarkers::find(current_full);
+    if (!matchedStop.empty()) is_eog = true;
 
     bool maxTokensHit = false;
     if (!is_eog && _maxResponse > 0 && _responseNumTokens >= _maxResponse) {
