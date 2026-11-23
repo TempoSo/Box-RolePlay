@@ -69,12 +69,11 @@
   → **El corte no es exclusivo de la cuantización qat/heretic**: también corta el Q4_K_M, así que la acotación del 21/11 no vale como causa única. Los dos cortes caen **exactamente donde el modelo iba a abrir un encabezado de sección**, y la única respuesta larga de la sesión (1467 tok, 16:17:41, mismo Q4_K_M) escribe la lista con **dos** almohadillas (`## 1. Exposición`), nunca con tres.
 - **Pista fuerte (22/11):** el nativo marca fin de generación si el texto acumulado contiene `###` —entre otros stops— **descarta la pieza** y devuelve un `[EOG]` genérico (`LLMInference.cpp:577-595`). Desde Kotlin eso es indistinguible del EOG del modelo, por eso el diagnóstico lo etiqueta como «fin natural». Encaja con los dos cortes y con las capturas del 17/11.
 - **Descartado en el log del 22/11:** tope de respuesta (el único tope que existe es el de las tandas de absorción, 400 tok, y no hay ninguna línea `GGUF maxResponse auxiliar`), contexto lleno, cancelación, error y `restoreMaxResponse` fallido (no aparece el aviso).
+- **Parche aplicado (2026-11-22, pendiente de re-prueba):** `###` y `System instruction:` ya no cortan por sí solos; solo como cabecera de turno inventada (`### User:`), ver CAMBIOS. Re-prueba: pedir en GGUF «explícame cuatro áreas de la fotografía usando encabezados ###» 3–4 veces con el heretic y con el Q4_K_M; deben salir completas y el reporte de diagnóstico no debe decir `stop:###`.
 - **Siguiente paso (sin implementar):** que `LLMInference.cpp` devuelva **cuál** condición cerró la generación (token EOG / stop `###` / otro stop) y que se guarde en el diagnóstico. Si sale `###`, el arreglo es quitarlo o condicionarlo a la familia del modelo; sin ese dato no se toca a ciegas.
 - **Archivos:** `Android/src/smollm/src/main/cpp/LLMInference.cpp` (stop strings y motivo del EOG), `Android/src/smollm/src/main/java/com/jegly/offlineLLM/smollm/SmolLM.kt` (exponer el motivo), `engine/LlamaCppEngine.kt` (log del motivo), `engine/GgufChatTemplate.kt` (referencia de plantilla).
 
 > **BUG-031** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-031).
-
-- **Parche aplicado (2026-11-22, pendiente de re-prueba):** `###` y `System instruction:` ya no cortan por sí solos; solo como cabecera de turno inventada (`### User:`), ver CAMBIOS. Re-prueba: pedir en GGUF «explícame cuatro áreas de la fotografía usando encabezados ###» 3–4 veces con el heretic y con el Q4_K_M; deben salir completas y el reporte de diagnóstico no debe decir `stop:###`.
 
 ## P2 — UX
 
