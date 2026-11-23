@@ -47,7 +47,7 @@
 
 **Qué se cambió:**
 - Nuevos ajustes persistentes **solo para la app Visión**: `maxResponseTokens` (256 por defecto; ≤0 = sin tope, máximo 8192), `systemPrompt` e `imageInstruction`.
-- La pantalla de visión aplica su prompt de sistema a su propio ViewModel (no toca Personajes, Roleplay ni Escenas) y pasa el tope de tokens al turno. En GGUF viaja como `max_response_tokens` y el motor lo restaura al terminar; LiteRT mantiene su propio control de visión.
+- La pantalla de visión aplica su prompt de sistema a su propio ViewModel (no toca Personajes, Roleplay ni Escenas) y pasa el tope de tokens al turno. En GGUF viaja como `max_response_tokens` y el motor lo restaura al terminar; a LiteRT no se le envía esa clave porque gestiona su propio límite y su visión integrada.
 - Ahora se puede **enviar solo una imagen**: si no hay texto, el turno usa la instrucción de imagen configurada (equivalente a «Procesar imagen»). El mensaje aparece en el chat como texto del usuario.
 - Botón «Ajustes de visión · N tok» sobre la caja de entrada y diálogo con los tres campos y «Restablecer».
 - La selección de modelo/mmproj no cambia: sigue en Configuración de inferencia (Rendimiento > Visión) para GGUF/LiteRT sin visión integrada.

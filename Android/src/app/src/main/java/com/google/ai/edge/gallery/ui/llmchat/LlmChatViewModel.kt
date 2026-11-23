@@ -958,7 +958,12 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         val extraContext =
           buildMap {
             if (enableThinking) put("enable_thinking", "true")
-            if (maxResponseTokens != null && maxResponseTokens > 0) {
+            // El tope auxiliar solo lo entiende el motor GGUF; LiteRT gestiona su propio límite
+            // (y su visión integrada) con sus opciones, así que no se le manda esta clave.
+            if (maxResponseTokens != null &&
+              maxResponseTokens > 0 &&
+              model.runtimeHelper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper
+            ) {
               put("max_response_tokens", "$maxResponseTokens")
             }
           }.ifEmpty { null }
