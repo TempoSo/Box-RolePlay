@@ -2,7 +2,8 @@ package com.google.ai.edge.gallery.ui.apps
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,6 +30,7 @@ import com.google.ai.edge.gallery.data.characters.VisionStore
  * Ajustes de la app de visión dedicada (inspirados en Layla / MobileVLM): longitud de respuesta,
  * prompt del sistema e instrucción al enviar solo una imagen. No afectan al chat ni al roleplay.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VisionSettingsDialog(
   initial: VisionSettings,
@@ -62,7 +64,7 @@ fun VisionSettingsDialog(
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           modifier = Modifier.fillMaxWidth(),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           listOf(256, 512, 1024, 2048).forEach { preset ->
             FilterChip(
               selected = tokens == preset.toString(),
