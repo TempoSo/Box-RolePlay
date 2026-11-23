@@ -123,24 +123,34 @@ class LlamaCppEngine {
     }
 
     private fun toRgb(src: android.graphics.Bitmap, maxSide: Int): Triple<ByteArray, Int, Int>? {
-        val scale = minOf(1f, maxSide.toFloat() / maxOf(src.width, src.height))
+        // BUG-017: si la imagen ya cabe en el lado máximo no se escala (ni se copia, salvo que sea
+        // un bitmap de hardware, que no deja leer píxeles). Evita dos copias completas por imagen.
+        val needsScale = maxOf(src.width, src.height) > maxSide
+        val isHardware = src.config == android.graphics.Bitmap.Config.HARDWARE
+        val scale = if (needsScale) maxSide.toFloat() / maxOf(src.width, src.height) else 1f
         val w = maxOf(1, (src.width * scale).toInt())
         val h = maxOf(1, (src.height * scale).toInt())
-        // copy(): un Bitmap de hardware no deja leer sus píxeles.
-        val soft = src.copy(android.graphics.Bitmap.Config.ARGB_8888, false) ?: return null
-        val scaled = if (w == soft.width && h == soft.height) soft else android.graphics.Bitmap.createScaledBitmap(soft, w, h, true)
-        val px = IntArray(w * h)
-        scaled.getPixels(px, 0, w, 0, 0, w, h)
-        val out = ByteArray(w * h * 3)
-        for (i in px.indices) {
-            val c = px[i]
-            out[i * 3] = ((c shr 16) and 0xFF).toByte()
-            out[i * 3 + 1] = ((c shr 8) and 0xFF).toByte()
-            out[i * 3 + 2] = (c and 0xFF).toByte()
+        val soft =
+            if (isHardware) src.copy(android.graphics.Bitmap.Config.ARGB_8888, false) ?: return null
+            else src
+        val scaled =
+            if (needsScale) android.graphics.Bitmap.createScaledBitmap(soft, w, h, true) else soft
+        try {
+            val px = IntArray(w * h)
+            scaled.getPixels(px, 0, w, 0, 0, w, h)
+            val out = ByteArray(w * h * 3)
+            for (i in px.indices) {
+                val c = px[i]
+                out[i * 3] = ((c shr 16) and 0xFF).toByte()
+                out[i * 3 + 1] = ((c shr 8) and 0xFF).toByte()
+                out[i * 3 + 2] = (c and 0xFF).toByte()
+            }
+            return Triple(out, w, h)
+        } finally {
+            // Solo se reciclan las copias creadas aquí; nunca el bitmap del llamador.
+            if (scaled !== soft) scaled.recycle()
+            if (soft !== src) soft.recycle()
         }
-        if (scaled !== soft) scaled.recycle()
-        if (soft !== src) soft.recycle()
-        return Triple(out, w, h)
     }
 
     fun loadModel(
@@ -360,7 +370,14 @@ class LlamaCppEngine {
             whenNativeIdle(GATE_WAIT_MS) {
                 stateLock.withLock {
                     if (!isModelLoaded.get() || isGenerating) return@whenNativeIdle false
-                    instance.resetChat()
+                    // BUG-045: en la ruta de plantilla Gemma 4, donde Kotlin construye el prompt
+                    // y el nativo no tokeniza el historial, no llamamos a resetChat() para evitar
+                    // vaciar la KV cada turno (lo que causa re-prefill completo). En lugar de eso,
+                    // solo actualizamos lastSystemPrompt/lastHistory y dejamos que el nativo
+                    // recorte el prefijo común por marcadores <|turn|>.
+                    if (!useGemma4Template) {
+                        instance.resetChat()
+                    }
                     lastSystemPrompt = systemPrompt
                     val seeded = mutableListOf<Pair<String, String>>()
                     if (systemPrompt.isNotBlank()) {

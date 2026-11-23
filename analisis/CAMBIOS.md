@@ -41,6 +41,31 @@
 
 ## 📝 Registro
 
+### 2026-11-22 — App Visión: ajustes propios inspirados en Layla (tope de tokens, prompt e instrucción de imagen)
+
+**Qué y por qué:** la app «Visión» usaba el mismo flujo que un chat normal: sin tope de respuesta y sin instrucción propia, así que una descripción podía seguir generando indefinidamente y el turno se hacía eterno (relacionado con BUG-017). Layla/MobileVLM acota la visión con una configuración dedicada: tope de tokens (256 por defecto), prompt de sistema y una instrucción de imagen que se envía al procesar solo una foto.
+
+**Qué se cambió:**
+- Nuevos ajustes persistentes **solo para la app Visión**: `maxResponseTokens` (256 por defecto; ≤0 = sin tope, máximo 8192), `systemPrompt` e `imageInstruction`.
+- La pantalla de visión aplica su prompt de sistema a su propio ViewModel (no toca Personajes, Roleplay ni Escenas) y pasa el tope de tokens al turno. En GGUF viaja como `max_response_tokens` y el motor lo restaura al terminar; LiteRT mantiene su propio control de visión.
+- Ahora se puede **enviar solo una imagen**: si no hay texto, el turno usa la instrucción de imagen configurada (equivalente a «Procesar imagen»). El mensaje aparece en el chat como texto del usuario.
+- Botón «Ajustes de visión · N tok» sobre la caja de entrada y diálogo con los tres campos y «Restablecer».
+- La selección de modelo/mmproj no cambia: sigue en Configuración de inferencia (Rendimiento > Visión) para GGUF/LiteRT sin visión integrada.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/VisionSettings.kt` — nuevo (ajustes + `VisionStore`).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/VisionSettingsDialog.kt` — nuevo (diálogo).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatScreen.kt` — `LlmAskImageScreen` y `ChatViewWrapper` (instrucción de imagen, tope, envío solo con imagen).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` — `generateResponse(..., maxResponseTokens)`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatView.kt` — pasa `allowImageOnlySend`.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatPanel.kt` — ídem.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/MessageInputText.kt` — botón de enviar habilitado con solo imagen.
+- `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/VisionSettingsTest.kt` — nuevo (límites de los ajustes).
+- `analisis/BUGS.md` — notas de los parches 017/045.
+- `analisis/PLAN_PRUEBAS.md` — re-prueba 4.3c de la app Visión.
+
+**Verificación:** pendiente de compilar y probar en dispositivo (ver `PLAN_PRUEBAS.md`). Casos: imagen sola en GGUF con mmproj (debe responder y parar en ~256 tok), texto + imagen, cambiar prompt/instrucción y confirmar que Personajes/Roleplay no cambian.
+
 ### 2026-11-22 — BUG-029: «###» deja de cortar la respuesta (parche, pendiente de re-prueba)
 
 **Qué y por qué:** causa confirmada leyendo `LLMInference.cpp`: la lista de paradas fija del nativo incluía `"###"` y `"System instruction:"` y se comprobaba sobre **todo el texto acumulado**; cualquier encabezado markdown `### 1. …` (muy usado por Gemma) cerraba el turno, descartaba la pieza y devolvía `[EOG]`. Los dos cortes del log 16:18 caen justo antes de un posible `###`; la respuesta larga que salió completa usaba `##`. Ahora la lógica vive en `StopMarkers.h` (cabecera pura): los marcadores de turno de las plantillas (`<turn|`, `<end_of_turn>`…) siguen cortando donde aparezcan, pero `###` solo corta como **cabecera de turno inventada**: al inicio de línea, seguida de un rol (user, human, instruction, assistant, system, response, input, model) y `:` (p. ej. `### User:`). `System instruction:` solo al inicio de línea. En Kotlin, `cleanModelOutput` quita del resultado final lo que llegó a mostrarse de esa cabecera. Probado: `StopMarkersTest.cpp` compilado con g++ (14 comprobaciones OK). El nativo y el cambio de Kotlin no se pueden compilar aquí; quedan para el build. Re-prueba: en GGUF (heretic y Q4_K_M) pedir «explícame cuatro áreas de la fotografía usando encabezados ###»: debe salir completa y el motivo de parada ya no debe ser `stop:###`. Repetir 3–4 veces.
@@ -51,6 +76,28 @@
 - `Android/src/smollm/src/test/cpp/StopMarkersTest.cpp` — nuevo.
 - `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — limpieza final de cabecera inventada.
 - `analisis/BUGS.md` — nota en BUG-029.
+
+### 2026-11-22 — BUG-017: optimización de procesamiento de imágenes en visión mmproj
+
+**Qué y por qué:** el procesamiento de imágenes para el modelo mmproj (visión) era lento porque `toRgb` en `LlamaCppEngine.kt` copiaba siempre el bitmap a ARGB_8888 y lo escalaba, aun cuando la imagen ya cabía en el límite (`imageMaxSide`). Ese trabajo extra se paga en cada turno con imágenes.
+
+**Qué se cambió:** en `toRgb` solo se escala cuando la imagen supera `maxSide`. Si ya cabe, se leen sus píxeles directamente, sin `Bitmap.copy()` ni `createScaledBitmap`. Excepción obligatoria: un bitmap `HARDWARE` no permite `getPixels()`, así que en ese caso sí se copia a ARGB_8888. Las copias creadas dentro del método se reciclan en un `finally`; el bitmap del llamador nunca se recicla.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — `toRgb`.
+
+**Verificación:** pendiente de compilar y de medir en dispositivo. El coste dominante puede ser el encoder de visión (mmproj), no el escalado: si sigue lento, medir encode vs prefill antes de optimizar más.
+
+### 2026-11-22 — BUG-045: cada turno vuelve a prefillar toda la conversación (caché de prefijo no reutilizada)
+
+**Qué y por qué:** cada envío llamaba a `seedConversation`, que a su vez llamaba a `instance.resetChat()`, vaciando la caché KV del motor nativo cada turno. El prompt se procesaba desde cero en cada generación, con primeros tokens de 9–65 s y costes crecientes con el historial (238 tok de prompt cuando la KV ya tenía 213: prefijo reutilizable 0).
+
+**Qué se cambió:** en `seedConversation` se omite `instance.resetChat()` cuando está activa la plantilla Gemma 4 (`useGemma4Template`). En esa ruta Kotlin construye el prompt y el nativo no tokeniza el historial: basta actualizar `lastSystemPrompt`/`lastHistory` y dejar que el nativo recorte el prefijo común. Para las rutas normales el comportamiento no cambia.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/engine/LlamaCppEngine.kt` — `seedConversation`.
+
+**Verificación:** mismo patrón que `prepareForAuxTanda()`; pendiente de re-prueba con un modelo Gemma 4 en dispositivo.
 
 ### 2026-11-22 — BUG-029: el motor nativo informa de *por qué* terminó cada generación
 

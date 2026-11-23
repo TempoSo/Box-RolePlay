@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -53,11 +54,14 @@ import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.data.characters.VisionStore
 import com.google.ai.edge.gallery.firebaseAnalytics
+import com.google.ai.edge.gallery.ui.apps.VisionSettingsDialog
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageAudioClip
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageImage
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageText
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageType
+import com.google.ai.edge.gallery.ui.common.chat.ChatSide
 import com.google.ai.edge.gallery.ui.common.chat.ChatView
 import com.google.ai.edge.gallery.ui.common.chat.SendMessageTrigger
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
@@ -120,6 +124,18 @@ fun LlmAskImageScreen(
   modifier: Modifier = Modifier,
   viewModel: LlmAskImageViewModel = hiltViewModel(),
 ) {
+  // Ajustes propios de la app de visión (Layla / MobileVLM): no afectan al chat ni al roleplay.
+  val context = LocalContext.current
+  val visionStore = remember { VisionStore(context) }
+  var visionSettings by remember { mutableStateOf(visionStore.load()) }
+  var showVisionSettings by remember { mutableStateOf(false) }
+
+  // Cada pantalla tiene su propio ViewModel, así que este prompt del sistema no toca el de los
+  // personajes ni el de las escenas.
+  LaunchedEffect(visionSettings.systemPrompt) {
+    viewModel.updateSystemPrompt(visionSettings.systemPrompt)
+  }
+
   ChatViewWrapper(
     viewModel = viewModel,
     modelManagerViewModel = modelManagerViewModel,
@@ -128,6 +144,23 @@ fun LlmAskImageScreen(
     modifier = modifier,
     showImagePicker = true,
     showAudioPicker = false,
+    allowImageOnlySend = true,
+    imageOnlyPrompt = visionSettings.imageInstruction,
+    maxResponseTokens = visionSettings.maxResponseTokens.takeIf { it > 0 },
+    aboveInputComposable = {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        TextButton(onClick = { showVisionSettings = true }) {
+          val tope =
+            if (visionSettings.maxResponseTokens > 0) "${visionSettings.maxResponseTokens} tok"
+            else "sin tope"
+          Text("Ajustes de visión · $tope")
+        }
+      }
+    },
     emptyStateComposable = { model ->
       Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -150,6 +183,17 @@ fun LlmAskImageScreen(
       }
     },
   )
+
+  if (showVisionSettings) {
+    VisionSettingsDialog(
+      initial = visionSettings,
+      onDismiss = { showVisionSettings = false },
+      onSaved = { saved ->
+        visionSettings = saved
+        showVisionSettings = false
+      },
+    )
+  }
 }
 
 @Composable
@@ -210,6 +254,10 @@ fun ChatViewWrapper(
   showAudioPicker: Boolean = false,
   conversationId: String? = null,
   autoResumeConversation: Boolean = true,
+  // App de visión dedicada: envío con solo imagen, instrucción de imagen y tope de tokens.
+  allowImageOnlySend: Boolean = false,
+  imageOnlyPrompt: String? = null,
+  maxResponseTokens: Int? = null,
 ) {
   val context = LocalContext.current
   val task = modelManagerViewModel.getTaskById(id = taskId)!!
@@ -318,10 +366,8 @@ fun ChatViewWrapper(
       var text = ""
       val images: MutableList<Bitmap> = mutableListOf()
       val audioMessages: MutableList<ChatMessageAudioClip> = mutableListOf()
-      var chatMessageText: ChatMessageText? = null
       for (message in messages) {
         if (message is ChatMessageText) {
-          chatMessageText = message
           text = message.content
         } else if (message is ChatMessageImage) {
           images.addAll(message.bitmaps)
@@ -329,13 +375,25 @@ fun ChatViewWrapper(
           audioMessages.add(message)
         }
       }
-      if ((text.isNotEmpty() && chatMessageText != null) || audioMessages.isNotEmpty() || trigger != null) {
+      // App de visión: si se envía solo una imagen, el turno lleva la instrucción configurada
+      // como texto (equivalente al botón «Procesar imagen» de Layla).
+      val imageOnlyText =
+        if (text.isEmpty() && images.isNotEmpty() && !imageOnlyPrompt.isNullOrBlank()) imageOnlyPrompt
+        else null
+      val effectiveText = imageOnlyText ?: text
+      if (effectiveText.isNotEmpty() || audioMessages.isNotEmpty() || trigger != null) {
+        if (imageOnlyText != null) {
+          viewModel.addMessage(
+            model = model,
+            message = ChatMessageText(content = imageOnlyText, side = ChatSide.USER),
+          )
+        }
         if (text.isNotEmpty()) {
           modelManagerViewModel.addTextInputHistory(text)
         }
         viewModel.generateResponse(
           model = model,
-          input = text,
+          input = effectiveText,
           images = images,
           audioMessages = audioMessages,
           onFirstToken = onFirstToken,
@@ -357,6 +415,7 @@ fun ChatViewWrapper(
           onModelStuck = {
             modelManagerViewModel.initializeModel(context = context, task = task, model = model)
           },
+          maxResponseTokens = maxResponseTokens,
         )
 
         firebaseAnalytics?.logEvent(
@@ -404,6 +463,7 @@ fun ChatViewWrapper(
     composableBelowMessageList = composableBelowMessageList,
     showImagePicker = showImagePicker,
     allowEmptySend = sceneNames.isNotEmpty() && sceneSpeaker != null,
+    allowImageOnlySend = allowImageOnlySend,
     emptyStateComposable = emptyStateComposable,
     aboveInputComposable = { model ->
       ContextWindowIndicator(model = model, viewModel = viewModel)

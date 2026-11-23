@@ -673,6 +673,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     // llamador (la pantalla, que tiene contexto y ModelManagerViewModel). Sin esto, un estado
     // "INITIALIZED" obsoleto o un motor liberado hacían esperar 180 s y fallar el envío.
     onModelStuck: (() -> Unit)? = null,
+    // App de visión: tope de tokens solo para este turno (por defecto 256, como Layla). En GGUF
+    // viaja como "max_response_tokens"; el motor lo restaura al terminar.
+    maxResponseTokens: Int? = null,
   ) {
     // BUG-033: un turno sin texto (Aleatorio / hablante forzado) lleva dentro los mensajes que el
     // usuario escribió como contexto y que el motor aún no ha visto.
@@ -952,7 +955,13 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         val enableThinking =
           allowThinking &&
             model.getBooleanConfigValue(key = ConfigKeys.ENABLE_THINKING, defaultValue = false)
-        val extraContext = if (enableThinking) mapOf("enable_thinking" to "true") else null
+        val extraContext =
+          buildMap {
+            if (enableThinking) put("enable_thinking", "true")
+            if (maxResponseTokens != null && maxResponseTokens > 0) {
+              put("max_response_tokens", "$maxResponseTokens")
+            }
+          }.ifEmpty { null }
 
         // BUG-016 (vía A): no inferir mientras el modelo recién seleccionado se está cargando.
         // `model.instance` puede apuntar todavía al motor anterior durante el cambio, así que se

@@ -1,7 +1,7 @@
 # Plan de pruebas — Box RolePlay (rama `fase1-rendimiento`)
 
 > **Documento vivo.** Arriba queda solo lo pendiente; las re-pruebas ya verificadas se archivan al final.
-> Última actualización: 2026-11-21 (re-pruebas de escenas, compartir y copia) · Checklist original: [`PRUEBAS.md`](PRUEBAS.md) · Registro: [`CAMBIOS.md`](CAMBIOS.md) · Abiertos/dudosos: [`BUGS.md`](BUGS.md) · Cerrados: [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md)
+> Última actualización: 2026-11-22 (app Visión con ajustes propios + parches 017/045 pendientes de build) · Checklist original: [`PRUEBAS.md`](PRUEBAS.md) · Registro: [`CAMBIOS.md`](CAMBIOS.md) · Abiertos/dudosos: [`BUGS.md`](BUGS.md) · Cerrados: [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md)
 
 **Equipo de prueba:** Xiaomi 2311DRK48G · Android 16 (SDK 36) · arm64-v8a · app v1.0.12 (26)
 **Bloque 2 probado además en:** POCO duchamp · HyperOS 3.0.9.0 · Android 15 (fingerprint del crash de BUG-001).
@@ -100,6 +100,12 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 
 ### Bloque 4 — Re-pruebas tras corregir bugs
 - [ ] 4.3b Visión: tiempo con lado 256 y 512 tras las optimizaciones (BUG-017).
+- [ ] **4.3c App Visión — ajustes propios (nuevo, pendiente de build):**
+  - [ ] Enviar **solo una imagen** (sin escribir texto): debe usar la instrucción configurada, mostrar tu mensaje y responder.
+  - [ ] «Ajustes de visión» → tope 256 (por defecto): la descripción debe cortarse alrededor de 256 tok y el turno debe durar bastante menos. Probar presets 512/1024/2048 y «-1 = sin tope».
+  - [ ] Cambiar el prompt del sistema y la instrucción de imagen: se aplican solo en Visión; abrir Personajes/Roleplay y confirmar que su prompt no cambia.
+  - [ ] LiteRT con visión integrada: la app sigue funcionando (su motor controla la visión); el tope de tokens de Visión no lo rompe.
+  - [ ] Con GGUF + mmproj y una imagen que ya cabe en `imageMaxSide`: medir el tiempo del turno (BUG-017). Si sigue lento, anotar encode vs prefill.
 - [ ] **2.1c BUG-029 — solo si vuelve a cortar:** (1) reproducir el corte con el GGUF con el que aparezca (ya no es exclusivo de `gemma-4-E4B-it-qat-q4_0-heretic-Q4_0_PURE.gguf`: el 22/11 también cortó el Q4_K_M); (2) exportar logs **inmediatamente** tras el turno que se corta, sin navegar antes; (3) con el modo diagnóstico encendido, mirar «MOTIVO DE PARADA» de esa generación. **Lo que falta:** que el nativo diga si cerró un token EOG del modelo o un stop string propio (`###` es el sospechoso). **No aplicar parche a ciegas.**
 
 ### Bloque 5 — Re-pruebas tras corregir bugs (la base ya está probada, ver resultados arriba)
