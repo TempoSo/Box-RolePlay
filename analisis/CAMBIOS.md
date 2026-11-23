@@ -41,6 +41,16 @@
 
 ## 📝 Registro
 
+### 2026-11-22 — BUG-017: pantalla «Visión» propia, estilo Layla (todo en una pantalla)
+
+**Qué y por qué:** el flujo de Visión era «Ask Image» (documentación y modelos recomendados de Google) → lista de modelos → chat, confuso y sin sitio para probar combinaciones de modelo/proyector. Pantalla nueva `VisionScreen`, con la estructura de la miniapp de visión de Layla (solo como guía de funciones; código propio): **01 Imagen de prueba** (elegir foto, vista previa con rotación EXIF, «Procesar imagen», parar, respuesta con su línea de tiempos), **02 Archivos del modelo** (modelo con visión elegido entre los importados + proyector mmproj con «Sin visión», fichas por archivo y «Añadir proyector»; al cambiar el archivo el modelo se recarga solo; en LiteRT avisa de que la visión va integrada), **03 Plantilla del prompt** (sistema e instrucción de imagen, plegable, con «Restablecer»), **04 Longitud de respuesta** (256/512/1024/2048/4096 o valor libre). Reutiliza `LlmAskImageViewModel`, `initializeModel` y el modo diagnóstico: cada prueba queda en «Exportar logs» con tokens/s, primer token y motivo de parada. Cada «Procesar» es un turno limpio (se vacía el hilo y no se guarda en el historial). Se recuerda el último modelo elegido. El botón Visión de la pantalla de inicio y de Apps abre esta pantalla; la pantalla antigua de chat con imagen sigue existiendo para conversaciones ya guardadas. **No incluido:** el selector de «Modelos recomendados» con descarga de pares texto+proyector (hay un consejo de texto sobre F16/Q8_0 y E2B); queda como siguiente paso. **Sin compilar:** UI Android pura, solo revisada por lectura; el build de GitHub Actions dirá si falta algún import o hay un tipo distinto.
+
+**Archivos:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/VisionScreen.kt` — nuevo.
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/navigation/GalleryNavGraph.kt` — ruta `box_app_vision`; Visión apunta a ella (inicio y Apps).
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/VisionSettings.kt` — `lastModel`/`setLastModel`.
+- `analisis/BUGS.md` — nota en BUG-017.
+
 ### 2026-11-22 — Análisis del log 22:04: la visión tarda por el prefill de las imágenes, no por el escalado; el tope de 256 funciona
 
 **Qué y por qué:** el humano probó el APK con los ajustes de visión y exportó `box-log-20261122-220402.txt`. **Sin cambios de código** en esta entrada; los datos cambian el siguiente paso de BUG-017.

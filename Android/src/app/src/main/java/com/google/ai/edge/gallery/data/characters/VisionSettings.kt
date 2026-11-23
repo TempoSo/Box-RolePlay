@@ -55,6 +55,13 @@ class VisionStore(context: Context) {
       .sanitized()
   }
 
+  /** Último modelo elegido en la pantalla de Visión. */
+  fun lastModel(): String? = prefs.getString("last_model", null)
+
+  fun setLastModel(name: String) {
+    prefs.edit().putString("last_model", name).apply()
+  }
+
   fun save(s: VisionSettings) {
     val v = s.sanitized()
     prefs

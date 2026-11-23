@@ -115,6 +115,8 @@
 - **Medición del 22/11 22:03 (APK con los ajustes de visión):** **2 imágenes** a lado 512 → prompt de **596 tok en 443,9 s (1,3 t/s)**, primer token a los **444 s**, generación de 255 tok en 75,2 s (3,39 t/s), total **8,7 min**; parada `max_tokens` (el tope de 256 funciona). El cuello es el **prefill de los tokens de imagen**, no el escalado de Kotlin: 1 imagen a 512 ronda la mitad. Para CPU conviene un modelo de visión pequeño (SmolVLM2-500M, Qwen3.5-0.8B, MobileVLM2-1.7B) o LiteRT con visión integrada; Gemma 4 E4B + mmproj BF16 es inviable para chat fluido.
 - **Archivos:** `engine/LlamaCppEngine.kt` (`queueImages`/`toRgb`), `runtime/LlamaCppModelHelper.kt`, `data/characters/EnginePerfStore.kt`, `data/characters/VisionSettings.kt`, `ui/apps/VisionSettingsDialog.kt`, `ui/llmchat/LlmChatScreen.kt`.
 
+- **Pantalla Visión nueva (2026-11-22, pendiente de build y re-prueba):** Visión abre ahora `VisionScreen` (01 imagen, 02 modelo+mmproj, 03 prompt, 04 tokens). Re-prueba: (1) Apps > Visión abre la pantalla nueva; (2) elegir foto y «Procesar imagen» con el modelo cargado; (3) cambiar el mmproj (F16/Q8_0 frente a BF16) y comprobar que recarga solo; (4) «Exportar logs» y mandar el reporte para comparar «Prompt: X t/s» entre combinaciones.
+
 ### BUG-045 · ⚠️ GGUF: cada turno vuelve a prefillar toda la conversación (la caché de prefijo no se usa)
 **Esfuerzo:** M · **Escalón:** 3 · Medir con el diagnóstico antes y después
 

@@ -100,6 +100,7 @@ private const val ROUTE_ROLEPLAY_EDIT = "roleplay_edit"
 private const val ROUTE_SETTINGS = "box_settings"
 private const val ROUTE_APPS = "box_apps"
 private const val ROUTE_APP_TTS = "box_app_tts"
+private const val ROUTE_APP_VISION = "box_app_vision"
 private const val ROUTE_APP_BENCH = "box_app_bench"
 private const val ROUTE_INFERENCE = "box_inference"
 private const val ENTER_ANIMATION_DURATION_MS = 500
@@ -225,7 +226,7 @@ fun GalleryNavHost(
             } else navController.navigate(ROUTE_INFERENCE)
           }
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.TTS -> navController.navigate(ROUTE_APP_TTS)
-          com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> openTask(BuiltInTaskId.LLM_ASK_IMAGE)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> navController.navigate(ROUTE_APP_VISION)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.IMAGE_GEN -> openTask(BuiltInTaskId.IMAGE_GEN)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.TRANSCRIBE -> openTask(BuiltInTaskId.WHISPER)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.AUDIO_ASK -> openTask(BuiltInTaskId.LLM_ASK_AUDIO)
@@ -332,7 +333,7 @@ fun GalleryNavHost(
                 navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${chat.name}?autoResume=false")
               } else navController.navigate(ROUTE_INFERENCE)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.TTS -> navController.navigate(ROUTE_APP_TTS)
-            com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> openTask(BuiltInTaskId.LLM_ASK_IMAGE)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> navController.navigate(ROUTE_APP_VISION)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.IMAGE_GEN -> openTask(BuiltInTaskId.IMAGE_GEN)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.TRANSCRIBE -> openTask(BuiltInTaskId.WHISPER)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.AUDIO_ASK -> openTask(BuiltInTaskId.LLM_ASK_AUDIO)
@@ -348,6 +349,13 @@ fun GalleryNavHost(
 
     composable(route = ROUTE_APP_TTS) {
       com.google.ai.edge.gallery.ui.apps.TtsAppScreen(onBack = { navController.navigateUp() })
+    }
+
+    composable(route = ROUTE_APP_VISION) {
+      com.google.ai.edge.gallery.ui.apps.VisionScreen(
+        modelManagerViewModel = modelManagerViewModel,
+        onBack = { navController.navigateUp() },
+      )
     }
 
     composable(route = ROUTE_APP_BENCH) {
