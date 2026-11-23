@@ -101,6 +101,7 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 ### Bloque 4 — Re-pruebas tras corregir bugs
 - [ ] 4.3b Visión: tiempo con lado 256 y 512 tras las optimizaciones (BUG-017).
 - [ ] **4.3c App Visión — ajustes propios (nuevo, pendiente de build):**
+  - [x] **Primera prueba (22/11 22:03, APK con ajustes):** el tope de 256 funciona (`parada: max_tokens`) y el prompt del sistema se aplica. Con **2 imágenes a 512** el turno tardó **8,7 min** (prompt 596 tok a 1,3 t/s + 255 tok de generación): el cuello es el prefill de imagen. Repetir con **1 imagen** y con un modelo de visión pequeño o LiteRT.
   - [ ] Enviar **solo una imagen** (sin escribir texto): debe usar la instrucción configurada, mostrar tu mensaje y responder.
   - [ ] «Ajustes de visión» → tope 256 (por defecto): la descripción debe cortarse alrededor de 256 tok y el turno debe durar bastante menos. Probar presets 512/1024/2048 y «-1 = sin tope».
   - [ ] Cambiar el prompt del sistema y la instrucción de imagen: se aplican solo en Visión; abrir Personajes/Roleplay y confirmar que su prompt no cambia.

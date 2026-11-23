@@ -41,6 +41,19 @@
 
 ## 📝 Registro
 
+### 2026-11-22 — Análisis del log 22:04: la visión tarda por el prefill de las imágenes, no por el escalado; el tope de 256 funciona
+
+**Qué y por qué:** el humano probó el APK con los ajustes de visión y exportó `box-log-20261122-220402.txt`. **Sin cambios de código** en esta entrada; los datos cambian el siguiente paso de BUG-017.
+
+- **Turno de visión medido:** 2 imágenes a lado 512 → prompt de **596 tok en 443,9 s (1,3 t/s)**, primer token a los **444 s**, generación de 255 tok en 75,2 s (3,39 t/s), total **8,7 min**. Parada `max_tokens`: el tope de 256 de la app Visión se aplica bien.
+- **Conclusión:** el coste dominante es el **prefill de los tokens de imagen** (el encoder mmproj + los tokens visuales), no el `Bitmap.copy()`/escalado de `toRgb`. Bajar el lado de 512 a 256 ayuda poco; la palanca real es un modelo de visión pequeño o LiteRT con visión integrada. Gemma 4 E4B + mmproj BF16 en CPU no da chat fluido.
+- **BUG-045:** el turno era el primero (`hist=0 turnos`), así que no hay evidencia todavía de reutilización de prefijo; hace falta un segundo turno.
+- **BUG-029:** el diagnóstico aún muestra dos cortes por `stop:###`, pero son generaciones de las **18:25/18:26**, anteriores al build con `StopMarkers.h`; el parche nuevo sigue pendiente de re-prueba.
+- **UI:** el humano pide acercar la pantalla de Visión a la de Layla (vista previa + «Procesar imagen» + ajustes), porque el flujo actual con «Ask Image», documentación y modelos recomendados confunde.
+
+**Archivos:**
+- `analisis/BUGS.md` — medición en BUG-017.
+
 ### 2026-11-22 — App Visión: ajustes propios inspirados en Layla (tope de tokens, prompt e instrucción de imagen)
 
 **Qué y por qué:** la app «Visión» usaba el mismo flujo que un chat normal: sin tope de respuesta y sin instrucción propia, así que una descripción podía seguir generando indefinidamente y el turno se hacía eterno (relacionado con BUG-017). Layla/MobileVLM acota la visión con una configuración dedicada: tope de tokens (256 por defecto), prompt de sistema y una instrucción de imagen que se envía al procesar solo una foto.
