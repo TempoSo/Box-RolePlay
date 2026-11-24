@@ -77,6 +77,9 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, f
         throw std::runtime_error("llama_new_context_with_model() returned null");
     }
     _maxResponse = opts.maxResponse;
+    // BUG-017: instrucciones de CPU con las que se compiló el motor (NEON, DOTPROD, MATMUL_INT8…).
+    // Sirve para confirmar que la compilación aprovecha el procesador.
+    LOGi("system_info: %s", llama_print_system_info());
     LOGi("context: n_ctx=%u n_batch=%u n_ubatch=%u threads=%d/%d flash=%d kv=%d/%d repack=%d",
          llama_n_ctx(_ctx), llama_n_batch(_ctx), llama_n_ubatch(_ctx), nThreads,
          ctx_params.n_threads_batch, (int) ctx_params.flash_attn_type, (int) ctx_params.type_k,

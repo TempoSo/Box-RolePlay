@@ -21,6 +21,14 @@ android {
                 arguments += "-DLLAMA_BUILD_COMMON=ON"
                 arguments += "-DLLAMA_CURL=OFF"
                 arguments += "-DGGML_LLAMAFILE=OFF"
+                // BUG-017: el motor (ggml) se compilaba sin instrucciones de arquitectura (armv8-a basico, sin
+                // dotprod), lo que deja el procesado del prompt y de la imagen muy lento. Las banderas
+                // -march de las variantes solo llegaban a los archivos de envoltorio, no a ggml. Base
+                // general segura: armv8.2-a + fp16 + dotprod (todo movil ARM64 reciente). Para otra base:
+                // -PggmlArmArch=armv8.6-a+fp16+dotprod+i8mm (mas rapido, solo CPUs con i8mm) o
+                // -PggmlArmArch= (vacio) para volver al comportamiento anterior.
+                val ggmlArmArch = (project.findProperty("ggmlArmArch") as String?) ?: "armv8.2-a+fp16+dotprod"
+                if (ggmlArmArch.isNotBlank()) arguments += "-DGGML_CPU_ARM_ARCH=$ggmlArmArch"
             }
         }
     }
