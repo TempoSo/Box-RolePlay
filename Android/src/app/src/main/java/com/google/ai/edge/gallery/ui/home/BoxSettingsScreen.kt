@@ -165,6 +165,29 @@ fun BoxSettingsScreen(
           )
         },
       )
+      // Ajustes originales de Box, recuperados: privacidad y cifrado.
+      var screenshotsOn by remember {
+        mutableStateOf(com.google.ai.edge.gallery.security.AppLockManager.isScreenshotsEnabled())
+      }
+      BoxActionCard(
+        icon = Icons.Rounded.BugReport,
+        title = "Permitir capturas de pantalla",
+        subtitle = "Deja que la app salga en capturas y grabaciones. Desactivado por defecto por privacidad.",
+        onClick = {
+          screenshotsOn = !screenshotsOn
+          com.google.ai.edge.gallery.security.AppLockManager.setScreenshotsEnabled(context, screenshotsOn)
+        },
+        trailing = {
+          androidx.compose.material3.Switch(
+            checked = screenshotsOn,
+            onCheckedChange = {
+              screenshotsOn = it
+              com.google.ai.edge.gallery.security.AppLockManager.setScreenshotsEnabled(context, it)
+            },
+          )
+        },
+      )
+      Column(Modifier.padding(vertical = 8.dp)) { BiometricEncryptionSection(context) }
       androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 24.dp))
     }
   }

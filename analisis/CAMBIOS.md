@@ -41,6 +41,11 @@
 
 ## 📝 Registro
 
+### 2026-11-24 — Ajustes de Box recuperados + Visión solo con modelos descargados
+- `VisionScreen`: la lista de modelos se filtra a importados o descargados (ya no salen Gemma-4 E2B/E4B LiteRT sin archivo).
+- `BoxSettingsScreen`: nuevas filas "Permitir capturas de pantalla" (`AppLockManager`) y "Cifrado biométrico" (`BiometricEncryptionSection`, ahora `internal`). Tema y token HF del diálogo original no se añadieron.
+- Sin compilar: revisar en el teléfono tras el build.
+
 ### 2026-11-24 — BUG-017: el motor se compila con dotprod (base general) y el log imprime system_info
 
 **Qué y por qué:** los tiempos de `SmolLM-mtmd` (codificar una imagen 56–98 s; pasar 256 tokens de imagen al modelo ~50 s a ~5 t/s, igual que generar) indican que las multiplicaciones de matrices no usan las instrucciones rápidas del procesador. Causa probable: en `CMakeLists.txt` las variantes `smollm_v8_*` aplican `-march=…` solo a `LLMInference.cpp` y `smollm.cpp`; `ggml` (donde se calcula todo) se compila una vez, sin bandera de arquitectura, o sea armv8-a básico, sin `dotprod` (y por eso el Repack no cambió nada). Cambio: `-DGGML_CPU_ARM_ARCH=armv8.2-a+fp16+dotprod` en `smollm/build.gradle.kts`, configurable con `-PggmlArmArch=…` (con `…+i8mm` es más rápido pero solo en CPUs con i8mm; vacío vuelve al comportamiento anterior). Se eligió la base general porque la app puede usarla más gente: casi todo móvil ARM64 con Android 15+ tiene fp16 y dotprod; un móvil sin ellos se cerraría al cargar un modelo (riesgo conocido, poco probable). Además, `LLMInference.cpp` escribe `system_info: …` (NEON, DOTPROD, MATMUL_INT8…) al cargar el contexto: tras el build, el log debe decir `DOTPROD = 1`. Es una deducción de la configuración, no una medición: si tras el build los tiempos no cambian, no era esto. Sin compilar: lo dirá el build. **Aparte (sin cambios):** Q4_K_M normal (no QAT) con imagen devuelve basura (`<unusedNN>`) en 6 de 6 pruebas; con texto funciona; los QAT (heretic, UD-Q4_K_XL) describen bien. Causa sin separar (proyector de otra variante o numérica); se usan QAT para visión.

@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
+import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.characters.EnginePerfStore
 import com.google.ai.edge.gallery.data.characters.MmprojFiles
 import com.google.ai.edge.gallery.data.characters.VisionSettings
@@ -107,7 +108,11 @@ fun VisionScreen(
   val perfLine by viewModel.perfLine.collectAsState()
 
   // Modelos con visión de esta tarea (los importados GGUF/LiteRT que la admiten).
-  val models: List<Model> = task.models.distinctBy { it.name }
+  // Solo los ya descargados o importados: el catálogo LiteRT (Gemma-4 E2B/E4B) no debe aparecer sin archivo.
+  val models: List<Model> =
+    task.models.distinctBy { it.name }.filter { m ->
+      m.imported || modelUi.modelDownloadStatus[m.name]?.status == ModelDownloadStatusType.SUCCEEDED
+    }
   var selectedName by remember { mutableStateOf(visionStore.lastModel()) }
   val model: Model? = models.firstOrNull { it.name == selectedName } ?: models.firstOrNull()
   val isGguf = model?.runtimeHelper is LlamaCppModelHelper
