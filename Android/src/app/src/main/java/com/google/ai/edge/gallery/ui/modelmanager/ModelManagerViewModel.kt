@@ -416,33 +416,39 @@ constructor(
         Log.w(TAG, "Model '${model.name}' figura como INITIALIZED pero el motor no está listo: se recarga")
       }
 
-      // Skip if initialization is in progress.
-      if (model.initializing) {
-        model.cleanUpAfterInit = false
-        Log.d(TAG, "Model '${model.name}' is being initialized. Skipping.")
-        return@launch
-      }
-
-      // Libera cualquier OTRO modelo de la tarea que siga cargado: dos motores grandes a la vez
-      // (el viejo cerrándose mientras el nuevo reserva su caché, p. ej. al subir el contexto de
-      // 2048 a 8192) pueden agotar memoria o chocar dentro del código nativo.
-      for (other in task.models) {
-        if (other.name != model.name && other.instance != null) {
-          Log.d(TAG, "Releasing '${other.name}' before initializing '${model.name}'")
-          cleanupModel(context = context, task = task, model = other)
+      // BUG-017: comprobar «ya se está cargando» y marcar «cargando» debe ser UN solo paso. Antes, dos
+      // llamadas casi simultáneas (la pantalla y la selección del modelo) pasaban las dos la
+      // comprobación y el modelo se cargaba dos veces a la vez (visto en el log: «[GGUF] cargando»
+      // duplicado con la misma hora). Ahora la segunda llamada espera y ve que ya se está cargando.
+      synchronized(model) {
+        // Skip if initialization is in progress.
+        if (model.initializing) {
+          model.cleanUpAfterInit = false
+          Log.d(TAG, "Model '${model.name}' is being initialized. Skipping.")
+          return@launch
         }
+
+        // Libera cualquier OTRO modelo de la tarea que siga cargado: dos motores grandes a la vez
+        // (el viejo cerrándose mientras el nuevo reserva su caché, p. ej. al subir el contexto de
+        // 2048 a 8192) pueden agotar memoria o chocar dentro del código nativo.
+        for (other in task.models) {
+          if (other.name != model.name && other.instance != null) {
+            Log.d(TAG, "Releasing '${other.name}' before initializing '${model.name}'")
+            cleanupModel(context = context, task = task, model = other)
+          }
+        }
+
+        // Clean up.
+        cleanupModel(context = context, task = task, model = model)
+
+        // Start initialization.
+        Log.d(TAG, "Initializing model '${model.name}'...")
+        model.initializing = true
+        updateModelInitializationStatus(
+          model = model,
+          status = ModelInitializationStatusType.INITIALIZING,
+        )
       }
-
-      // Clean up.
-      cleanupModel(context = context, task = task, model = model)
-
-      // Start initialization.
-      Log.d(TAG, "Initializing model '${model.name}'...")
-      model.initializing = true
-      updateModelInitializationStatus(
-        model = model,
-        status = ModelInitializationStatusType.INITIALIZING,
-      )
 
       val onDoneFn: (error: String) -> Unit = { error ->
         model.initializing = false

@@ -116,6 +116,7 @@
 - **Archivos:** `engine/LlamaCppEngine.kt` (`queueImages`/`toRgb`), `runtime/LlamaCppModelHelper.kt`, `data/characters/EnginePerfStore.kt`, `data/characters/VisionSettings.kt`, `ui/apps/VisionSettingsDialog.kt`, `ui/llmchat/LlmChatScreen.kt`.
 
 - **Pantalla Visión nueva (2026-11-22, pendiente de build y re-prueba):** Visión abre ahora `VisionScreen` (01 imagen, 02 modelo+mmproj, 03 prompt, 04 tokens). Re-prueba: (1) Apps > Visión abre la pantalla nueva; (2) elegir foto y «Procesar imagen» con el modelo cargado; (3) cambiar el mmproj (F16/Q8_0 frente a BF16) y comprobar que recarga solo; (4) «Exportar logs» y mandar el reporte para comparar «Prompt: X t/s» entre combinaciones.
+- **Mediciones 23/11 y parche (2026-11-23, pendiente de build y re-prueba):** E4B Q4_K_M + mmproj F16 + lado 256 → 81–92 s (antes 140–179 s con BF16/512); E2B con BF16 → 114–147 s; el prompt va a 3–6 t/s también en texto solo (cuello sin explicar). Parche: tiempos de codificado/decodificado de imagen a logcat (`SmolLM-mtmd`) y fin de la doble carga del modelo. Pruebas del humano: mismo mmproj F16 a lado 512 y a 256; procesar 2 imágenes seguidas (la primera paga el calentamiento); E2B con proyector F16/Q8_0. Con las líneas `SmolLM-mtmd` se decide si el cuello es el codificador o el procesado de tokens.
 
 ### BUG-045 · ⚠️ GGUF: cada turno vuelve a prefillar toda la conversación (la caché de prefijo no se usa)
 **Esfuerzo:** M · **Escalón:** 3 · Medir con el diagnóstico antes y después

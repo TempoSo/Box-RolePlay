@@ -200,8 +200,23 @@ LLMInference::_tokenizeMessages(const std::vector<llama_chat_message> &msgs) {
     return common_tokenize(llama_model_get_vocab(_model), _formatPrompt(msgs), true, true);
 }
 
+// BUG-017 (diagnostico): mtmd mide por su cuenta cuanto tarda en CODIFICAR cada imagen ("image slice
+// encoded in X ms") y en DECODIFICARLA en el modelo ("image decoded (batch n/m) in X ms"), pero por
+// defecto lo escribe en stderr, que en Android no llega a logcat. Se redirige a logcat (solo INFO o
+// superior) para que el log persistente lo recoja y se vea donde se va el tiempo de una imagen.
+static void
+mtmdLogToAndroid(ggml_log_level level, const char *text, void *) {
+    if (text == nullptr || level < GGML_LOG_LEVEL_INFO) return;
+    std::string line(text);
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+    if (line.empty()) return;
+    __android_log_print(level >= GGML_LOG_LEVEL_ERROR ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
+                        "SmolLM-mtmd", "%s", line.c_str());
+}
+
 bool
 LLMInference::loadMmproj(const char *mmprojPath, int nThreads) {
+    mtmd_helper_log_set(mtmdLogToAndroid, nullptr);
     if (_mtmd) {
         mtmd_free(_mtmd);
         _mtmd = nullptr;
