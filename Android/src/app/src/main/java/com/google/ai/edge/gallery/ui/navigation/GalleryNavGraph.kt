@@ -360,8 +360,8 @@ fun GalleryNavHost(
 
     composable(route = ROUTE_APP_BENCH) {
       com.google.ai.edge.gallery.ui.apps.BenchmarkAppScreen(
+        modelManagerViewModel = modelManagerViewModel,
         onBack = { navController.navigateUp() },
-        onOpenModelBenchmark = { navController.navigate(ROUTE_MODEL_MANAGER) },
       )
     }
 

@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-24 — Benchmark en una sola pantalla (aislada, estilo Layla)
+- `ui/apps/BenchmarkAppScreen.kt` (reescrita): marcas modelos GGUF y/o LiteRT descargados, Ejecutar, y se miden uno tras otro. Pantalla «Trabajando…» con cancelar y pantalla encendida. Resultados guardados (últimos 60) con puntuación y ranking local.
+- `ui/apps/BenchRunner.kt` (nuevo): por modelo descarga lo cargado → carga → prompt fijo de resumen → descarga. Mide 1.er token, prefill, decode, RAM (PSS) y carga. En GGUF usa las cifras reales del nativo (`LastEnginePerf`); en LiteRT, tiempos medidos en Kotlin y tokens estimados (se marca «≈»).
+- `data/characters/BenchMath.kt` (lógica pura, `BenchMathTest` 3 OK), `BenchStore.kt`, `BenchPrompt.kt` (el texto de Layla, ~900 tokens).
+- Ranking local: 50 % generación, 20 % lectura, 30 % RAM. Sin mediciones: suposición por tamaño (el mayor ≤ 40 % de la RAM).
+- Quitados «Benchmark completo» y «Prueba rápida» (QuickBenchDialog). No incluye % de CPU.
+- Sin compilar: revisar en el teléfono tras el build.
+
 ### 2026-11-24 — Ajustes de Box recuperados + Visión solo con modelos descargados
 - `VisionScreen`: la lista de modelos se filtra a importados o descargados (ya no salen Gemma-4 E2B/E4B LiteRT sin archivo).
 - `BoxSettingsScreen`: nuevas filas "Permitir capturas de pantalla" (`AppLockManager`) y "Cifrado biométrico" (`BiometricEncryptionSection`, ahora `internal`). Tema y token HF del diálogo original no se añadieron.
