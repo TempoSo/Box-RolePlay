@@ -41,6 +41,10 @@
 
 ## 📝 Registro
 
+### 2026-11-25 — Cierre de BUG-017, BUG-029 y BUG-045
+- Movidos a `BUGS_CERRADOS.md` con su evidencia: 017 (logs del 24/11: mmproj F16 11–16 s frente a BF16 89–97 s para codificar; `DOTPROD = 1`), 029 (confirmado por el humano) y 045 (log 23/11: `hist=2` procesó 22 tok; limitación conocida: chats con imágenes re-codifican el historial).
+- `BUGS.md`: triaje y fila del Escalón 3 actualizados; `PLAN_PRUEBAS.md`: línea de estado. 043 y 044 se mantienen abiertas.
+
 ### 2026-11-25 — Benchmark: auto-optimización, hilos de lectura y sin contexto
 - Botón «Auto-optimizar» (solo GGUF marcados): por etapas hilos → hilos de lectura → nBatch → flash → KV; el ganador (por puntuación) de cada etapa queda fijo para la siguiente. 1 pasada + calentamiento, máx. 64 tokens; hasta 12 pruebas por modelo (`AutoTune`, probado). Resume el mejor al final y se aplica con el botón existente.
 - Nuevo ajuste «hilos de lectura» (`threadsBatch`, ya soportado por el nativo vía `nThreadsBatch`): `EnginePerfSettings`, `EnginePerfStore`, `BenchCfg`. Va al aplicar la mejor a los chats.
