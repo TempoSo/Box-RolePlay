@@ -5,7 +5,10 @@ import android.os.Debug
 import android.os.SystemClock
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.data.characters.BenchCfg
 import com.google.ai.edge.gallery.data.characters.BenchMath
+import com.google.ai.edge.gallery.data.characters.BenchSample
+import com.google.ai.edge.gallery.data.characters.EnginePerfSettings
 import com.google.ai.edge.gallery.data.characters.BenchPrompt
 import com.google.ai.edge.gallery.data.characters.BenchRow
 import com.google.ai.edge.gallery.data.characters.LastEnginePerf
@@ -45,37 +48,32 @@ object BenchRunner {
     waitFor(30_000) { loaded.all { it.instance == null } }
   }
 
+  /**
+   * Mide un modelo con una configuración. [cfg] solo se aplica a GGUF (null en LiteRT). Se hace una
+   * pasada de calentamiento que no cuenta (si [warmup]) y [reps] pasadas medidas que se promedian.
+   */
   suspend fun measure(
     context: Context,
     mm: ModelManagerViewModel,
     task: Task,
     model: Model,
     maxTokens: Int,
+    cfg: BenchCfg?,
+    reps: Int,
+    warmup: Boolean,
     onStatus: (String) -> Unit,
   ): BenchRow = withContext(Dispatchers.Default) {
     val helper = model.runtimeHelper
     val engine = if (helper is LlamaCppModelHelper) "GGUF" else "LiteRT"
     val sizeMb = (model.totalBytes / (1024 * 1024)).toInt()
     val allModels = mm.getAllDownloadedModels() + model
+    val cfgText = if (engine == "GGUF") (cfg ?: BenchCfg()).encode() else ""
     fun fail(msg: String) =
-      BenchRow(model = model.name, engine = engine, ok = false, error = msg, sizeMb = sizeMb, whenMs = System.currentTimeMillis())
-    try {
-      onStatus("Liberando memoria…")
-      unloadAll(context, mm, task, allModels)
+      BenchRow(model = model.name, engine = engine, ok = false, error = msg, sizeMb = sizeMb,
+        whenMs = System.currentTimeMillis(), cfg = cfgText)
 
-      onStatus("Cargando $engine…")
-      val tLoad = SystemClock.elapsedRealtime()
-      mm.initializeModel(context = context, task = task, model = model, force = true)
-      val loaded = waitFor(300_000) {
-        val st = mm.uiState.value.modelInitializationStatus[model.name]?.status
-        st == ModelInitializationStatusType.ERROR ||
-          (st == ModelInitializationStatusType.INITIALIZED && helper.isModelReady(model))
-      }
-      val st = mm.uiState.value.modelInitializationStatus[model.name]?.status
-      if (!loaded || st != ModelInitializationStatusType.INITIALIZED) return@withContext fail("No cargó el modelo")
-      val loadSec = (SystemClock.elapsedRealtime() - tLoad) / 1000f
-
-      onStatus("Procesando el prompt…")
+    // Una pasada: devuelve la muestra o el motivo del fallo.
+    suspend fun runOnce(): Pair<BenchSample?, String> {
       val prompt = BenchPrompt.FULL
       LastEnginePerf.stats = null
       val finished = CompletableDeferred<Unit>()
@@ -83,7 +81,6 @@ object BenchRunner {
       var chunks = 0
       var tFirst = -1L
       var stopped = false
-      val out = StringBuilder()
       val t0 = SystemClock.elapsedRealtime()
       helper.runInference(
         model = model,
@@ -95,7 +92,6 @@ object BenchRunner {
               onStatus("Generando…")
             }
             chunks++
-            out.append(part)
           }
           if (done) finished.complete(Unit)
           else if (chunks >= maxTokens && !stopped) {
@@ -114,24 +110,68 @@ object BenchRunner {
       val ok = withTimeoutOrNull(600_000) { finished.await() } != null
       val tEnd = SystemClock.elapsedRealtime()
       if (!ok) helper.stopResponse(model)
-      errMsg?.let { return@withContext fail(it) }
-      if (!ok) return@withContext fail("Tiempo agotado (10 min)")
-      if (tFirst < 0) return@withContext fail("El modelo no generó nada")
-      val ramMb = pssMb()
-
+      errMsg?.let { return null to it }
+      if (!ok) return null to "Tiempo agotado (10 min)"
+      if (tFirst < 0) return null to "El modelo no generó nada"
       val ttft = tFirst - t0
       val total = tEnd - t0
       val perf = LastEnginePerf.stats.takeIf { engine == "GGUF" }
-      val promptTokens = perf?.promptTokens ?: BenchMath.estimateTokens(prompt)
-      val outTokens = perf?.generatedTokens ?: chunks
+      val pt = perf?.promptTokens ?: BenchMath.estimateTokens(prompt)
+      val ot = perf?.generatedTokens ?: chunks
+      return BenchSample(
+        prefillTps = perf?.promptTokensPerSecond ?: BenchMath.prefillTps(pt, ttft),
+        decodeTps = perf?.generationTokensPerSecond ?: BenchMath.decodeTps(ot, ttft, total),
+        ttftMs = ttft, promptTokens = pt, outTokens = ot, totalMs = total, ramMb = pssMb(),
+      ) to ""
+    }
+
+    try {
+      onStatus("Liberando memoria…")
+      unloadAll(context, mm, task, allModels)
+
+      if (engine == "GGUF") {
+        val c = cfg ?: BenchCfg()
+        LlamaCppModelHelper.perfOverride =
+          EnginePerfSettings(
+            threads = c.threads, nBatch = c.nBatch, nUBatch = c.nUBatch, flashAttn = c.flash,
+            kvType = c.kv, noMmap = c.noMmap, repack = c.repack, contextLength = c.ctx,
+          ).sanitized()
+      }
+      onStatus("Cargando $engine…")
+      val tLoad = SystemClock.elapsedRealtime()
+      mm.initializeModel(context = context, task = task, model = model, force = true)
+      val loaded = waitFor(300_000) {
+        val st = mm.uiState.value.modelInitializationStatus[model.name]?.status
+        st == ModelInitializationStatusType.ERROR ||
+          (st == ModelInitializationStatusType.INITIALIZED && helper.isModelReady(model))
+      }
+      val st = mm.uiState.value.modelInitializationStatus[model.name]?.status
+      if (!loaded || st != ModelInitializationStatusType.INITIALIZED) return@withContext fail("No cargó el modelo")
+      val loadSec = (SystemClock.elapsedRealtime() - tLoad) / 1000f
+
+      val samples = mutableListOf<BenchSample>()
+      val total = reps + if (warmup) 1 else 0
+      for (i in 0 until total) {
+        val isWarm = warmup && i == 0
+        onStatus(if (isWarm) "Calentamiento (no cuenta)…" else "Pasada ${i + (if (warmup) 0 else 1)} de $reps: procesando el prompt…")
+        if (i > 0) {
+          helper.prepareForAuxInference(model)
+          delay(500)
+        }
+        val (sample, err) = runOnce()
+        if (sample == null) return@withContext fail(err)
+        if (!isWarm) samples.add(sample)
+      }
+      val avg = BenchMath.average(samples) ?: return@withContext fail("Sin pasadas medidas")
       BenchRow(
         model = model.name, engine = engine, ok = true, loadSec = loadSec,
-        promptTokens = promptTokens, promptExact = perf != null, outTokens = outTokens, ttftMs = ttft,
-        prefillTps = perf?.promptTokensPerSecond ?: BenchMath.prefillTps(promptTokens, ttft),
-        decodeTps = perf?.generationTokensPerSecond ?: BenchMath.decodeTps(outTokens, ttft, total),
-        totalSec = total / 1000f, ramMb = ramMb, sizeMb = sizeMb, whenMs = System.currentTimeMillis(),
+        promptTokens = avg.promptTokens, promptExact = engine == "GGUF", outTokens = avg.outTokens,
+        ttftMs = avg.ttftMs, prefillTps = avg.prefillTps, decodeTps = avg.decodeTps,
+        totalSec = avg.totalMs / 1000f, ramMb = avg.ramMb, sizeMb = sizeMb,
+        whenMs = System.currentTimeMillis(), cfg = cfgText, reps = samples.size,
       )
     } finally {
+      LlamaCppModelHelper.perfOverride = null
       withContext(NonCancellable) {
         runCatching { helper.stopResponse(model) }
         unloadAll(context, mm, task, allModels)

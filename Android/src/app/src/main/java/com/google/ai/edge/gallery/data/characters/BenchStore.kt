@@ -20,6 +20,7 @@ class BenchStore(context: Context) {
           ttftMs = o.optLong("ttft"), prefillTps = o.optDouble("pre").toFloat(),
           decodeTps = o.optDouble("dec").toFloat(), totalSec = o.optDouble("tot").toFloat(),
           ramMb = o.optInt("ram"), sizeMb = o.optInt("size"), whenMs = o.optLong("when"),
+          cfg = o.optString("cfg"), reps = o.optInt("reps", 1),
         )
       }
     }.getOrDefault(emptyList())
@@ -33,13 +34,18 @@ class BenchStore(context: Context) {
         put("loadSec", r.loadSec.toDouble()); put("pt", r.promptTokens); put("pex", r.promptExact)
         put("ot", r.outTokens); put("ttft", r.ttftMs); put("pre", r.prefillTps.toDouble())
         put("dec", r.decodeTps.toDouble()); put("tot", r.totalSec.toDouble()); put("ram", r.ramMb)
-        put("size", r.sizeMb); put("when", r.whenMs)
+        put("size", r.sizeMb); put("when", r.whenMs); put("cfg", r.cfg); put("reps", r.reps)
       })
     }
     prefs.edit().putString("rows", arr.toString()).apply()
   }
 
+  /** Ajustes del motor propios del benchmark (no tocan los de los chats). */
+  fun loadCfg(): BenchCfg = BenchCfg.parse(prefs.getString("cfg", "") ?: "")
+
+  fun saveCfg(c: BenchCfg) = prefs.edit().putString("cfg", c.encode()).apply()
+
   fun clear() = prefs.edit().remove("rows").apply()
 
-  companion object { const val MAX = 60 }
+  companion object { const val MAX = 200 }
 }

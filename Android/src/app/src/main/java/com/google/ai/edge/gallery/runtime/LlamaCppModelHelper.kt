@@ -30,6 +30,9 @@ object LlamaCppModelHelper : LlmModelHelper {
     private val engines: MutableMap<String, LlamaCppEngine> = mutableMapOf()
     private var appContext: Context? = null
 
+    /** Solo el benchmark lo fija: ajustes del motor propios de la prueba, sin tocar los de los chats. */
+    @Volatile var perfOverride: com.google.ai.edge.gallery.data.characters.EnginePerfSettings? = null
+
     override fun initialize(
         context: Context,
         model: Model,
@@ -58,7 +61,7 @@ object LlamaCppModelHelper : LlmModelHelper {
         appContext = context.applicationContext
 
         // Ajustes de rendimiento del motor (pantalla "Rendimiento"): se leen en cada carga.
-        val perf = com.google.ai.edge.gallery.data.characters.EnginePerfStore(context).load()
+        val perf = perfOverride ?: com.google.ai.edge.gallery.data.characters.EnginePerfStore(context).load()
 
         // El tamaño del contexto es el "Max tokens" del modelo, salvo que se haya fijado otro en
         // los ajustes de rendimiento. Antes se usaba el máximo del modelo, que en Gemma es enorme.

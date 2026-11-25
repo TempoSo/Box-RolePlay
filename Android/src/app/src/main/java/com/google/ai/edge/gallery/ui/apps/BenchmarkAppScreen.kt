@@ -13,6 +13,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,7 +38,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.BuiltInTaskId
+import com.google.ai.edge.gallery.data.characters.BenchCfg
 import com.google.ai.edge.gallery.data.characters.BenchMath
+import com.google.ai.edge.gallery.data.characters.EnginePerfStore
 import com.google.ai.edge.gallery.data.characters.BenchPrompt
 import com.google.ai.edge.gallery.data.characters.BenchRow
 import com.google.ai.edge.gallery.data.characters.BenchStore
@@ -51,6 +57,7 @@ import kotlinx.coroutines.launch
  * uno tras otro, aislados, con el mismo prompt de resumen. Los resultados se guardan y se ordenan
  * con una puntuación local (velocidad + memoria): no hay servidor, es una estimación del equipo.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () -> Unit) {
   val context = LocalContext.current
@@ -73,6 +80,14 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
   var progress by remember { mutableStateOf("") }
   var job by remember { mutableStateOf<Job?>(null) }
   var showPrompt by remember { mutableStateOf(false) }
+  var cfg by remember { mutableStateOf(store.loadCfg()) }
+  var repsText by remember { mutableStateOf("2") }
+  var warmup by remember { mutableStateOf(true) }
+  var sweepParam by remember { mutableStateOf("") }
+  var sweepText by remember { mutableStateOf("64, 128, 512") }
+  var appliedNote by remember { mutableStateOf<String?>(null) }
+  fun setCfg(c: BenchCfg) { cfg = c; store.saveCfg(c) }
+  val anyGguf = models.any { it.name in selected && it.runtimeHelper is LlamaCppModelHelper }
 
   // Pantalla encendida mientras se mide (una medición larga con la pantalla apagada falsea los números).
   val view = LocalView.current
@@ -83,14 +98,24 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
 
   fun run() {
     val maxTokens = (tokensText.toIntOrNull() ?: 128).coerceIn(16, 1024)
-    val queue = models.filter { it.name in selected }
-    if (queue.isEmpty()) return
+    val reps = (repsText.toIntOrNull() ?: 2).coerceIn(1, 5)
+    val sweep = if (sweepParam.isBlank()) emptyList() else BenchMath.parseSweep(sweepText)
+    // Cola: cada modelo × cada configuración (solo GGUF; LiteRT no tiene estos ajustes y va una vez).
+    val jobs = mutableListOf<Triple<com.google.ai.edge.gallery.data.Model, BenchCfg?, String>>()
+    for (m in models.filter { it.name in selected }) {
+      if (m.runtimeHelper is LlamaCppModelHelper) {
+        if (sweep.isEmpty()) jobs.add(Triple(m, cfg, ""))
+        else sweep.forEach { v -> cfg.with(sweepParam, v)?.let { jobs.add(Triple(m, it, "$sweepParam=$v")) } }
+      } else jobs.add(Triple(m, null, ""))
+    }
+    if (jobs.isEmpty()) return
     running = true
+    appliedNote = null
     job = scope.launch {
       try {
-        queue.forEachIndexed { i, m ->
-          progress = "Modelo ${i + 1} de ${queue.size}: ${m.displayName.ifBlank { m.name }}"
-          val row = BenchRunner.measure(context, modelManagerViewModel, task, m, maxTokens) { status = it }
+        jobs.forEachIndexed { i, (m, c, tag) ->
+          progress = "Prueba ${i + 1} de ${jobs.size}: ${m.displayName.ifBlank { m.name }}" + (if (tag.isNotEmpty()) " ($tag)" else "")
+          val row = BenchRunner.measure(context, modelManagerViewModel, task, m, maxTokens, c, reps, warmup) { status = it }
           store.add(row)
           rows = store.load()
         }
@@ -197,6 +222,77 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
       )
+      OutlinedTextField(
+        value = repsText,
+        onValueChange = { repsText = it.filter(Char::isDigit).take(1) },
+        label = { Text("Pasadas medidas por prueba (1–5, se promedian)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+      )
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Switch(checked = warmup, onCheckedChange = { warmup = it })
+        Text("Pasada de calentamiento previa (no cuenta)", style = MaterialTheme.typography.bodySmall)
+      }
+
+      if (anyGguf) {
+        Card(Modifier.fillMaxWidth()) {
+          Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Ajustes del motor GGUF (solo benchmark)", style = MaterialTheme.typography.titleSmall)
+            Text(
+              "Son independientes de los ajustes de tus chats: aquí puedes probar sin tocar nada de ellos.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              NumField("Hilos (0=auto)", cfg.threads, Modifier.weight(1f)) { setCfg(cfg.copy(threads = it.coerceIn(0, 16))) }
+              NumField("Contexto", cfg.ctx, Modifier.weight(1f)) { setCfg(cfg.copy(ctx = it.coerceIn(256, 131072))) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              NumField("nBatch", cfg.nBatch, Modifier.weight(1f)) { setCfg(cfg.copy(nBatch = it.coerceIn(1, 4096))) }
+              NumField("nUBatch", cfg.nUBatch, Modifier.weight(1f)) { setCfg(cfg.copy(nUBatch = it.coerceIn(1, 4096))) }
+            }
+            Text("Flash attention", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              listOf("Auto", "Apagado", "Encendido").forEachIndexed { i, l ->
+                FilterChip(selected = cfg.flash == i, onClick = { setCfg(cfg.copy(flash = i)) }, label = { Text(l) })
+              }
+            }
+            Text("Tipo de KV", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              BenchCfg.KV.forEachIndexed { i, l ->
+                FilterChip(selected = cfg.kv == i, onClick = { setCfg(cfg.copy(kv = i)) }, label = { Text(l) })
+              }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              Switch(checked = cfg.repack, onCheckedChange = { setCfg(cfg.copy(repack = it)) })
+              Text("Repack", style = MaterialTheme.typography.bodySmall)
+              Switch(checked = cfg.noMmap, onCheckedChange = { setCfg(cfg.copy(noMmap = it)) })
+              Text("Sin mmap", style = MaterialTheme.typography.bodySmall)
+            }
+            Text("Barrido automático: prueba cada valor, uno tras otro", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              listOf("" to "Ninguno", "nbatch" to "nBatch", "hilos" to "Hilos", "flash" to "Flash", "kv" to "KV", "ctx" to "Contexto").forEach { (k, l) ->
+                FilterChip(selected = sweepParam == k, onClick = { sweepParam = k }, label = { Text(l) })
+              }
+            }
+            if (sweepParam.isNotBlank()) {
+              OutlinedTextField(
+                value = sweepText,
+                onValueChange = { sweepText = it.filter { c -> c.isDigit() || c == ',' || c == ' ' }.take(40) },
+                label = { Text("Valores (ej. 64, 128, 512)") },
+                supportingText = { Text("Flash: 0 auto, 1 apagado, 2 encendido · KV: 0 f32, 1 f16, 2 bf16, 3 q8_0, 6 q4_0 · Hilos: 0 = auto") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+              )
+              Text(
+                "Cada valor recarga el modelo: ${BenchMath.parseSweep(sweepText).size} pruebas por modelo GGUF.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+        }
+      }
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Button(enabled = selected.isNotEmpty(), onClick = { run() }) { Text("Ejecutar (${selected.size})") }
         TextButton(onClick = { showPrompt = !showPrompt }) { Text(if (showPrompt) "Ocultar prompt" else "Ver prompt") }
@@ -212,8 +308,21 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
           TextButton(onClick = { store.clear(); rows = emptyList() }) { Text("Borrar") }
         }
         val ranked = BenchMath.rank(rows, totalRamMb)
+        appliedNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
         val failed = rows.filter { !it.ok }.take(5)
-        ranked.forEachIndexed { i, r -> ResultCard(i + 1, r, BenchMath.score(r, totalRamMb)) }
+        ranked.forEachIndexed { i, top ->
+          ModelResults(
+            pos = i + 1, top = top, all = rows.filter { it.ok && it.model == top.model },
+            totalRamMb = totalRamMb,
+            onApply = {
+              val c = BenchCfg.parse(top.cfg)
+              val ps = EnginePerfStore(context)
+              ps.save(ps.load().copy(threads = c.threads, nBatch = c.nBatch, nUBatch = c.nUBatch,
+                flashAttn = c.flash, kvType = c.kv, noMmap = c.noMmap, repack = c.repack))
+              appliedNote = "Aplicado a tus chats: ${c.label()} (el contexto no se cambia)."
+            },
+          )
+        }
         failed.forEach { r ->
           Text(
             "✗ ${r.model}: ${r.error}",
@@ -227,24 +336,53 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
 }
 
 @Composable
-private fun ResultCard(pos: Int, r: BenchRow, score: Double) {
+private fun NumField(label: String, value: Int, modifier: Modifier, onValue: (Int) -> Unit) {
+  var text by remember(value) { mutableStateOf(value.toString()) }
+  OutlinedTextField(
+    value = text,
+    onValueChange = { t ->
+      text = t.filter(Char::isDigit).take(6)
+      text.toIntOrNull()?.let(onValue)
+    },
+    label = { Text(label) },
+    singleLine = true,
+    modifier = modifier,
+  )
+}
+
+/** Un modelo con todas sus configuraciones medidas; la mejor por puntuación va marcada. */
+@Composable
+private fun ModelResults(pos: Int, top: BenchRow, all: List<BenchRow>, totalRamMb: Int, onApply: () -> Unit) {
   Card(Modifier.fillMaxWidth()) {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("$pos · ${r.model}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 2)
-        Text("${"%.0f".format(score)} pts", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("$pos · ${top.model}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 2)
+        Text("${"%.0f".format(BenchMath.score(top, totalRamMb))} pts", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
       }
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-        Metric("%.1f".format(r.decodeTps), "generación t/s")
-        Metric("%.1f".format(r.prefillTps), "lectura t/s")
+        Metric("%.1f".format(top.decodeTps), "generación t/s")
+        Metric("%.1f".format(top.prefillTps), "lectura t/s")
       }
       Text(
-        "${r.engine} · 1.er token ${"%.1f".format(r.ttftMs / 1000f)} s · prompt ${if (r.promptExact) "" else "≈"}${r.promptTokens} tok · " +
-          "${r.outTokens} tok generados · RAM ${"%.2f".format(r.ramMb / 1024f)} GB · carga ${"%.0f".format(r.loadSec)} s · " +
-          "total ${"%.0f".format(r.totalSec)} s",
+        "${top.engine} · 1.er token ${"%.1f".format(top.ttftMs / 1000f)} s · prompt ${if (top.promptExact) "" else "≈"}${top.promptTokens} tok · " +
+          "${top.outTokens} tok generados · RAM ${"%.2f".format(top.ramMb / 1024f)} GB · carga ${"%.0f".format(top.loadSec)} s · " +
+          "${top.reps} pasada(s) · total ${"%.0f".format(top.totalSec)} s",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+      if (top.engine == "GGUF") {
+        Text("Configuraciones probadas (por puntuación):", style = MaterialTheme.typography.labelMedium)
+        all.sortedByDescending { BenchMath.score(it, totalRamMb) }.forEach { r ->
+          val best = r === top
+          Text(
+            (if (best) "★ " else "• ") + BenchCfg.parse(r.cfg).label() +
+              "\n   ${"%.1f".format(r.decodeTps)} t/s gen · ${"%.1f".format(r.prefillTps)} t/s lectura · RAM ${"%.1f".format(r.ramMb / 1024f)} GB",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (best) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        OutlinedButton(onClick = onApply) { Text("Aplicar la mejor a mis chats") }
+      }
     }
   }
 }

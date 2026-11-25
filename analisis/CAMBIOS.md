@@ -41,6 +41,13 @@
 
 ## 📝 Registro
 
+### 2026-11-24 — Benchmark: ajustes propios, barrido y repeticiones
+- Panel «Ajustes del motor GGUF (solo benchmark)» (hilos, contexto, nBatch, nUBatch, flash, KV, repack, mmap): aparece solo si hay un GGUF marcado y se guarda aparte (`BenchStore`). `LlamaCppModelHelper.perfOverride` lo aplica solo durante la medición y se limpia al acabar: los ajustes de los chats no cambian.
+- Barrido automático de un parámetro (nBatch, hilos, flash, KV, contexto) con los valores que escribas: cada valor recarga el modelo y es una prueba.
+- Pasada de calentamiento (no cuenta) + 1–5 pasadas medidas promediadas; entre pasadas se limpia el chat sin recargar.
+- Cada resultado guarda su configuración; por modelo se listan las configuraciones probadas con la mejor (★) y «Aplicar la mejor a mis chats» (no toca el contexto).
+- La puntuación y la recomendación usan la mejor configuración de cada modelo. `BenchMathTest` 5 OK. Sin compilar.
+
 ### 2026-11-24 — Benchmark en una sola pantalla (aislada, estilo Layla)
 - `ui/apps/BenchmarkAppScreen.kt` (reescrita): marcas modelos GGUF y/o LiteRT descargados, Ejecutar, y se miden uno tras otro. Pantalla «Trabajando…» con cancelar y pantalla encendida. Resultados guardados (últimos 60) con puntuación y ranking local.
 - `ui/apps/BenchRunner.kt` (nuevo): por modelo descarga lo cargado → carga → prompt fijo de resumen → descarga. Mide 1.er token, prefill, decode, RAM (PSS) y carga. En GGUF usa las cifras reales del nativo (`LastEnginePerf`); en LiteRT, tiempos medidos en Kotlin y tokens estimados (se marca «≈»).
