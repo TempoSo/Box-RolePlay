@@ -11,6 +11,8 @@ import com.jegly.offlineLLM.smollm.SmolLM
 data class EnginePerfSettings(
   /** 0 = automático (núcleos rápidos). */
   val threads: Int = 0,
+  /** Hilos para leer el prompt (prefill). 0 = los mismos que la generación. */
+  val threadsBatch: Int = 0,
   val nBatch: Int = 512,
   val nUBatch: Int = 512,
   /** 0 auto, 1 apagado, 2 encendido. */
@@ -31,6 +33,7 @@ data class EnginePerfSettings(
   fun sanitized(): EnginePerfSettings =
     copy(
       threads = threads.coerceIn(0, 16),
+      threadsBatch = threadsBatch.coerceIn(0, 16),
       nBatch = nBatch.coerceIn(1, 4096),
       nUBatch = nUBatch.coerceIn(1, 4096),
       flashAttn = flashAttn.coerceIn(0, 2),
@@ -62,6 +65,7 @@ data class EnginePerfSettings(
     SmolLM.EngineOptions(
       nBatch = nBatch,
       nUBatch = nUBatch,
+      nThreadsBatch = threadsBatch,
       flashAttn = flashAttn,
       kvTypeK = kvType,
       kvTypeV = kvType,
@@ -84,6 +88,7 @@ class EnginePerfStore(context: Context) {
     val d = EnginePerfSettings()
     return EnginePerfSettings(
         threads = prefs.getInt("threads", d.threads),
+        threadsBatch = prefs.getInt("threads_batch", d.threadsBatch),
         nBatch = prefs.getInt("n_batch", d.nBatch),
         nUBatch = prefs.getInt("n_ubatch", d.nUBatch),
         flashAttn = prefs.getInt("flash", d.flashAttn),
@@ -103,6 +108,7 @@ class EnginePerfStore(context: Context) {
     prefs
       .edit()
       .putInt("threads", v.threads)
+      .putInt("threads_batch", v.threadsBatch)
       .putInt("n_batch", v.nBatch)
       .putInt("n_ubatch", v.nUBatch)
       .putInt("flash", v.flashAttn)

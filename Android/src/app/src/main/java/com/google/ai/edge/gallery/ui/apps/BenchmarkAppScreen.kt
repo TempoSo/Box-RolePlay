@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.BuiltInTaskId
+import com.google.ai.edge.gallery.data.characters.AutoTune
 import com.google.ai.edge.gallery.data.characters.BenchCfg
 import com.google.ai.edge.gallery.data.characters.BenchMath
 import com.google.ai.edge.gallery.data.characters.EnginePerfStore
@@ -94,6 +95,47 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
   DisposableEffect(running) {
     view.keepScreenOn = running
     onDispose { view.keepScreenOn = false }
+  }
+
+  // Auto-optimización: por cada GGUF marcado, etapa a etapa (hilos → lectura → nBatch → flash → KV).
+  fun runAuto() {
+    val cores = Runtime.getRuntime().availableProcessors()
+    val targets = models.filter { it.name in selected && it.runtimeHelper is LlamaCppModelHelper }
+    if (targets.isEmpty()) return
+    val maxTokens = (tokensText.toIntOrNull() ?: 128).coerceIn(16, 64)
+    running = true
+    appliedNote = null
+    job = scope.launch {
+      val summary = StringBuilder()
+      try {
+        for (m in targets) {
+          val name = m.displayName.ifBlank { m.name }
+          val measured = mutableMapOf<String, Double>()
+          var best = cfg
+          var n = 0
+          for ((si, stage) in AutoTune.stages(cores).withIndex()) {
+            val cands = AutoTune.candidates(stage, best)
+            for (c in cands) {
+              if (c.encode() in measured) continue
+              n++
+              progress = "Auto-optimizando $name · etapa ${si + 1} de 5 (${stage.param}) · prueba $n"
+              val row = BenchRunner.measure(context, modelManagerViewModel, task, m, maxTokens, c, 1, true) { status = it }
+              store.add(row)
+              rows = store.load()
+              if (row.ok) measured[c.encode()] = BenchMath.score(row, totalRamMb)
+            }
+            best = AutoTune.pickWinner(cands, measured)
+          }
+          summary.append("Mejor para $name: ${best.label()}\n")
+        }
+      } catch (_: CancellationException) {
+      } finally {
+        running = false
+        status = ""
+        progress = ""
+        if (summary.isNotEmpty()) appliedNote = summary.toString().trim() + "\nPulsa «Aplicar la mejor a mis chats» en el modelo para usarla."
+      }
+    }
   }
 
   fun run() {
@@ -245,7 +287,7 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               NumField("Hilos (0=auto)", cfg.threads, Modifier.weight(1f)) { setCfg(cfg.copy(threads = it.coerceIn(0, 16))) }
-              NumField("Contexto", cfg.ctx, Modifier.weight(1f)) { setCfg(cfg.copy(ctx = it.coerceIn(256, 131072))) }
+              NumField("Hilos lectura (0=igual)", cfg.threadsBatch, Modifier.weight(1f)) { setCfg(cfg.copy(threadsBatch = it.coerceIn(0, 16))) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               NumField("nBatch", cfg.nBatch, Modifier.weight(1f)) { setCfg(cfg.copy(nBatch = it.coerceIn(1, 4096))) }
@@ -271,7 +313,7 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
             }
             Text("Barrido automático: prueba cada valor, uno tras otro", style = MaterialTheme.typography.labelMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              listOf("" to "Ninguno", "nbatch" to "nBatch", "hilos" to "Hilos", "flash" to "Flash", "kv" to "KV", "ctx" to "Contexto").forEach { (k, l) ->
+              listOf("" to "Ninguno", "nbatch" to "nBatch", "hilos" to "Hilos", "hilosl" to "Hilos lectura", "flash" to "Flash", "kv" to "KV").forEach { (k, l) ->
                 FilterChip(selected = sweepParam == k, onClick = { sweepParam = k }, label = { Text(l) })
               }
             }
@@ -280,7 +322,7 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
                 value = sweepText,
                 onValueChange = { sweepText = it.filter { c -> c.isDigit() || c == ',' || c == ' ' }.take(40) },
                 label = { Text("Valores (ej. 64, 128, 512)") },
-                supportingText = { Text("Flash: 0 auto, 1 apagado, 2 encendido · KV: 0 f32, 1 f16, 2 bf16, 3 q8_0, 6 q4_0 · Hilos: 0 = auto") },
+                supportingText = { Text("Flash: 0 auto, 1 apagado, 2 encendido · KV: 0 f32, 1 f16, 2 bf16, 3 q8_0, 6 q4_0 · Hilos: 0 = auto · El contexto va fijo en 2048 (es de chats, no afecta la velocidad)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
               )
@@ -295,7 +337,19 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
       }
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Button(enabled = selected.isNotEmpty(), onClick = { run() }) { Text("Ejecutar (${selected.size})") }
+        if (anyGguf) {
+          OutlinedButton(onClick = { runAuto() }) { Text("Auto-optimizar") }
+        }
         TextButton(onClick = { showPrompt = !showPrompt }) { Text(if (showPrompt) "Ocultar prompt" else "Ver prompt") }
+      }
+      if (anyGguf) {
+        Text(
+          "Auto-optimizar prueba hilos, hilos de lectura, nBatch, flash y KV por etapas (hasta " +
+            "${AutoTune.maxTests(Runtime.getRuntime().availableProcessors())} pruebas por modelo, unos 15–20 min) y deja fijo el ganador de cada etapa. " +
+            "Usa 1 pasada con calentamiento y máx. 64 tokens. Mantén el teléfono conectado.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
       }
       if (showPrompt) {
         Text(BenchPrompt.FULL, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -318,7 +372,7 @@ fun BenchmarkAppScreen(modelManagerViewModel: ModelManagerViewModel, onBack: () 
               val c = BenchCfg.parse(top.cfg)
               val ps = EnginePerfStore(context)
               ps.save(ps.load().copy(threads = c.threads, nBatch = c.nBatch, nUBatch = c.nUBatch,
-                flashAttn = c.flash, kvType = c.kv, noMmap = c.noMmap, repack = c.repack))
+                flashAttn = c.flash, kvType = c.kv, noMmap = c.noMmap, repack = c.repack, threadsBatch = c.threadsBatch))
               appliedNote = "Aplicado a tus chats: ${c.label()} (el contexto no se cambia)."
             },
           )

@@ -30,8 +30,9 @@ class BenchMathTest {
     assertEquals(c, BenchCfg.parse(c.encode()))
     assertEquals(BenchCfg(), BenchCfg.parse(""))
     assertEquals(64, BenchCfg().with("nbatch", 64)!!.nBatch)
-    assertEquals(64, BenchCfg().with("nbatch", 64)!!.nUBatch) // uBatch nunca mayor que nBatch
-    assertEquals(512, BenchCfg().with("nbatch", 1024)!!.nUBatch)
+    assertEquals(64, BenchCfg().with("nbatch", 64)!!.nUBatch)
+    assertEquals(1024, BenchCfg().with("nbatch", 1024)!!.nUBatch)
+    assertEquals(6, BenchCfg().with("hilosl", 6)!!.threadsBatch)
     assertNull(BenchCfg().with("xx", 1))
     assertEquals(16, BenchCfg().with("hilos", 99)!!.threads)
     assertTrue(c.label().contains("sin mmap"))
@@ -43,5 +44,20 @@ class BenchMathTest {
     val m = BenchMath.average(listOf(a,b))!!
     assertEquals(15f,m.prefillTps,0.01f); assertEquals(5f,m.decodeTps,0.01f); assertEquals(2000L,m.ttftMs); assertEquals(3200,m.ramMb)
     assertNull(BenchMath.average(emptyList()))
+  }
+
+  @Test fun autoTune() {
+    val st = AutoTune.stages(8)
+    assertEquals(listOf("hilos","hilosl","nbatch","flash","kv"), st.map{it.param})
+    assertEquals(listOf(3,4,6), st[0].values)
+    val base = BenchCfg()
+    val c = AutoTune.candidates(st[2], base) // nbatch: 128,256,512(=base),1024
+    assertEquals(base, c.first()); assertEquals(4, c.size)
+    val scores = mapOf(c[1].encode() to 10.0, base.encode() to 20.0, c[2].encode() to 30.0)
+    assertEquals(c[2], AutoTune.pickWinner(c, scores))
+    assertEquals(base, AutoTune.pickWinner(c, mapOf(base.encode() to 5.0))) // el resto no medido
+    assertEquals(base, AutoTune.pickWinner(c, mapOf(base.encode() to 5.0, c[1].encode() to 5.0))) // empate: la actual
+    assertEquals(12, AutoTune.maxTests(8))
+    assertTrue(BenchCfg.parse(BenchCfg(threadsBatch=6).encode()).threadsBatch == 6)
   }
 }

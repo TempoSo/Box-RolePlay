@@ -41,6 +41,13 @@
 
 ## 📝 Registro
 
+### 2026-11-25 — Benchmark: auto-optimización, hilos de lectura y sin contexto
+- Botón «Auto-optimizar» (solo GGUF marcados): por etapas hilos → hilos de lectura → nBatch → flash → KV; el ganador (por puntuación) de cada etapa queda fijo para la siguiente. 1 pasada + calentamiento, máx. 64 tokens; hasta 12 pruebas por modelo (`AutoTune`, probado). Resume el mejor al final y se aplica con el botón existente.
+- Nuevo ajuste «hilos de lectura» (`threadsBatch`, ya soportado por el nativo vía `nThreadsBatch`): `EnginePerfSettings`, `EnginePerfStore`, `BenchCfg`. Va al aplicar la mejor a los chats.
+- El contexto sale del panel y del barrido: fijo en 2048 (es de chats y no mide velocidad).
+- nBatch del barrido ahora sube también nUBatch (antes 1024 era igual a 512).
+- `BenchMathTest` 6 OK. Sin compilar.
+
 ### 2026-11-24 — Benchmark: ajustes propios, barrido y repeticiones
 - Panel «Ajustes del motor GGUF (solo benchmark)» (hilos, contexto, nBatch, nUBatch, flash, KV, repack, mmap): aparece solo si hay un GGUF marcado y se guarda aparte (`BenchStore`). `LlamaCppModelHelper.perfOverride` lo aplica solo durante la medición y se limpia al acabar: los ajustes de los chats no cambian.
 - Barrido automático de un parámetro (nBatch, hilos, flash, KV, contexto) con los valores que escribas: cada valor recarga el modelo y es una prueba.

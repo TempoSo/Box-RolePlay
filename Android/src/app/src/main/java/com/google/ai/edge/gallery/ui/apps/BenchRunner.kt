@@ -133,7 +133,7 @@ object BenchRunner {
         val c = cfg ?: BenchCfg()
         LlamaCppModelHelper.perfOverride =
           EnginePerfSettings(
-            threads = c.threads, nBatch = c.nBatch, nUBatch = c.nUBatch, flashAttn = c.flash,
+            threads = c.threads, threadsBatch = c.threadsBatch, nBatch = c.nBatch, nUBatch = c.nUBatch, flashAttn = c.flash,
             kvType = c.kv, noMmap = c.noMmap, repack = c.repack, contextLength = c.ctx,
           ).sanitized()
       }

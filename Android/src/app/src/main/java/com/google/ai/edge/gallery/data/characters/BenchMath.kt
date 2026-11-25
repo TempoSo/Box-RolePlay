@@ -25,6 +25,8 @@ data class BenchRow(
 /** Ajustes del motor GGUF solo para el benchmark (independientes de los de los chats). */
 data class BenchCfg(
   val threads: Int = 0,
+  /** Hilos de lectura del prompt; 0 = igual que generación. */
+  val threadsBatch: Int = 0,
   val nBatch: Int = 512,
   val nUBatch: Int = 512,
   val flash: Int = 0,
@@ -34,18 +36,21 @@ data class BenchCfg(
   val ctx: Int = 2048,
 ) {
   fun encode(): String =
-    "t=$threads;nb=$nBatch;nu=$nUBatch;fl=$flash;kv=$kv;nm=${if (noMmap) 1 else 0};rp=${if (repack) 1 else 0};cx=$ctx"
+    "t=$threads;tb=$threadsBatch;nb=$nBatch;nu=$nUBatch;fl=$flash;kv=$kv;nm=${if (noMmap) 1 else 0};rp=${if (repack) 1 else 0};cx=$ctx"
 
   fun label(): String =
-    "hilos ${if (threads == 0) "auto" else threads} · nBatch $nBatch · nUBatch $nUBatch · " +
-      "flash ${listOf("auto", "off", "on").getOrElse(flash) { "?" }} · KV ${KV.getOrElse(kv) { "?" }} · ctx $ctx" +
+    "hilos ${if (threads == 0) "auto" else threads}" +
+      (if (threadsBatch == 0) "" else " (lectura $threadsBatch)") + " · nBatch $nBatch · nUBatch $nUBatch · " +
+      "flash ${listOf("auto", "off", "on").getOrElse(flash) { "?" }} · KV ${KV.getOrElse(kv) { "?" }}" +
+      (if (ctx == 2048) "" else " · ctx $ctx") +
       (if (noMmap) " · sin mmap" else "") + (if (repack) "" else " · sin repack")
 
   /** Copia con un parámetro cambiado (barrido). null si el nombre o el valor no valen. */
   fun with(param: String, value: Int): BenchCfg? =
     when (param) {
-      "nbatch" -> copy(nBatch = value.coerceIn(1, 4096), nUBatch = minOf(nUBatch, value.coerceIn(1, 4096)))
+      "nbatch" -> value.coerceIn(1, 4096).let { copy(nBatch = it, nUBatch = it) }
       "hilos" -> copy(threads = value.coerceIn(0, 16))
+      "hilosl" -> copy(threadsBatch = value.coerceIn(0, 16))
       "flash" -> copy(flash = value.coerceIn(0, 2))
       "kv" -> copy(kv = value.coerceIn(0, KV.size - 1))
       "ctx" -> copy(ctx = value.coerceIn(256, 131072))
@@ -60,6 +65,7 @@ data class BenchCfg(
       val d = BenchCfg()
       return BenchCfg(
         threads = (m["t"] ?: d.threads).coerceIn(0, 16),
+        threadsBatch = (m["tb"] ?: 0).coerceIn(0, 16),
         nBatch = (m["nb"] ?: d.nBatch).coerceIn(1, 4096),
         nUBatch = (m["nu"] ?: d.nUBatch).coerceIn(1, 4096),
         flash = (m["fl"] ?: d.flash).coerceIn(0, 2),
@@ -134,4 +140,35 @@ object BenchMath {
 
   fun rank(rows: List<BenchRow>, totalRamMb: Int): List<BenchRow> =
     bestPerModel(rows, totalRamMb).sortedByDescending { score(it, totalRamMb) }
+}
+
+/**
+ * Auto-optimización: ajusta un parámetro cada vez, en orden, y deja fijo el ganador de cada etapa
+ * antes de pasar a la siguiente (hilos → hilos de lectura → nBatch → flash → KV).
+ */
+object AutoTune {
+  data class Stage(val param: String, val values: List<Int>)
+
+  fun stages(cores: Int): List<Stage> {
+    val c = cores.coerceIn(2, 16)
+    val gen = listOf(c * 3 / 8, c / 2, c * 3 / 4).map { it.coerceAtLeast(2) }.distinct()
+    return listOf(
+      Stage("hilos", gen),
+      Stage("hilosl", listOf(0, c * 3 / 4, c).distinct()),
+      Stage("nbatch", listOf(128, 256, 512, 1024)),
+      Stage("flash", listOf(0, 1, 2)),
+      Stage("kv", listOf(1, 3)), // f16 y q8_0 (casi sin pérdida); q4 y menores dañan la calidad
+    )
+  }
+
+  /** Configuraciones de una etapa: la mejor actual (siempre primera) y las variantes. */
+  fun candidates(stage: Stage, best: BenchCfg): List<BenchCfg> =
+    (listOf(best) + stage.values.mapNotNull { best.with(stage.param, it) }).distinctBy { it.encode() }
+
+  /** Gana la de mayor puntuación; las no medidas o fallidas no cuentan; en empate, la primera (la actual). */
+  fun pickWinner(cands: List<BenchCfg>, scores: Map<String, Double>): BenchCfg =
+    cands.maxByOrNull { scores[it.encode()] ?: -1.0 } ?: cands.first()
+
+  /** Pruebas que faltan por medir en total, como cota alta para mostrar al usuario. */
+  fun maxTests(cores: Int): Int = stages(cores).let { st -> 1 + st.sumOf { it.values.size } - (st.size - 1) }
 }
