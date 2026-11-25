@@ -1,7 +1,9 @@
 #include "LLMInference.h"
+#include "MediaReuse.h"
 #include "ContextWindow.h"
 #include "ChatFormats.h"
 #include "StopMarkers.h"
+#include <algorithm>
 #include <android/log.h>
 #include <cstring>
 #include <iomanip>
@@ -300,19 +302,84 @@ LLMInference::_startMediaCompletion(const std::string &query) {
         throw std::runtime_error("context size too small for this image: increase the context length");
     }
 
-    llama_memory_clear(llama_get_memory(_ctx), false);
-    _kvTokens.clear();
+    // Trozos del prompt (texto / imagen) y sus posiciones; cada posicion de imagen lleva un id
+    // negativo unico para que el prefijo reutilizable se detenga justo donde empieza la imagen.
+    std::vector<mediareuse::Chunk> desc;
+    const size_t nChunks = mtmd_input_chunks_size(chunks);
+    for (size_t i = 0; i < nChunks; i++) {
+        const mtmd_input_chunk *ch = mtmd_input_chunks_get(chunks, i);
+        mediareuse::Chunk d;
+        if (mtmd_input_chunk_get_type(ch) == MTMD_INPUT_CHUNK_TYPE_TEXT) {
+            size_t n = 0;
+            const llama_token *t = mtmd_input_chunk_get_tokens_text(ch, &n);
+            d.tokens.assign(t, t + n);
+        } else {
+            d.image = true;
+            d.nPos = (int) mtmd_input_chunk_get_n_pos(ch);
+        }
+        desc.push_back(std::move(d));
+    }
+    const std::vector<int> full = mediareuse::flatten(desc, _nextPlaceholder);
 
+    llama_memory_t mem = llama_get_memory(_ctx);
+    if (_kvDirty) {
+        llama_memory_clear(mem, false);
+        _kvTokens.clear();
+        _kvDirty = false;
+    }
+    const std::vector<int> cached(_kvTokens.begin(), _kvTokens.end());
+    size_t common = ctxwin::reusablePrefix(cached, full);
+    std::vector<mediareuse::Step> steps = mediareuse::plan(desc, common);
+    if (steps.empty()) common = 0;
+    if (common < _kvTokens.size()) {
+        if (!llama_memory_seq_rm(mem, 0, (llama_pos) common, -1)) {
+            llama_memory_clear(mem, false); // cache con ventana deslizante: no deja borrar a medias
+            _kvTokens.clear();
+            common = 0;
+        } else {
+            _kvTokens.resize(common);
+        }
+    }
+    if (common == 0) steps = mediareuse::plan(desc, 0);
+    LOGi("media: reutiliza %zu de %zu posiciones del prompt", common, full.size());
+
+    const int nB = (int) llama_n_batch(_ctx);
+    llama_pos nPast = (llama_pos) common;
     auto t0 = ggml_time_us();
-    llama_pos newPast = 0;
-    rc = mtmd_helper_eval_chunks(_mtmd, _ctx, chunks, 0, 0, (int32_t) llama_n_batch(_ctx), true, &newPast);
+    bool failed = false;
+    for (const mediareuse::Step &st: steps) {
+        const mediareuse::Chunk &d = desc[st.chunk];
+        llama_pos newPast = nPast;
+        if (!d.image) {
+            std::vector<llama_token> toks(d.tokens.begin() + st.skip, d.tokens.end());
+            size_t off = 0;
+            while (off < toks.size()) {
+                const int n = (int) std::min((size_t) nB, toks.size() - off);
+                llama_batch b = llama_batch_get_one(toks.data() + off, n);
+                if (llama_decode(_ctx, b) < 0) { failed = true; break; }
+                off += n;
+                newPast += n;
+            }
+        } else {
+            const bool last = (st.chunk + 1 == desc.size());
+            if (mtmd_helper_eval_chunk_single(_mtmd, _ctx, mtmd_input_chunks_get(chunks, st.chunk), nPast, 0, nB,
+                                              last, &newPast) != 0) {
+                failed = true;
+            }
+        }
+        if (failed) break;
+        // El registro del KV sigue lo realmente procesado (tokens reales o ids de imagen).
+        while (_kvTokens.size() < (size_t) newPast) _kvTokens.push_back(full[_kvTokens.size()]);
+        nPast = newPast;
+    }
     mtmd_input_chunks_free(chunks);
-    if (rc != 0) {
-        llama_memory_clear(llama_get_memory(_ctx), false);
-        throw std::runtime_error("mtmd_helper_eval_chunks() failed");
+    if (failed) {
+        llama_memory_clear(mem, false);
+        _kvTokens.clear();
+        throw std::runtime_error("mtmd: fallo al procesar el prompt con imagenes");
     }
     _prefillTimeUs = ggml_time_us() - t0;
-    _prefillTokens = (int) nTokens;
+    _prefillTokens = (int) (full.size() - common);
 
     delete _batch;
     _batch = new llama_batch();
@@ -320,7 +387,7 @@ LLMInference::_startMediaCompletion(const std::string &query) {
     _pendingPrompt.clear();
     _promptDecoded = false;
     _mediaPrefilled = true;
-    _kvDirty = true; // el KV ya no coincide con _kvTokens: el siguiente turno parte de cero
+    _kvDirty = false; // _kvTokens refleja el KV (con ids unicos en las posiciones de imagen)
 }
 
 // Cadena de muestreo, en el orden habitual de llama.cpp: penalizaciones, DRY, top-k, top-p, min-p,

@@ -86,6 +86,7 @@ private:
     mtmd_context *_mtmd = nullptr;
     std::vector<mtmd_bitmap *> _pendingBitmaps;
     bool _mediaPrefilled = false; // el prompt (con imagenes) ya esta en el KV; solo falta muestrear
+    int _nextPlaceholder = -2;    // ids negativos unicos para las posiciones de imagen en _kvTokens
     bool _kvDirty = false;        // el KV tiene tokens de imagen que _kvTokens no refleja
     bool _isGemma4 = false;   // plantilla <|turn> ... <turn|>: se formatea a mano
     bool _enableThinking = false; // <|think|> al inicio del turno de sistema (Gemma 4)

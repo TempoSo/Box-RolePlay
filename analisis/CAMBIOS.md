@@ -41,6 +41,12 @@
 
 ## 📝 Registro
 
+### 2026-11-25 — Fotos dentro de un chat: reutilizar el KV (nativo)
+- Log del 25/11 17:23: en un chat con 11 turnos la foto tardó 164 s de prompt (vs 38 s en Visión vacía); el turno con imagen vaciaba el KV y reprocesaba todo, y el siguiente también.
+- `smollm/src/main/cpp/MediaReuse.h` (nuevo) + `LLMInference.cpp::_startMediaCompletion`: se calcula el prefijo común entre el KV y el prompt (cada posición de imagen lleva un id negativo único, así el prefijo se detiene donde empieza la imagen), se recorta el KV y solo se procesa lo nuevo: texto con `llama_decode` por lotes y la imagen con `mtmd_helper_eval_chunk_single`. `_kvDirty` ya no se marca tras una imagen. Línea nueva en logcat: `media: reutiliza X de Y posiciones del prompt`.
+- Test `smollm/src/test/cpp/MediaReuseTest.cpp` (g++, OK). La parte que llama a llama.cpp/mtmd no se pudo compilar aquí: revisar en el build.
+- Re-prueba: chat con historial largo + foto → «prompt» debe bajar de ~160 s a ~40 s y el log debe decir `reutiliza` casi todo; el turno de texto siguiente debe procesar pocas decenas de tokens.
+
 ### 2026-11-25 — Cierre de BUG-017, BUG-029 y BUG-045
 - Movidos a `BUGS_CERRADOS.md` con su evidencia: 017 (logs del 24/11: mmproj F16 11–16 s frente a BF16 89–97 s para codificar; `DOTPROD = 1`), 029 (confirmado por el humano) y 045 (log 23/11: `hist=2` procesó 22 tok; limitación conocida: chats con imágenes re-codifican el historial).
 - `BUGS.md`: triaje y fila del Escalón 3 actualizados; `PLAN_PRUEBAS.md`: línea de estado. 043 y 044 se mantienen abiertas.
