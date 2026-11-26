@@ -3,8 +3,19 @@ package com.google.ai.edge.gallery.tts
 import android.content.Context
 import java.io.File
 
+/** Tipo de modelo de voz: Pocket (clona la voz de una muestra) o Kokoro (voces incluidas en el modelo). */
+enum class TtsModelType(val label: String) { POCKET("Pocket TTS"), KOKORO("Kokoro") }
+
 /** Un modelo de voz instalado: carpeta propia dentro de `tts/models/` (o el modelo antiguo `tts/pocket`). */
-data class TtsModelInfo(val id: String, val label: String, val dir: File, val complete: Boolean, val sizeMb: Long)
+data class TtsModelInfo(
+  val id: String,
+  val label: String,
+  val dir: File,
+  val complete: Boolean,
+  val sizeMb: Long,
+  val type: TtsModelType = TtsModelType.POCKET,
+  val missing: List<String> = emptyList(),
+)
 
 /**
  * Biblioteca de modelos de voz: se pueden tener varios (p. ej. español e inglés) y elegir cuál se usa.
@@ -49,10 +60,20 @@ object TtsModels {
     return out
   }
 
+  fun typeOf(dir: File): TtsModelType = if (KokoroModelFiles.looksLike(dir)) TtsModelType.KOKORO else TtsModelType.POCKET
+
+  /** El modelo activo (el elegido, o el primero completo), o null si no hay ninguno. */
+  fun active(context: Context): TtsModelInfo? {
+    val id = activeId(context)
+    return list(context).firstOrNull { it.id == id }
+  }
+
   private fun info(id: String, dir: File, fallback: String): TtsModelInfo {
     val label = runCatching { File(dir, LABEL_FILE).readText().trim() }.getOrDefault("").ifEmpty { fallback }
     val size = (dir.listFiles()?.sumOf { it.length() } ?: 0L) shr 20
-    return TtsModelInfo(id, label, dir, PocketModelFiles.missing(dir).isEmpty(), size)
+    val type = typeOf(dir)
+    val missing = if (type == TtsModelType.KOKORO) KokoroModelFiles.missing(dir) else PocketModelFiles.missing(dir)
+    return TtsModelInfo(id, label, dir, missing.isEmpty(), size, type, missing)
   }
 
   /** Id del modelo en uso; si el guardado ya no existe, el primero completo (o el antiguo). */

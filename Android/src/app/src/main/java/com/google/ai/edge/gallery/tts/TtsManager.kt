@@ -49,6 +49,7 @@ object TtsManager {
   @Volatile var currentCharacterId: String = ""
 
   @Volatile private var engine: SherpaPocketEngine? = null
+  @Volatile private var kokoroEngine: SherpaKokoroEngine? = null
   @Volatile private var engineKey: String = ""
   @Volatile private var track: AudioTrack? = null
 
@@ -106,24 +107,32 @@ object TtsManager {
     executor.execute {
       engine?.release()
       engine = null
+      kokoroEngine?.release()
+      kokoroEngine = null
       engineKey = ""
     }
   }
 
-  fun isModelReady(context: Context): Boolean = PocketModelFiles.missing(TtsFiles.modelDir(context)).isEmpty()
+  fun isModelReady(context: Context): Boolean = TtsModels.active(context)?.complete == true
 
   private fun toast(context: Context, msg: String) {
     main.post { Toast.makeText(context.applicationContext, msg, Toast.LENGTH_LONG).show() }
   }
 
-  private class Inputs(val voicePath: String, val files: PocketModelFiles)
+  private class Inputs(
+    val type: TtsModelType,
+    /** Muestra .wav (Pocket) o referencia «kokoro:N»; null en Kokoro = voz automática. */
+    val voiceRef: String?,
+    val pocketFiles: PocketModelFiles?,
+    val kokoroFiles: KokoroModelFiles?,
+  )
 
   /** Voz concreta para una prueba (biblioteca de voces); solo vale durante la llamada a [speakAs]. */
   @Volatile private var voiceOverride: String? = null
 
-  /** Lee [message] con la muestra [voicePath] en vez de la del personaje o la predeterminada. */
-  fun speakAs(context: Context, message: String, voicePath: String) {
-    voiceOverride = voicePath
+  /** Lee [message] con la voz [voiceRef] (muestra .wav o «kokoro:N») en vez de la del personaje o la predeterminada. */
+  fun speakAs(context: Context, message: String, voiceRef: String) {
+    voiceOverride = voiceRef
     try {
       speak(context, message)
     } finally {
@@ -133,20 +142,34 @@ object TtsManager {
 
   /** Comprueba voz y modelo; si falta algo avisa con un mensaje y devuelve null. */
   private fun resolveInputs(app: Context, settings: TtsSettingsStore): Inputs? {
-    val voicePath =
-      voiceOverride?.takeIf { File(it).exists() }
-        ?: settings.characterVoicePath(currentCharacterId)?.takeIf { File(it).exists() }
-        ?: settings.defaultVoicePath()?.takeIf { File(it).exists() }
+    val active = TtsModels.active(app)
+    if (active == null || !active.complete) {
+      toast(app, "Falta un modelo de voz: descárgalo o impórtalo en «Ajustes de voz».")
+      return null
+    }
+    val candidates = listOf(voiceOverride, settings.characterVoicePath(currentCharacterId), settings.defaultVoicePath())
+    if (active.type == TtsModelType.KOKORO) {
+      val files = KokoroModelFiles.resolve(active.dir)
+      if (files == null) {
+        toast(app, "El modelo Kokoro está incompleto.")
+        return null
+      }
+      val ref =
+        candidates.firstOrNull { TtsVoiceRef.isKokoro(it) }
+          ?: settings.kokoroDefaultSid().takeIf { it >= 0 }?.let { TtsVoiceRef.kokoro(it) }
+      return Inputs(TtsModelType.KOKORO, ref, null, files)
+    }
+    val voicePath = candidates.firstOrNull { it != null && !TtsVoiceRef.isKokoro(it) && File(it).exists() }
     if (voicePath == null) {
-      toast(app, "Elige una muestra de voz (.wav) en Roleplay > Voz, o en el personaje.")
+      toast(app, "Elige una muestra de voz (.wav) en «Ajustes de voz», o en el personaje.")
       return null
     }
-    val files = PocketModelFiles.resolve(TtsFiles.modelDir(app))
+    val files = PocketModelFiles.resolve(active.dir)
     if (files == null) {
-      toast(app, "Falta el modelo Pocket TTS: impórtalo en Roleplay > Voz.")
+      toast(app, "El modelo Pocket TTS está incompleto.")
       return null
     }
-    return Inputs(voicePath, files)
+    return Inputs(TtsModelType.POCKET, voicePath, files, null)
   }
 
   /** Fin de la cola de frases. */
@@ -215,8 +238,6 @@ object TtsManager {
   }
 
   private fun launchJob(app: Context, settings: TtsSettingsStore, inputs: Inputs, queue: LinkedBlockingQueue<String>) {
-    val voicePath = inputs.voicePath
-    val files = inputs.files
     val myGen = generation.incrementAndGet()
     live?.takeIf { it.queue !== queue }?.let { live = null }
     main.removeCallbacks(releaseTask)
@@ -229,24 +250,53 @@ object TtsManager {
       var out: AudioTrack? = null
       try {
         if (generation.get() != myGen) return@execute
-        val wav = WavReader.parse(File(voicePath).readBytes()) ?: error("La muestra de voz no es un WAV válido")
-
-        val key = files.lmMain.absolutePath
-        val existing = engine
-        val eng: SherpaPocketEngine =
-          if (existing != null && engineKey == key) existing
-          else {
-            existing?.release()
-            SherpaPocketEngine(files, SmolLM.performanceCoreCount()).also {
-              val t0 = System.currentTimeMillis()
-              it.load()
-              Log.i(TAG, "Pocket TTS cargado en ${System.currentTimeMillis() - t0} ms (sr=${it.sampleRate})")
-              engine = it
-              engineKey = key
+        // Cada tipo de modelo prepara su motor y una función que genera un trozo de texto.
+        val sr: Int
+        val genChunk: (String, (FloatArray) -> Boolean) -> Unit
+        if (inputs.type == TtsModelType.KOKORO) {
+          val kf = inputs.kokoroFiles!!
+          val estVoices = (kf.voices.length() / 522_240L).toInt() // ~0,5 MB por voz
+          val sid = TtsVoiceRef.kokoroSid(inputs.voiceRef) ?: KokoroVoices.defaultSid(estVoices)
+          val lang = SherpaKokoroEngine.langFor(KokoroVoices.byIndex(sid))
+          val key = "kokoro|${kf.model.absolutePath}|$lang"
+          val existing = kokoroEngine
+          val eng: SherpaKokoroEngine =
+            if (existing != null && engineKey == key) existing
+            else {
+              engine?.release(); engine = null
+              existing?.release()
+              SherpaKokoroEngine(kf, SmolLM.performanceCoreCount(), lang).also {
+                val t0 = System.currentTimeMillis()
+                it.load()
+                Log.i(TAG, "Kokoro cargado en ${System.currentTimeMillis() - t0} ms")
+                kokoroEngine = it
+                engineKey = key
+              }
             }
-          }
+          sr = eng.sampleRate
+          genChunk = { chunk, cb -> eng.generate(chunk, sid, speed, cb) }
+        } else {
+          val pf = inputs.pocketFiles!!
+          val wav = WavReader.parse(File(inputs.voiceRef!!).readBytes()) ?: error("La muestra de voz no es un WAV válido")
+          val key = "pocket|" + pf.lmMain.absolutePath
+          val existing = engine
+          val eng: SherpaPocketEngine =
+            if (existing != null && engineKey == key) existing
+            else {
+              kokoroEngine?.release(); kokoroEngine = null
+              existing?.release()
+              SherpaPocketEngine(pf, SmolLM.performanceCoreCount()).also {
+                val t0 = System.currentTimeMillis()
+                it.load()
+                Log.i(TAG, "Pocket TTS cargado en ${System.currentTimeMillis() - t0} ms (sr=${it.sampleRate})")
+                engine = it
+                engineKey = key
+              }
+            }
+          sr = eng.sampleRate
+          genChunk = { chunk, cb -> eng.generate(chunk, wav.samples, wav.sampleRate, speed, steps, cb) }
+        }
 
-        val sr = eng.sampleRate
         val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
         val t =
           AudioTrack.Builder()
@@ -281,12 +331,14 @@ object TtsManager {
           }
           if (chunk == END) break
           lastActivity = System.currentTimeMillis()
-          eng.generate(chunk, wav.samples, wav.sampleRate, speed, steps) { samples ->
-            if (generation.get() != myGen) return@generate false
-            t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-            totalFrames += samples.size
-            true
-          }
+          val onSamples: (FloatArray) -> Boolean =
+            onSamples@{ samples ->
+              if (generation.get() != myGen) return@onSamples false
+              t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+              totalFrames += samples.size
+              true
+            }
+          genChunk(chunk, onSamples)
         }
         if (generation.get() == myGen) {
           t.stop() // deja que termine de sonar lo ya escrito

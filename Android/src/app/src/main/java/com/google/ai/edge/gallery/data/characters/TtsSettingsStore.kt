@@ -40,4 +40,9 @@ class TtsSettingsStore(context: Context) {
 
   fun setCharacterVoicePath(characterId: String, p: String?) =
     prefs.edit().putString("voice_$characterId", p ?: "").apply()
+
+  /** Voz de Kokoro por defecto (número de voz); -1 = automática (Dora si el modelo es multilingüe). */
+  fun kokoroDefaultSid(): Int = prefs.getInt("kokoro_sid", -1)
+
+  fun setKokoroDefaultSid(sid: Int) = prefs.edit().putInt("kokoro_sid", sid).apply()
 }
