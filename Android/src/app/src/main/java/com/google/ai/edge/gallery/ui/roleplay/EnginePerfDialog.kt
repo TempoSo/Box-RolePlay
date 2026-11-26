@@ -233,7 +233,7 @@ fun EnginePerfDialog(onDismiss: () -> Unit) {
                 ) { update(s.copy(kvCacheSystem = it)) }
                 SwitchRow(
                     "Caché del chat completo",
-                    "Guarda también la conversación para reanudar chats largos sin reprocesarlos. " +
+                    "Guarda también la conversación (solo si pasa de ~1000 tokens; máx. 2 chats y 400 MB en total) para reanudar chats largos sin reprocesarlos. Se borra al eliminar un chat. " +
                         "ATENCIÓN: el contenido del chat queda SIN CIFRAR en el almacenamiento de la app.",
                     s.kvCacheChat,
                 ) { update(s.copy(kvCacheChat = it)) }

@@ -42,12 +42,15 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     std::ofstream(dir + "/otro.txt") << "x"; // no se toca
-    CHECK(prune(dir, 2) == 2);
-    CHECK(!std::filesystem::exists(dir + "/f0.sys") && !std::filesystem::exists(dir + "/f1.chat"));
-    CHECK(std::filesystem::exists(dir + "/f2.sys") && std::filesystem::exists(dir + "/f3.chat"));
+    CHECK(prune(dir, 1, 1000) == 1); // solo 1 .chat: cae f1.chat
+    CHECK(!std::filesystem::exists(dir + "/f1.chat") && std::filesystem::exists(dir + "/f3.chat"));
+    CHECK(std::filesystem::exists(dir + "/f0.sys") && std::filesystem::exists(dir + "/f2.sys"));
+    CHECK(prune(dir, 1, 2) == 1); // 3 archivos de 1 byte, tope 2: cae el mas viejo (f0.sys)
+    CHECK(!std::filesystem::exists(dir + "/f0.sys") && std::filesystem::exists(dir + "/f3.chat"));
+    CHECK(prune(dir, 1, 0) == 1); // tope 0: queda siempre el mas reciente
+    CHECK(std::filesystem::exists(dir + "/f3.chat") && !std::filesystem::exists(dir + "/f2.sys"));
     CHECK(std::filesystem::exists(dir + "/otro.txt"));
-    CHECK(prune(dir, 2) == 0);
-    CHECK(prune("/tmp/no_existe_dir_kv", 2) == 0);
+    CHECK(prune("/tmp/no_existe_dir_kv", 2, 10) == 0);
 
     printf(fails ? "%d FALLOS\n" : "TODO OK\n", fails);
     return fails ? 1 : 0;

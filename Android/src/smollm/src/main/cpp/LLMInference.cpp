@@ -676,7 +676,7 @@ LLMInference::_kvColdStart() {
     const size_t w = llama_state_seq_save_file(_ctx, path.c_str(), 0, head.data(), head.size());
     LOGi("kv-cache: sistema procesado (%zu tokens) y %s (%zu bytes) en %.1f s", sysLen,
          w > 0 ? "guardado" : "NO se pudo guardar", w, (ggml_time_us() - t0) / 1e6);
-    kvcache::prune(_kvDir, 8);
+    kvcache::prune(_kvDir, 2, 400ull << 20);
 }
 
 bool
@@ -685,13 +685,14 @@ LLMInference::saveKvChat() {
     const std::vector<int> toks(_kvTokens.begin(), _kvTokens.end());
     const size_t n = kvcache::textPrefix(toks);
     const size_t sysLen = kvcache::sysPrefixLen(toks, [this](int t) { return _kvIsEog(t); }, llama_n_ctx(_ctx) / 2);
-    if (sysLen == 0 || n <= sysLen + 8) return false;
+    // Solo vale la pena si reprocesar la conversacion costaria de verdad (>~1000 tokens sobre la ficha).
+    if (sysLen == 0 || n < sysLen + 1000) return false;
     const std::string path = kvcache::filePath(_kvDir, _kvModelKey, kvcache::hashTokens(toks, sysLen), ".chat");
     std::vector<llama_token> head(toks.begin(), toks.begin() + n);
     const auto t0 = ggml_time_us();
     const size_t w = llama_state_seq_save_file(_ctx, path.c_str(), 0, head.data(), head.size());
     LOGi("kv-cache: chat guardado (%zu tokens, %zu bytes) en %.1f s", n, w, (ggml_time_us() - t0) / 1e6);
-    kvcache::prune(_kvDir, 8);
+    kvcache::prune(_kvDir, 2, 400ull << 20);
     return w > 0;
 }
 

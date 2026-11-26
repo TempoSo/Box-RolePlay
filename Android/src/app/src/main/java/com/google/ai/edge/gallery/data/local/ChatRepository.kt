@@ -108,8 +108,12 @@ class ChatRepository @Inject constructor(
     suspend fun updateConversation(conversation: Conversation) =
         conversationDao.update(conversation)
 
-    suspend fun deleteConversation(conversation: Conversation) =
+    suspend fun deleteConversation(conversation: Conversation) {
         conversationDao.delete(conversation)
+        // La caché de KV del chat va indexada por la ficha, no por la conversación: al borrar un
+        // chat se borran las cachés de chat (se rehacen solas) para no dejar su contenido en disco.
+        com.google.ai.edge.gallery.data.characters.KvCacheFiles.clearChats(context)
+    }
 
     suspend fun latestConversationForCharacter(characterId: String): Conversation? =
         conversationDao.getLatestForCharacter(characterId)
@@ -120,7 +124,10 @@ class ChatRepository @Inject constructor(
     suspend fun countMessagesForCharacter(characterId: String): Int =
         conversationDao.messagesForCharacter(characterId)
 
-    suspend fun deleteAllConversations() = conversationDao.deleteAll()
+    suspend fun deleteAllConversations() {
+        conversationDao.deleteAll()
+        com.google.ai.edge.gallery.data.characters.KvCacheFiles.clearChats(context)
+    }
 
     suspend fun getLatestConversationForModel(modelName: String): Conversation? =
         conversationDao.getLatestForModel(modelName)

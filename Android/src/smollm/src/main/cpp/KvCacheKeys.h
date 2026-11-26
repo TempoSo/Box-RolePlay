@@ -57,22 +57,34 @@ inline std::string filePath(const std::string &dir, const std::string &modelKey,
     return dir + "/" + modelKey + "_" + hash + ext;
 }
 
-// Deja como maximo `maxFiles` archivos .sys/.chat: borra los mas antiguos. Devuelve cuantos borro.
-inline int prune(const std::string &dir, size_t maxFiles) {
+// Limpieza: deja como mucho `maxChat` archivos .chat y, entre todos, `maxBytes` en total; borra
+// primero los mas antiguos. Devuelve cuantos borro.
+inline int prune(const std::string &dir, size_t maxChat, uintmax_t maxBytes) {
     namespace fs = std::filesystem;
     std::error_code ec;
-    std::vector<std::pair<fs::file_time_type, fs::path>> files;
+    struct F { fs::file_time_type t; fs::path p; uintmax_t sz; bool chat; };
+    std::vector<F> files;
     for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
         const fs::path p = it->path();
-        if (p.extension() == ".sys" || p.extension() == ".chat") {
-            files.emplace_back(fs::last_write_time(p, ec), p);
+        const bool chat = p.extension() == ".chat";
+        if (chat || p.extension() == ".sys") {
+            files.push_back({fs::last_write_time(p, ec), p, fs::file_size(p, ec), chat});
         }
     }
-    if (files.size() <= maxFiles) return 0;
-    std::sort(files.begin(), files.end(), [](auto &a, auto &b) { return a.first < b.first; });
+    std::sort(files.begin(), files.end(), [](const F &a, const F &b) { return a.t < b.t; });
     int removed = 0;
-    for (size_t i = 0; i + maxFiles < files.size(); i++) {
-        if (fs::remove(files[i].second, ec)) removed++;
+    size_t nChat = 0;
+    for (const auto &f : files) if (f.chat) nChat++;
+    std::vector<bool> gone(files.size(), false);
+    for (size_t i = 0; i < files.size() && nChat > maxChat; i++) {
+        if (files[i].chat && fs::remove(files[i].p, ec)) { gone[i] = true; nChat--; removed++; }
+    }
+    uintmax_t total = 0;
+    for (size_t i = 0; i < files.size(); i++) if (!gone[i]) total += files[i].sz;
+    // Se conserva siempre el archivo mas reciente aunque solo el ya pase del tope.
+    for (size_t i = 0; i + 1 < files.size() && total > maxBytes; i++) {
+        if (gone[i]) continue;
+        if (fs::remove(files[i].p, ec)) { total -= files[i].sz; gone[i] = true; removed++; }
     }
     return removed;
 }

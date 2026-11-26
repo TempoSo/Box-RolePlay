@@ -167,6 +167,13 @@ object KvCacheFiles {
 
   fun sizeMb(context: Context): Long = (dir(context).listFiles()?.sumOf { it.length() } ?: 0L) shr 20
 
+  /** Borra solo las cachés de conversación (.chat); las de ficha (.sys) no llevan contenido del chat. */
+  fun clearChats(context: Context): Int {
+    var n = 0
+    dir(context).listFiles()?.forEach { if (it.name.endsWith(".chat") && it.delete()) n++ }
+    return n
+  }
+
   fun clear(context: Context): Int {
     var n = 0
     dir(context).listFiles()?.forEach { if (it.delete()) n++ }

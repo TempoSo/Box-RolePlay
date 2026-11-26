@@ -41,6 +41,11 @@
 
 ## 📝 Registro
 
+### 2026-11-26 — Caché KV en disco: límites de espacio y borrado con el chat
+- **Qué:** `kvcache::prune(dir, maxChat=2, maxBytes=400 MB)` (antes 8 archivos, hasta ~1 GB): como mucho 2 `.chat` y 400 MB en total, borrando primero lo más viejo y conservando siempre el último. `saveKvChat` solo guarda si la conversación pasa de ~1000 tokens sobre la ficha. Al borrar un chat (o todos) se borran los `.chat` (`KvCacheFiles.clearChats`); las `.sys` no llevan conversación y se quedan. Texto del interruptor actualizado.
+- **Archivos:** `smollm/src/main/cpp/KvCacheKeys.h`, `LLMInference.cpp`, `smollm/src/test/cpp/KvCacheKeysTest.cpp` (OK), `data/local/ChatRepository.kt`, `data/characters/EnginePerfSettings.kt`, `ui/roleplay/EnginePerfDialog.kt`.
+- **Sin compilar.** Pendiente aparte: KV q8_0 para archivos a la mitad (prueba de calidad).
+
 ### 2026-11-25 — Caché KV en disco: verificada en teléfono (sistema) + más log para el chat
 - **Resultado (log 23:29):** compila y funciona. Sistema restaurado en 0,03 s; primer mensaje tras cargar: 55 tok en 7 s (antes 30–43 s). Primera vez con una ficha nueva sigue costando 28–50 s (se guarda ~40–55 MB por ficha). Fotos en chat: `media: reutiliza 1852 de 2141`. Archivos .chat de 44–142 MB.
 - **Duda:** el .chat guardado a las 23:01 (mismo sistema de 671 tokens) no se usó al recargar a las 23:02 (restauró solo «sistema»). Sin log no se sabe por qué; se añaden líneas `kv-cache:` en cada rama de fallo (`LLMInference.cpp`).
