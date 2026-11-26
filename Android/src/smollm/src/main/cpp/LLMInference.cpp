@@ -632,16 +632,25 @@ LLMInference::_kvColdStart() {
         if (isChat ? !_kvChatOn : !_kvSysOn) continue;
         const std::string path = kvcache::filePath(_kvDir, _kvModelKey, hash, isChat ? ".chat" : ".sys");
         std::error_code ec;
-        if (!std::filesystem::exists(path, ec)) continue;
+        if (!std::filesystem::exists(path, ec)) {
+            LOGi("kv-cache: no hay archivo %s para este sistema (%s)", isChat ? "chat" : "sistema", hash.c_str());
+            continue;
+        }
         const auto t0 = ggml_time_us();
         std::vector<llama_token> toks(nCtx);
         size_t nTok = 0;
         cold();
         const size_t r = llama_state_seq_load_file(_ctx, path.c_str(), 0, toks.data(), toks.size(), &nTok);
-        if (r == 0 || nTok == 0) { cold(); continue; }
+        if (r == 0 || nTok == 0) {
+            LOGi("kv-cache: no se pudo leer el archivo %s", isChat ? "chat" : "sistema");
+            cold(); continue;
+        }
         const std::vector<int> saved(toks.begin(), toks.begin() + nTok);
         const size_t usable = ctxwin::reusablePrefix(saved, prompt);
-        if (usable < sysLen) { cold(); continue; } // otro sistema: no sirve
+        if (usable < sysLen) { // otro sistema: no sirve
+            LOGi("kv-cache: archivo %s descartado (prefijo comun %zu < sistema %zu)", isChat ? "chat" : "sistema", usable, sysLen);
+            cold(); continue;
+        }
         if ((llama_pos) usable < llama_memory_seq_pos_max(mem, 0) + 1) {
             if (!llama_memory_seq_rm(mem, 0, (llama_pos) usable, -1)) { cold(); continue; }
         }

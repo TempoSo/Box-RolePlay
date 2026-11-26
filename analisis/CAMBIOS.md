@@ -41,6 +41,10 @@
 
 ## 📝 Registro
 
+### 2026-11-25 — Caché KV en disco: verificada en teléfono (sistema) + más log para el chat
+- **Resultado (log 23:29):** compila y funciona. Sistema restaurado en 0,03 s; primer mensaje tras cargar: 55 tok en 7 s (antes 30–43 s). Primera vez con una ficha nueva sigue costando 28–50 s (se guarda ~40–55 MB por ficha). Fotos en chat: `media: reutiliza 1852 de 2141`. Archivos .chat de 44–142 MB.
+- **Duda:** el .chat guardado a las 23:01 (mismo sistema de 671 tokens) no se usó al recargar a las 23:02 (restauró solo «sistema»). Sin log no se sabe por qué; se añaden líneas `kv-cache:` en cada rama de fallo (`LLMInference.cpp`).
+
 ### 2026-11-25 — Caché de KV en disco con dos interruptores (nativo + Kotlin, SIN COMPILAR)
 - **Qué:** el primer mensaje tras cargar el modelo procesaba ~730–990 tokens de ficha (30–43 s). Ahora el bloque de sistema (hasta el primer fin de turno de la ficha) se procesa una vez y se guarda en disco (`llama_state_seq_save_file`); en cargas siguientes se restaura (se espera ~5–10 s en vez de ~43 s). Interruptor **«Caché del sistema»** (activo por defecto, sin contenido de conversación) e interruptor **«Caché del chat completo»** (apagado por defecto; guarda la conversación **sin cifrar** y permite reanudar chats largos sin reprocesar; se guarda al descargar el modelo si no está generando). Botón «Borrar cachés». Máximo 8 archivos (`kvcache::prune`). Clave = hash de ruta+tamaño+contexto+tipo KV+flash del modelo y hash de los tokens del sistema: si cambia la ficha o el modelo, no se reutiliza. Cualquier fallo al cargar deja el KV limpio y arranca normal. El benchmark no usa la caché.
 - **Archivos:** `Android/src/smollm/src/main/cpp/KvCacheKeys.h` (nuevo) y `smollm/src/test/cpp/KvCacheKeysTest.cpp` (OK con g++), `LLMInference.h/.cpp` (`setKvCache`, `_kvColdStart`, `saveKvChat`), `smollm.cpp` (JNI), `SmolLM.kt`, `engine/LlamaCppEngine.kt` (`kvCache`, `saveKvChat`), `runtime/LlamaCppModelHelper.kt` (clave y guardado en `cleanUp`), `data/characters/EnginePerfSettings.kt` (`kvCacheSystem/kvCacheChat`, `KvCacheFiles`), `ui/roleplay/EnginePerfDialog.kt`.
