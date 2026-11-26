@@ -33,6 +33,11 @@ public:
     void setContextWindow(float high, float low);
     // Limite de tokens por respuesta (-1 = sin limite); se puede cambiar entre turnos.
     void setMaxResponse(int maxTokens) { _maxResponse = maxTokens; }
+    // Cache de KV en disco: carpeta, clave del modelo (hash de ruta/tamano/contexto/KV) y que tipos
+    // de archivo se usan (.sys = solo el bloque de sistema, .chat = la conversacion completa).
+    void setKvCache(const std::string &dir, const std::string &modelKey, bool sys, bool chat);
+    // Guarda la conversacion actual (.chat). No debe llamarse mientras se genera.
+    bool saveKvChat();
     // [tokens del prompt procesados, segundos, tokens generados, segundos] del ultimo turno.
     void getPerf(float *out4) const;
     // BUG-029: motivo del fin del ultimo turno. "token" (el modelo emitio su EOG),
@@ -87,6 +92,12 @@ private:
     std::vector<mtmd_bitmap *> _pendingBitmaps;
     bool _mediaPrefilled = false; // el prompt (con imagenes) ya esta en el KV; solo falta muestrear
     int _nextPlaceholder = -2;    // ids negativos unicos para las posiciones de imagen en _kvTokens
+    std::string _kvDir;       // vacia = cache en disco apagada
+    std::string _kvModelKey;
+    bool _kvSysOn = false;
+    bool _kvChatOn = false;
+    bool _kvIsEog(int tok) const;
+    void _kvColdStart();
     bool _kvDirty = false;        // el KV tiene tokens de imagen que _kvTokens no refleja
     bool _isGemma4 = false;   // plantilla <|turn> ... <turn|>: se formatea a mano
     bool _enableThinking = false; // <|think|> al inicio del turno de sistema (Gemma 4)

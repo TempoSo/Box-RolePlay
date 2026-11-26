@@ -3,6 +3,10 @@
 #include "ContextWindow.h"
 #include "ChatFormats.h"
 #include "StopMarkers.h"
+#include "KvCacheKeys.h"
+#include <filesystem>
+#include <system_error>
+#include <functional>
 #include <algorithm>
 #include <android/log.h>
 #include <cstring>
@@ -586,7 +590,100 @@ LLMInference::startCompletion(const char *query) {
         _promptTokens = _tokenizeMessages(_messages);
     }
 
+    _kvColdStart();
     _prepareDecode();
+}
+
+
+void
+LLMInference::setKvCache(const std::string &dir, const std::string &modelKey, bool sys, bool chat) {
+    _kvDir = dir;
+    _kvModelKey = modelKey;
+    _kvSysOn = sys && !dir.empty();
+    _kvChatOn = chat && !dir.empty();
+    if (!dir.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+    }
+    LOGi("kv-cache: dir=%s sistema=%d chat=%d", dir.c_str(), (int) _kvSysOn, (int) _kvChatOn);
+}
+
+bool
+LLMInference::_kvIsEog(int tok) const {
+    return llama_vocab_is_eog(llama_model_get_vocab(_model), (llama_token) tok);
+}
+
+// Arranque en frio: KV vacio y prompt con bloque de sistema. Intenta restaurar de disco (primero la
+// conversacion, luego solo el sistema); si no hay archivo y el sistema esta activo, procesa el
+// bloque de sistema, lo guarda y sigue. Cualquier fallo deja el KV limpio y el arranque normal.
+void
+LLMInference::_kvColdStart() {
+    if (_kvDir.empty() || (!_kvSysOn && !_kvChatOn) || _kvDirty || !_kvTokens.empty()) return;
+    const std::vector<int> prompt(_promptTokens.begin(), _promptTokens.end());
+    const size_t nCtx = llama_n_ctx(_ctx);
+    const size_t sysLen = kvcache::sysPrefixLen(prompt, [this](int t) { return _kvIsEog(t); }, nCtx / 2);
+    if (sysLen == 0 || sysLen >= prompt.size()) return;
+    const std::string hash = kvcache::hashTokens(prompt, sysLen);
+    llama_memory_t mem = llama_get_memory(_ctx);
+    auto cold = [&]() { llama_memory_clear(mem, false); _kvTokens.clear(); };
+
+    for (int k = 0; k < 2; k++) {
+        const bool isChat = (k == 0);
+        if (isChat ? !_kvChatOn : !_kvSysOn) continue;
+        const std::string path = kvcache::filePath(_kvDir, _kvModelKey, hash, isChat ? ".chat" : ".sys");
+        std::error_code ec;
+        if (!std::filesystem::exists(path, ec)) continue;
+        const auto t0 = ggml_time_us();
+        std::vector<llama_token> toks(nCtx);
+        size_t nTok = 0;
+        cold();
+        const size_t r = llama_state_seq_load_file(_ctx, path.c_str(), 0, toks.data(), toks.size(), &nTok);
+        if (r == 0 || nTok == 0) { cold(); continue; }
+        const std::vector<int> saved(toks.begin(), toks.begin() + nTok);
+        const size_t usable = ctxwin::reusablePrefix(saved, prompt);
+        if (usable < sysLen) { cold(); continue; } // otro sistema: no sirve
+        if ((llama_pos) usable < llama_memory_seq_pos_max(mem, 0) + 1) {
+            if (!llama_memory_seq_rm(mem, 0, (llama_pos) usable, -1)) { cold(); continue; }
+        }
+        _kvTokens.assign(saved.begin(), saved.begin() + usable);
+        LOGi("kv-cache: restaurado %s (%zu tokens reutilizables de %zu) en %.2f s", isChat ? "chat" : "sistema",
+             usable, prompt.size(), (ggml_time_us() - t0) / 1e6);
+        return;
+    }
+
+    if (!_kvSysOn) return;
+    // Sin archivo: procesar solo el bloque de sistema y guardarlo.
+    const auto t0 = ggml_time_us();
+    std::vector<llama_token> head(_promptTokens.begin(), _promptTokens.begin() + sysLen);
+    const int nB = (int) llama_n_batch(_ctx);
+    for (size_t off = 0; off < head.size();) {
+        const int n = (int) std::min((size_t) nB, head.size() - off);
+        llama_batch b = llama_batch_get_one(head.data() + off, n);
+        if (llama_decode(_ctx, b) < 0) { cold(); return; }
+        off += n;
+    }
+    _kvTokens.assign(prompt.begin(), prompt.begin() + sysLen);
+    const std::string path = kvcache::filePath(_kvDir, _kvModelKey, hash, ".sys");
+    const size_t w = llama_state_seq_save_file(_ctx, path.c_str(), 0, head.data(), head.size());
+    LOGi("kv-cache: sistema procesado (%zu tokens) y %s (%zu bytes) en %.1f s", sysLen,
+         w > 0 ? "guardado" : "NO se pudo guardar", w, (ggml_time_us() - t0) / 1e6);
+    kvcache::prune(_kvDir, 8);
+}
+
+bool
+LLMInference::saveKvChat() {
+    if (_kvDir.empty() || !_kvChatOn || _kvDirty || _kvTokens.empty()) return false;
+    const std::vector<int> toks(_kvTokens.begin(), _kvTokens.end());
+    const size_t n = kvcache::textPrefix(toks);
+    const size_t sysLen = kvcache::sysPrefixLen(toks, [this](int t) { return _kvIsEog(t); }, llama_n_ctx(_ctx) / 2);
+    if (sysLen == 0 || n <= sysLen + 8) return false;
+    const std::string path = kvcache::filePath(_kvDir, _kvModelKey, kvcache::hashTokens(toks, sysLen), ".chat");
+    std::vector<llama_token> head(toks.begin(), toks.begin() + n);
+    const auto t0 = ggml_time_us();
+    const size_t w = llama_state_seq_save_file(_ctx, path.c_str(), 0, head.data(), head.size());
+    LOGi("kv-cache: chat guardado (%zu tokens, %zu bytes) en %.1f s", n, w, (ggml_time_us() - t0) / 1e6);
+    kvcache::prune(_kvDir, 8);
+    return w > 0;
 }
 
 bool

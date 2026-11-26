@@ -89,6 +89,22 @@ object LlamaCppModelHelper : LlmModelHelper {
                 else null,
         )
 
+        // Cache de KV en disco (no en el benchmark, que usa ajustes aislados). La clave del modelo
+        // incluye ruta, tamano, contexto y tipo de KV: si cambia algo, el archivo no se reutiliza.
+        engine.kvCache =
+            if (perfOverride == null && (perf.kvCacheSystem || perf.kvCacheChat)) {
+                val f = java.io.File(modelPath)
+                val key = java.lang.Long.toHexString(
+                    "${f.absolutePath}|${f.length()}|$contextSize|${perf.kvType}|${perf.flashAttn}".hashCode().toLong() and 0xffffffffL
+                )
+                LlamaCppEngine.KvCacheConfig(
+                    dir = com.google.ai.edge.gallery.data.characters.KvCacheFiles.dir(context).absolutePath,
+                    modelKey = key,
+                    sys = perf.kvCacheSystem,
+                    chat = perf.kvCacheChat,
+                )
+            } else null
+
         engine.loadModel(
             modelPath = modelPath,
             params = params,
@@ -203,6 +219,9 @@ object LlamaCppModelHelper : LlmModelHelper {
 
     override fun cleanUp(model: Model, onDone: () -> Unit) {
         val engine = engines.remove(model.name)
+        // Si el interruptor "Caché del chat completo" está activo, se guarda la conversación antes
+        // de cerrar (no hace nada si el modelo está generando).
+        engine?.saveKvChat()
         engine?.unloadModel()
         model.instance = null
         onDone()

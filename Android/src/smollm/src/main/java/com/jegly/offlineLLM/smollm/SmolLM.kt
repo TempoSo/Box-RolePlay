@@ -236,6 +236,21 @@ class SmolLM {
         setMaxResponse(nativePtr, maxTokens)
     }
 
+    /**
+     * Cache de KV en disco. [sys] guarda/restaura solo el bloque de sistema (ficha del personaje);
+     * [chat] guarda ademas la conversacion (queda en claro en el disco). [dir] vacio = apagada.
+     */
+    fun setKvCache(dir: String, modelKey: String, sys: Boolean, chat: Boolean) {
+        verifyHandle()
+        setKvCache(nativePtr, dir, modelKey, sys, chat)
+    }
+
+    /** Guarda la conversacion actual en disco (solo con [setKvCache] chat=true). No llamar generando. */
+    fun saveKvChat(): Boolean {
+        verifyHandle()
+        return saveKvChat(nativePtr)
+    }
+
     fun getPerfStats(): PerfStats {
         verifyHandle()
         val v = getPerfStats(nativePtr)
@@ -330,6 +345,8 @@ class SmolLM {
     private external fun setContextWindow(modelPtr: Long, high: Float, low: Float)
     private external fun setSampler(modelPtr: Long, values: FloatArray)
     private external fun setMaxResponse(modelPtr: Long, maxTokens: Int)
+    private external fun setKvCache(modelPtr: Long, dir: String, modelKey: String, sys: Boolean, chat: Boolean)
+    private external fun saveKvChat(modelPtr: Long): Boolean
     private external fun getPerfStats(modelPtr: Long): FloatArray
     private external fun getStopReason(modelPtr: Long): String
     private external fun loadMmproj(modelPtr: Long, path: String, nThreads: Int): Boolean

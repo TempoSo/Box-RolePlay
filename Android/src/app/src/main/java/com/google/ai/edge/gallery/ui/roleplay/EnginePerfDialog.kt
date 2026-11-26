@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.characters.EnginePerfSettings
 import com.google.ai.edge.gallery.data.characters.EnginePerfStore
+import com.google.ai.edge.gallery.data.characters.KvCacheFiles
 import com.google.ai.edge.gallery.data.characters.EnginePreset
 import com.google.ai.edge.gallery.data.characters.EnginePresetStore
 import com.google.ai.edge.gallery.data.characters.LastEnginePerf
@@ -222,6 +223,34 @@ fun EnginePerfDialog(onDismiss: () -> Unit) {
                 NumberField("Reducir imagen enviada (px, lado máximo)", s.imageMaxSide) {
                     update(s.copy(imageMaxSide = it))
                 }
+
+                Section("Caché en disco")
+                SwitchRow(
+                    "Caché del sistema",
+                    "Guarda la ficha del personaje ya procesada: el primer mensaje tras cargar el modelo " +
+                        "tarda mucho menos. No guarda la conversación.",
+                    s.kvCacheSystem,
+                ) { update(s.copy(kvCacheSystem = it)) }
+                SwitchRow(
+                    "Caché del chat completo",
+                    "Guarda también la conversación para reanudar chats largos sin reprocesarlos. " +
+                        "ATENCIÓN: el contenido del chat queda SIN CIFRAR en el almacenamiento de la app.",
+                    s.kvCacheChat,
+                ) { update(s.copy(kvCacheChat = it)) }
+                var cacheMb by remember { mutableStateOf(KvCacheFiles.sizeMb(context)) }
+                OutlinedButton(
+                    onClick = {
+                        val n = KvCacheFiles.clear(context)
+                        cacheMb = KvCacheFiles.sizeMb(context)
+                        Toast.makeText(context, "Cachés borradas ($n)", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Borrar cachés (ocupan $cacheMb MB)")
+                }
+                Text(
+                    "Los cambios se aplican al volver a cargar el modelo.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
 
                 Section("Último turno")
                 val st = LastEnginePerf.stats

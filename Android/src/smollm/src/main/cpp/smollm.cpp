@@ -192,3 +192,23 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_jegly_offlineLLM_smollm_SmolLM_mediaMarkerNative(JNIEnv* env, jobject thiz) {
     return env->NewStringUTF(LLMInference::mediaMarker());
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_setKvCache(JNIEnv* env, jobject thiz, jlong modelPtr, jstring dir, jstring modelKey, jboolean sys, jboolean chat) {
+    auto* llmInference = reinterpret_cast<LLMInference*>(modelPtr);
+    const char* d = env->GetStringUTFChars(dir, nullptr);
+    const char* k = env->GetStringUTFChars(modelKey, nullptr);
+    llmInference->setKvCache(d, k, sys == JNI_TRUE, chat == JNI_TRUE);
+    env->ReleaseStringUTFChars(dir, d);
+    env->ReleaseStringUTFChars(modelKey, k);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_jegly_offlineLLM_smollm_SmolLM_saveKvChat(JNIEnv* env, jobject thiz, jlong modelPtr) {
+    auto* llmInference = reinterpret_cast<LLMInference*>(modelPtr);
+    try {
+        return llmInference->saveKvChat() ? JNI_TRUE : JNI_FALSE;
+    } catch (std::exception&) {
+        return JNI_FALSE;
+    }
+}

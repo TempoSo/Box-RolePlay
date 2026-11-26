@@ -29,6 +29,10 @@ data class EnginePerfSettings(
   val mmproj: String = "",
   /** Lado máximo, en píxeles, al que se reduce una imagen antes de enviarla al modelo. */
   val imageMaxSide: Int = 512,
+  /** Cache en disco del bloque de sistema (ficha del personaje); sin contenido de la conversacion. */
+  val kvCacheSystem: Boolean = true,
+  /** Cache en disco de la conversacion completa (queda sin cifrar en el almacenamiento). */
+  val kvCacheChat: Boolean = false,
 ) {
   fun sanitized(): EnginePerfSettings =
     copy(
@@ -99,6 +103,8 @@ class EnginePerfStore(context: Context) {
         maxResponse = prefs.getInt("max_response", d.maxResponse),
         mmproj = prefs.getString("mmproj", d.mmproj) ?: "",
         imageMaxSide = prefs.getInt("image_max_side", d.imageMaxSide),
+        kvCacheSystem = prefs.getBoolean("kv_cache_system", d.kvCacheSystem),
+        kvCacheChat = prefs.getBoolean("kv_cache_chat", d.kvCacheChat),
       )
       .sanitized()
   }
@@ -119,6 +125,8 @@ class EnginePerfStore(context: Context) {
       .putInt("max_response", v.maxResponse)
       .putString("mmproj", v.mmproj)
       .putInt("image_max_side", v.imageMaxSide)
+      .putBoolean("kv_cache_system", v.kvCacheSystem)
+      .putBoolean("kv_cache_chat", v.kvCacheChat)
       .apply()
   }
 }
@@ -151,4 +159,17 @@ object MmprojFiles {
 object LastEnginePerf {
   @Volatile var stats: SmolLM.PerfStats? = null
   @Volatile var loadSeconds: Float = 0f
+}
+
+/** Carpeta y borrado de las caches de KV guardadas en disco. */
+object KvCacheFiles {
+  fun dir(context: Context): java.io.File = java.io.File(context.applicationContext.cacheDir, "kv").apply { mkdirs() }
+
+  fun sizeMb(context: Context): Long = (dir(context).listFiles()?.sumOf { it.length() } ?: 0L) shr 20
+
+  fun clear(context: Context): Int {
+    var n = 0
+    dir(context).listFiles()?.forEach { if (it.delete()) n++ }
+    return n
+  }
 }

@@ -44,6 +44,22 @@ class LlamaCppEngine {
 
     // Track load params for resetConversation
     var lastLoadParams: SmolLM.InferenceParams? = null
+
+    /** Cache de KV en disco (carpeta, clave del modelo, sistema, chat). null = apagada. */
+    data class KvCacheConfig(val dir: String, val modelKey: String, val sys: Boolean, val chat: Boolean)
+
+    @Volatile var kvCache: KvCacheConfig? = null
+
+    /** Guarda la conversacion en disco si el interruptor del chat esta activo y no se genera. */
+    fun saveKvChat() {
+        val cfg = kvCache ?: return
+        if (!cfg.chat || isGenerating || !isModelLoaded.get()) return
+        try {
+            whenNativeIdle(500) { instance.saveKvChat() }
+        } catch (e: Exception) {
+            Log.w("AGLlamaPerf", "no se pudo guardar el chat en cache: ${e.message}")
+        }
+    }
         private set
     var lastModelPath: String? = null
         private set
@@ -181,6 +197,7 @@ class LlamaCppEngine {
                     }
                     instance.setContextWindow(CONTEXT_WINDOW_HIGH, CONTEXT_WINDOW_LOW)
                     samplerSettings?.let { instance.setSampler(it.toFloatArray()) }
+                    kvCache?.let { instance.setKvCache(it.dir, it.modelKey, it.sys, it.chat) }
 
                     if (systemPrompt.isNotBlank()) {
                         instance.addSystemPrompt(systemPrompt)
