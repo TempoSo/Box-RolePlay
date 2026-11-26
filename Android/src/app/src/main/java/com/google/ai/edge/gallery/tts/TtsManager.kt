@@ -255,7 +255,7 @@ object TtsManager {
         val genChunk: (String, (FloatArray) -> Boolean) -> Unit
         if (inputs.type == TtsModelType.KOKORO) {
           val kf = inputs.kokoroFiles!!
-          val estVoices = (kf.voices.length() / 522_240L).toInt() // ~0,5 MB por voz
+          val estVoices = KokoroModelFiles.estimatedVoices(kf.voices.parentFile!!)
           val sid = TtsVoiceRef.kokoroSid(inputs.voiceRef) ?: KokoroVoices.defaultSid(estVoices)
           val lang = SherpaKokoroEngine.langFor(KokoroVoices.byIndex(sid))
           val key = "kokoro|${kf.model.absolutePath}|$lang"

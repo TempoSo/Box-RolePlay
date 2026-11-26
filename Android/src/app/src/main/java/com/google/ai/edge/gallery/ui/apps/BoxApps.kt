@@ -83,7 +83,7 @@ object BoxAppRegistry {
         BoxApp(BoxAppIds.ROLEPLAY, "Personajes", "Habla 1 a 1 con voz, visión y memoria", Icons.Rounded.Forum, Color(0xFF7B52E0), Color(0xFF2E2F7A)),
         BoxApp(BoxAppIds.SCENARIOS, "Roleplay", "Escenas con varios personajes: tú controlas a uno", Icons.Rounded.Groups, Color(0xFFE05297), Color(0xFF7A2E55)),
         BoxApp(BoxAppIds.CHAT, "Chat libre", "Conversa directo con el modelo", Icons.Rounded.Chat, Color(0xFF3B82F6), Color(0xFF1E3A8A)),
-        BoxApp(BoxAppIds.TTS, "Texto a voz", "Pocket TTS por separado: escribe y escucha", Icons.Rounded.RecordVoiceOver, Color(0xFF2DD4BF), Color(0xFF0F766E)),
+        BoxApp(BoxAppIds.TTS, "Texto a voz", "Pocket TTS y Kokoro por separado: escribe y escucha", Icons.Rounded.RecordVoiceOver, Color(0xFF2DD4BF), Color(0xFF0F766E)),
         BoxApp(BoxAppIds.VISION, "Visión", "Describe y pregunta sobre imágenes", Icons.Rounded.RemoveRedEye, Color(0xFFF97316), Color(0xFF9A3412)),
         BoxApp(BoxAppIds.IMAGE_GEN, "Generador de imágenes", "Crea imágenes en tu teléfono", Icons.Rounded.Image, Color(0xFFEC4899), Color(0xFF9D174D)),
         BoxApp(BoxAppIds.TRANSCRIBE, "Transcripción", "Voz a texto sin conexión (Whisper)", Icons.Rounded.Subtitles, Color(0xFF8B5CF6), Color(0xFF4C1D95)),

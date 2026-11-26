@@ -16,7 +16,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -38,7 +43,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.characters.SpeechScope
 import com.google.ai.edge.gallery.data.characters.TtsSettingsStore
+import com.google.ai.edge.gallery.tts.KokoroModelFiles
+import com.google.ai.edge.gallery.tts.KokoroVoice
+import com.google.ai.edge.gallery.tts.KokoroVoices
 import com.google.ai.edge.gallery.tts.PocketModelFiles
+import com.google.ai.edge.gallery.tts.TtsModelType
+import com.google.ai.edge.gallery.tts.TtsVoiceRef
 import com.google.ai.edge.gallery.tts.SherpaPocketEngine
 import com.google.ai.edge.gallery.tts.TtsFiles
 import com.google.ai.edge.gallery.tts.TtsManager
@@ -46,10 +56,24 @@ import com.google.ai.edge.gallery.tts.TtsModels
 import com.google.ai.edge.gallery.tts.VoiceStore
 import java.io.File
 
-/** Voz (Pocket TTS): modelo, voz predeterminada, qué se lee, velocidad y lectura automática. */
-@OptIn(ExperimentalLayoutApi::class)
+/** Ajustes de voz en un diálogo (se abre desde Roleplay y desde Ajustes de Box). */
 @Composable
 fun TtsSettingsDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Voz") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) { TtsSettingsPanel() } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Listo") } },
+    )
+}
+
+/**
+ * Voz: modelos instalados (varios; Pocket TTS y Kokoro), voz, qué se lee, velocidad y lectura automática.
+ * Es una sola interfaz: la usa el diálogo de ajustes y la app «Texto a voz» ([textArea] pone ahí el texto).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TtsSettingsPanel(textArea: (@Composable () -> Unit)? = null) {
     val context = LocalContext.current
     val store = remember { TtsSettingsStore(context) }
     var refresh by remember { mutableIntStateOf(0) }
@@ -105,16 +129,16 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
         )
     }
     val libOk = remember { SherpaPocketEngine.isLibraryAvailable() }
-    val voice = remember(refresh, showVoices) { store.defaultVoicePath()?.takeIf { File(it).exists() } }
+    val active = models.firstOrNull { it.id == activeId }
+    val isKokoro = active?.type == TtsModelType.KOKORO
+    var kokoroSid by remember(refresh) { mutableStateOf(store.kokoroDefaultSid()) }
+    var voiceFilter by remember { mutableStateOf("") }
+    val voice = remember(refresh, showVoices) { store.defaultVoicePath()?.takeIf { !TtsVoiceRef.isKokoro(it) && File(it).exists() } }
     val voiceName = remember(refresh, showVoices) {
         voice?.let { p -> VoiceStore(context).all().firstOrNull { VoiceStore(context).pathOf(it.id) == p }?.name }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Voz (Pocket TTS)") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     if (libOk) "Librería sherpa-onnx: lista."
                     else "Librería sherpa-onnx: NO está en la app. Copia el .aar de sherpa-onnx a " +
@@ -136,9 +160,8 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                         )
                         Column(Modifier.weight(1f)) {
                             Text(m.label, style = MaterialTheme.typography.bodyMedium)
-                            val falta = PocketModelFiles.missing(m.dir)
                             Text(
-                                if (m.complete) "${m.sizeMb} MB" else "Incompleto, faltan: ${falta.joinToString(", ")}",
+                                if (m.complete) "${m.type.label} · ${m.sizeMb} MB" else "${m.type.label} · incompleto, faltan: ${m.missing.joinToString(", ")}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (m.complete) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                             )
@@ -147,20 +170,40 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                     }
                 }
                 OutlinedButton(onClick = { showDownload = true }) { Text("Descargar de Hugging Face") }
-                OutlinedButton(onClick = { pickModel.launch(null) }) { Text("Importar carpeta del modelo") }
+                OutlinedButton(onClick = { pickModel.launch(null) }) { Text("Importar carpeta de Pocket TTS") }
                 Text(
-                    "Elige la carpeta con lm_flow, lm_main, encoder, decoder, text_conditioner, vocab.json y token_scores.json " +
-                        "(por ejemplo la de pockettts de Layla).",
+                    "Importar solo vale para Pocket TTS: elige la carpeta con lm_flow, lm_main, encoder, decoder, text_conditioner, " +
+                        "vocab.json y token_scores.json (por ejemplo la de pockettts de Layla). Kokoro se descarga con el botón de arriba.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Text("Voz predeterminada", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    voice?.let { "Voz: ${voiceName ?: File(it).name}" } ?: "Sin voz. Abre la biblioteca para subir o grabar una.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                OutlinedButton(onClick = { showVoices = true }) { Text("Biblioteca de voces") }
+                textArea?.invoke()
+
+                if (isKokoro && active != null) {
+                    val numVoices = KokoroModelFiles.estimatedVoices(active.dir)
+                    val all = KokoroVoices.available(numVoices)
+                    val shownSid = if (kokoroSid >= 0) kokoroSid else KokoroVoices.defaultSid(numVoices)
+                    Text("Voz", style = MaterialTheme.typography.titleSmall)
+                    KokoroVoiceList(
+                        voices = all,
+                        selectedSid = shownSid,
+                        filter = voiceFilter,
+                        onFilter = { voiceFilter = it },
+                        onSelect = { store.setKokoroDefaultSid(it); kokoroSid = it },
+                        onPreview = { v ->
+                            TtsManager.currentCharacterId = ""
+                            TtsManager.speakAs(context, "\"" + KokoroVoices.sample(v.langCode) + "\"", TtsVoiceRef.kokoro(v.sid))
+                        },
+                    )
+                } else {
+                    Text("Voz predeterminada", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        voice?.let { "Voz: ${voiceName ?: File(it).name}" } ?: "Sin voz. Abre la biblioteca para subir o grabar una.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(onClick = { showVoices = true }) { Text("Biblioteca de voces") }
+                }
 
                 Text("Qué se lee", style = MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -188,7 +231,7 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                if (!isKokoro) OutlinedTextField(
                     value = steps,
                     onValueChange = { t ->
                         steps = t
@@ -229,30 +272,86 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                 OutlinedButton(
                     onClick = {
                         TtsManager.currentCharacterId = ""
-                        TtsManager.speak(context, "Hola, esta es mi voz. ¿Qué te parece cómo suena?")
+                        TtsManager.speak(context, "\"Hola, esta es mi voz. ¿Qué te parece cómo suena?\"")
                     },
-                    enabled = libOk && models.any { it.id == activeId && it.complete } && voice != null,
+                    enabled = libOk && active?.complete == true && (isKokoro || voice != null),
                 ) { Text("Probar voz") }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Listo") } },
-    )
 }
 
-/** Fila del editor de personaje: muestra de voz propia (si no, se usa la predeterminada). */
+/** Lista de voces de Kokoro con filtro por idioma, vista previa (▶) y selección. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun KokoroVoiceList(
+    voices: List<KokoroVoice>,
+    selectedSid: Int?,
+    filter: String,
+    onFilter: (String) -> Unit,
+    onSelect: (Int) -> Unit,
+    onPreview: (KokoroVoice) -> Unit,
+) {
+    val languages = remember(voices) { voices.map { it.langCode to it.language }.distinct() }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = filter.isEmpty(), onClick = { onFilter("") }, label = { Text("Todas (${voices.size})") })
+        languages.forEach { (code, name) ->
+            FilterChip(selected = filter == code, onClick = { onFilter(code) }, label = { Text(name) })
+        }
+    }
+    voices.filter { filter.isEmpty() || it.langCode == filter }.forEach { v ->
+        Row(
+            Modifier.fillMaxWidth().clickable { onSelect(v.sid) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.RadioButton(selected = v.sid == selectedSid, onClick = { onSelect(v.sid) })
+            Column(Modifier.weight(1f)) {
+                Text(v.displayName, style = MaterialTheme.typography.bodyMedium)
+                Text(v.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { onPreview(v) }) { Icon(Icons.Rounded.PlayArrow, "Escuchar ${v.displayName}") }
+        }
+    }
+}
+
+/** Fila del editor de personaje: voz propia (muestra de Pocket o voz de Kokoro); si no, se usa la predeterminada. */
 @Composable
 fun CharacterVoiceRow(characterId: String) {
     val context = LocalContext.current
     val store = remember { TtsSettingsStore(context) }
     var refresh by remember { mutableIntStateOf(0) }
-    val current = remember(refresh) { store.characterVoicePath(characterId)?.takeIf { File(it).exists() } }
+    val current = remember(refresh) { store.characterVoicePath(characterId)?.takeIf { TtsVoiceRef.usable(it) } }
+    val activeModel = remember(refresh) { TtsModels.active(context) }
     var showVoices by remember { mutableStateOf(false) }
     if (showVoices) {
-        VoiceLibraryDialog(
-            onDismiss = { showVoices = false; refresh++ },
-            currentPath = current,
-            onPick = { _, path -> store.setCharacterVoicePath(characterId, path); refresh++ },
-        )
+        if (activeModel?.type == TtsModelType.KOKORO) {
+            var filter by remember { mutableStateOf("") }
+            val voices = KokoroVoices.available(KokoroModelFiles.estimatedVoices(activeModel.dir))
+            AlertDialog(
+                onDismissRequest = { showVoices = false; refresh++ },
+                title = { Text("Voz del personaje") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        KokoroVoiceList(
+                            voices = voices,
+                            selectedSid = TtsVoiceRef.kokoroSid(current),
+                            filter = filter,
+                            onFilter = { filter = it },
+                            onSelect = { store.setCharacterVoicePath(characterId, TtsVoiceRef.kokoro(it)); refresh++ },
+                            onPreview = { v ->
+                                TtsManager.currentCharacterId = ""
+                                TtsManager.speakAs(context, "\"" + KokoroVoices.sample(v.langCode) + "\"", TtsVoiceRef.kokoro(v.sid))
+                            },
+                        )
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showVoices = false; refresh++ }) { Text("Listo") } },
+            )
+        } else {
+            VoiceLibraryDialog(
+                onDismiss = { showVoices = false; refresh++ },
+                currentPath = current?.takeIf { !TtsVoiceRef.isKokoro(it) },
+                onPick = { _, path -> store.setCharacterVoicePath(characterId, path); refresh++ },
+            )
+        }
     }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(vertical = 4.dp)) {
         Text("Voz de este personaje", style = MaterialTheme.typography.titleSmall)
@@ -264,11 +363,23 @@ fun CharacterVoiceRow(characterId: String) {
             )
             return@Column
         }
+        val kokoroSid = TtsVoiceRef.kokoroSid(current)
         Text(
-            current?.let { p -> "Voz propia: " + (VoiceStore(context).all().firstOrNull { VoiceStore(context).pathOf(it.id) == p }?.name ?: File(p).name) } ?: "Usa la voz predeterminada de Roleplay.",
+            when {
+                kokoroSid != null -> "Voz propia: " + (KokoroVoices.byIndex(kokoroSid)?.let { "${it.displayName} (${it.subtitle})" } ?: "Kokoro #$kokoroSid")
+                current != null -> "Voz propia: " + (VoiceStore(context).all().firstOrNull { VoiceStore(context).pathOf(it.id) == current }?.name ?: File(current).name)
+                else -> "Usa la voz predeterminada de Roleplay."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (kokoroSid != null && activeModel?.type != TtsModelType.KOKORO) {
+            Text(
+                "Esta voz es de Kokoro y el modelo activo es otro: se usará la predeterminada hasta que actives Kokoro.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { showVoices = true }) { Text("Elegir voz") }
             if (current != null) {

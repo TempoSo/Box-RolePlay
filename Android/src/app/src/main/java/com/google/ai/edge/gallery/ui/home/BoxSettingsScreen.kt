@@ -89,7 +89,7 @@ fun BoxSettingsScreen(
       BoxActionCard(
         icon = Icons.Rounded.RecordVoiceOver,
         title = "Configuración de texto a voz",
-        subtitle = "Pocket TTS, voces y lectura automática",
+        subtitle = "Modelos de voz (Pocket TTS, Kokoro), voces y lectura automática",
         onClick = { showTts = true },
       )
       BoxActionCard(

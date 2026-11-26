@@ -18,6 +18,9 @@ data class KokoroModelFiles(
     const val TOKENS = "tokens.txt"
     const val DATA_DIR = "espeak-ng-data"
 
+    /** Nº aproximado de voces según el tamaño de voices.bin (~0,5 MB por voz). */
+    fun estimatedVoices(dir: File): Int = (File(dir, VOICES).length() / 522_240L).toInt()
+
     /** Si la carpeta es de un modelo Kokoro (tiene voices.bin). */
     fun looksLike(dir: File): Boolean = File(dir, VOICES).exists()
 
@@ -93,6 +96,19 @@ object KokoroVoices {
     if (numSpeakers >= MULTILANG_COUNT) all else all.take(numSpeakers.coerceAtLeast(0))
 
   fun byIndex(sid: Int): KokoroVoice? = all.getOrNull(sid)
+
+  /** Frase de prueba en el idioma de la voz. */
+  fun sample(langCode: String): String =
+    when (langCode) {
+      "es" -> "Hola, esta es mi voz. ¿Qué te parece cómo suena?"
+      "fr" -> "Bonjour, voici ma voix. Qu'en penses-tu ?"
+      "it" -> "Ciao, questa è la mia voce. Che ne pensi?"
+      "pt-br" -> "Olá, esta é a minha voz. O que você achou?"
+      "zh" -> "你好,这是我的声音。你觉得怎么样?"
+      "ja" -> "こんにちは、これは私の声です。"
+      "hi" -> "नमस्ते, यह मेरी आवाज़ है।"
+      else -> "Hello, this is my voice. How does it sound?"
+    }
 
   /** Voz por defecto: Dora (español) si el modelo es multilingüe; si no, la primera. */
   fun defaultSid(numSpeakers: Int): Int = if (numSpeakers >= MULTILANG_COUNT) 28 else 0
