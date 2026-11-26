@@ -7,7 +7,11 @@ import java.io.File
 
 /** Copias locales del modelo y de las muestras de voz (se importan con el selector de Android). */
 object TtsFiles {
-  fun modelDir(context: Context): File = File(context.filesDir, "tts/pocket").apply { mkdirs() }
+  /** Carpeta del modelo de voz activo (ver [TtsModels]). */
+  fun modelDir(context: Context): File = TtsModels.dirOf(context, TtsModels.activeId(context)).apply { mkdirs() }
+
+  /** Carpeta de trabajo para descargas en curso. */
+  fun stagingDir(context: Context): File = File(context.filesDir, "tts/pocket_dl").apply { mkdirs() }
 
   fun voicesDir(context: Context): File = File(context.filesDir, "tts/voices").apply { mkdirs() }
 
@@ -15,7 +19,15 @@ object TtsFiles {
    * Copia a la app las piezas del modelo Pocket TTS que haya en la carpeta elegida. Devuelve los
    * nombres copiados.
    */
-  fun importModelFolder(context: Context, tree: Uri): List<String> {
+  fun folderName(context: Context, tree: Uri): String? =
+    runCatching {
+      val doc = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+      context.contentResolver
+        .query(doc, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
+        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    }.getOrNull()
+
+  fun importModelFolder(context: Context, tree: Uri, target: File = modelDir(context)): List<String> {
     val resolver = context.contentResolver
     val treeId = DocumentsContract.getTreeDocumentId(tree)
     val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, treeId)
@@ -35,7 +47,7 @@ object TtsFiles {
           if (!PocketModelFiles.isPart(name)) continue
           val doc = DocumentsContract.buildDocumentUriUsingTree(tree, id)
           resolver.openInputStream(doc)?.use { input ->
-            File(modelDir(context), name).outputStream().use { input.copyTo(it) }
+            File(target, name).outputStream().use { input.copyTo(it) }
             copied.add(name)
           }
         }

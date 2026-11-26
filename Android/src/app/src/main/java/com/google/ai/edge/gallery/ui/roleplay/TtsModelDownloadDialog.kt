@@ -34,6 +34,7 @@ import com.google.ai.edge.gallery.tts.PocketVariant
 import com.google.ai.edge.gallery.tts.SentencePieceModel
 import com.google.ai.edge.gallery.tts.TtsFiles
 import com.google.ai.edge.gallery.tts.TtsManager
+import com.google.ai.edge.gallery.tts.TtsModels
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -83,7 +84,7 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
     scope.launch {
       val total = v.totalBytes.coerceAtLeast(1)
       var base = 0L
-      val stage = File(TtsFiles.modelDir(context).parentFile, "pocket_dl").apply { mkdirs() }
+      val stage = TtsFiles.stagingDir(context)
       val res = withContext(Dispatchers.IO) {
         runCatching {
           for (pk in v.files) {
@@ -106,13 +107,16 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
             File(stage, "vocab.json").writeText(SentencePieceModel.vocabJson(pieces))
             File(stage, "token_scores.json").writeText(SentencePieceModel.scoresJson(pieces))
           }
-          // Todo bajado: se reemplaza el modelo anterior por el nuevo.
-          val dir = TtsFiles.modelDir(context)
-          dir.listFiles()?.filter { PocketModelFiles.isPart(it.name) || it.name == PocketHfSelect.TOKENIZER || it.name == PocketHfSelect.TOKENIZER_JSON }?.forEach { it.delete() }
-          stage.listFiles()?.filter { !it.name.endsWith(".part") }?.forEach { f ->
-            val dest = File(dir, f.name)
+          // Todo bajado: se instala como un modelo más (no borra los otros) y pasa a ser el activo.
+          val repoName = repo.substringAfterLast('/')
+          val model = TtsModels.create(context, if (v.folder.isEmpty()) repoName else "${v.label} · $repoName")
+          // Solo las piezas de este modelo (en la carpeta de trabajo pueden quedar restos de otra descarga).
+          val wanted = v.files.map { it.localName }.toSet() + setOf("vocab.json", "token_scores.json")
+          stage.listFiles()?.filter { it.name in wanted }?.forEach { f ->
+            val dest = File(model.dir, f.name)
             if (!f.renameTo(dest)) { f.copyTo(dest, overwrite = true); f.delete() }
           }
+          TtsModels.setActive(context, model.id)
         }
       }
       busy = false

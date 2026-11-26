@@ -41,6 +41,16 @@
 
 ## 📝 Registro
 
+### 2026-11-26 — Voz: gestor con varios modelos de TTS (sin compilar)
+- **Problema:** descargar o importar un modelo Pocket TTS sustituía al anterior (una sola carpeta `tts/pocket`); no se podía tener español e inglés ni cambiar entre ellos; la pantalla solo decía «Modelo completo».
+- **Qué:** nueva biblioteca `TtsModels`: cada descarga/importación crea su carpeta en `filesDir/tts/models/<id>/` (con `label.txt`), sin borrar las demás, y pasa a ser la activa. En «Voz (Pocket TTS)» se listan los modelos con selector (radio), tamaño, aviso si están incompletos y botón «Borrar» con confirmación. El modelo antiguo (`tts/pocket`) aparece como «Modelo anterior». `TtsFiles.modelDir()` devuelve ahora la carpeta del modelo activo, así `TtsManager` no cambia. Al cambiar de modelo se recarga el motor (`TtsManager.release()`). La descarga solo mueve las piezas de su variante (ya no arrastra restos de la carpeta de trabajo).
+- **Archivos:** `tts/TtsModels.kt` (nuevo), `tts/TtsFiles.kt`, `ui/roleplay/TtsModelDownloadDialog.kt`, `ui/roleplay/TtsSettingsDialog.kt`.
+- **Probar en teléfono:** descargar español y luego inglés → deben aparecer los dos y poderse alternar y leer con cada uno; importar carpeta; borrar uno; el modelo anterior sigue funcionando. Ojo: la voz (muestra) es independiente del modelo.
+
+### 2026-11-26 — Notas para futuras pruebas (caché KV y contexto)
+- Caché de KV verificada en teléfono (log 09:03): chat restaurado 1738/1760 tokens en 0,11 s; primer mensaje de 22 tokens en 2,6 s. El recorte de turnos del contexto deslizante invalida el KV guardado (cambia el principio del prompt por el resumen); es normal y ocurre una vez por llenado.
+- **Pendiente de probar (no implementado):** (1) contexto 8192 en Rendimiento (≈470 MB de KV; menos recortes); (2) KV q8_0 con el Auto-optimizar del benchmark (mitad de RAM/archivos; ver si pierde velocidad en CPU o exige Flash Attention); (3) desplazar el KV al recortar (nativo, arriesgado con SWA de Gemma). Si q8_0 no pierde velocidad, valorar ponerlo por defecto.
+
 ### 2026-11-26 — Caché KV en disco: límites de espacio y borrado con el chat
 - **Qué:** `kvcache::prune(dir, maxChat=2, maxBytes=400 MB)` (antes 8 archivos, hasta ~1 GB): como mucho 2 `.chat` y 400 MB en total, borrando primero lo más viejo y conservando siempre el último. `saveKvChat` solo guarda si la conversación pasa de ~1000 tokens sobre la ficha. Al borrar un chat (o todos) se borran los `.chat` (`KvCacheFiles.clearChats`); las `.sys` no llevan conversación y se quedan. Texto del interruptor actualizado.
 - **Archivos:** `smollm/src/main/cpp/KvCacheKeys.h`, `LLMInference.cpp`, `smollm/src/test/cpp/KvCacheKeysTest.cpp` (OK), `data/local/ChatRepository.kt`, `data/characters/EnginePerfSettings.kt`, `ui/roleplay/EnginePerfDialog.kt`.

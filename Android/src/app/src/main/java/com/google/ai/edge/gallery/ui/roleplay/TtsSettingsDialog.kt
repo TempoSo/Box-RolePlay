@@ -21,6 +21,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +42,7 @@ import com.google.ai.edge.gallery.tts.PocketModelFiles
 import com.google.ai.edge.gallery.tts.SherpaPocketEngine
 import com.google.ai.edge.gallery.tts.TtsFiles
 import com.google.ai.edge.gallery.tts.TtsManager
+import com.google.ai.edge.gallery.tts.TtsModels
 import com.google.ai.edge.gallery.tts.VoiceStore
 import java.io.File
 
@@ -60,14 +62,20 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
     val pickModel =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
             if (uri != null) {
-                val copied = runCatching { TtsFiles.importModelFolder(context, uri) }.getOrElse { emptyList() }
+                // Cada importación es un modelo nuevo (no pisa los que ya hay) y pasa a ser el activo.
+                val model = TtsModels.create(context, TtsFiles.folderName(context, uri) ?: "Importado")
+                val copied = runCatching { TtsFiles.importModelFolder(context, uri, model.dir) }.getOrElse { emptyList() }
+                if (copied.isEmpty()) TtsModels.delete(context, model.id)
                 Toast.makeText(
                     context,
                     // BUG-014: el error lista los archivos esperados (y avisa si la carpeta es del formato v2).
                     if (copied.isEmpty()) PocketModelFiles.noPartsMessage(listFolderNames(context, uri))
-                    else "Copiados ${copied.size} archivos.",
+                    else if (PocketModelFiles.missing(model.dir).isNotEmpty())
+                        "Copiados ${copied.size} archivos, pero faltan: ${PocketModelFiles.missing(model.dir).joinToString(", ")}"
+                    else "Modelo importado (${copied.size} archivos).",
                     Toast.LENGTH_LONG,
                 ).show()
+                if (copied.isNotEmpty()) TtsModels.setActive(context, model.id)
                 TtsManager.release() // recarga el motor con los archivos nuevos
                 refresh++
             }
@@ -84,7 +92,18 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
         )
     }
 
-    val missing = remember(refresh) { PocketModelFiles.missing(TtsFiles.modelDir(context)) }
+    val models = remember(refresh) { TtsModels.list(context) }
+    val activeId = remember(refresh) { TtsModels.activeId(context) }
+    var toDelete by remember { mutableStateOf<com.google.ai.edge.gallery.tts.TtsModelInfo?>(null) }
+    toDelete?.let { m ->
+        AlertDialog(
+            onDismissRequest = { toDelete = null },
+            title = { Text("Borrar modelo") },
+            text = { Text("¿Borrar «${m.label}» (${m.sizeMb} MB)? Se puede volver a descargar.") },
+            confirmButton = { TextButton(onClick = { TtsModels.delete(context, m.id); toDelete = null; refresh++ }) { Text("Borrar") } },
+            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Cancelar") } },
+        )
+    }
     val libOk = remember { SherpaPocketEngine.isLibraryAvailable() }
     val voice = remember(refresh, showVoices) { store.defaultVoicePath()?.takeIf { File(it).exists() } }
     val voiceName = remember(refresh, showVoices) {
@@ -105,12 +124,28 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                 )
 
                 Text("Modelo", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    if (missing.isEmpty()) "Modelo completo."
-                    else "Faltan: ${missing.joinToString(", ")}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (missing.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                )
+                if (models.isEmpty()) {
+                    Text("No hay ningún modelo instalado.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                models.forEach { m ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = m.id == activeId,
+                            enabled = m.complete,
+                            onClick = { TtsModels.setActive(context, m.id); refresh++ },
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(m.label, style = MaterialTheme.typography.bodyMedium)
+                            val falta = PocketModelFiles.missing(m.dir)
+                            Text(
+                                if (m.complete) "${m.sizeMb} MB" else "Incompleto, faltan: ${falta.joinToString(", ")}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (m.complete) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        TextButton(onClick = { toDelete = m }) { Text("Borrar") }
+                    }
+                }
                 OutlinedButton(onClick = { showDownload = true }) { Text("Descargar de Hugging Face") }
                 OutlinedButton(onClick = { pickModel.launch(null) }) { Text("Importar carpeta del modelo") }
                 Text(
@@ -196,7 +231,7 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
                         TtsManager.currentCharacterId = ""
                         TtsManager.speak(context, "Hola, esta es mi voz. ¿Qué te parece cómo suena?")
                     },
-                    enabled = libOk && missing.isEmpty() && voice != null,
+                    enabled = libOk && models.any { it.id == activeId && it.complete } && voice != null,
                 ) { Text("Probar voz") }
             }
         },
