@@ -266,20 +266,30 @@ LLMInference::_clearPendingBitmaps() {
 void
 LLMInference::_startMediaCompletion(const std::string &query) {
     const std::string marker = mtmd_default_marker();
-    std::string stored = query;
-    for (size_t pos = 0; (pos = stored.find(marker, pos)) != std::string::npos;) {
-        stored.replace(pos, marker.size(), "[imagen]");
-        pos += 8;
-    }
-    addChatMessage(stored.c_str(), "user");
-    _applyContextWindow();
+    // Gemma 4 / Gemma: Kotlin ya entrega el prompt completo con su plantilla (turnos y marcadores de
+    // imagen). Se usa tal cual, igual que en el camino de texto: asi el KV coincide con el de los
+    // turnos anteriores y no se mete la plantilla (ni el sistema) dentro de otro turno de usuario.
+    const bool preTemplated = query.find("<turn|") != std::string::npos ||
+                              query.find("<start_of_turn>") != std::string::npos;
+    std::string prompt;
+    if (preTemplated) {
+        prompt = query;
+    } else {
+        std::string stored = query;
+        for (size_t pos = 0; (pos = stored.find(marker, pos)) != std::string::npos;) {
+            stored.replace(pos, marker.size(), "[imagen]");
+            pos += 8;
+        }
+        addChatMessage(stored.c_str(), "user");
+        _applyContextWindow();
 
-    // Prompt con los marcadores: se cambia un momento el ultimo mensaje.
-    char *savedContent = const_cast<char *>(_messages.back().content);
-    _messages.back().content = strdup(query.c_str());
-    std::string prompt = _formatPrompt(_messages);
-    free(const_cast<char *>(_messages.back().content));
-    _messages.back().content = savedContent;
+        // Prompt con los marcadores: se cambia un momento el ultimo mensaje.
+        char *savedContent = const_cast<char *>(_messages.back().content);
+        _messages.back().content = strdup(query.c_str());
+        prompt = _formatPrompt(_messages);
+        free(const_cast<char *>(_messages.back().content));
+        _messages.back().content = savedContent;
+    }
 
     mtmd_input_text text;
     text.text = prompt.c_str();

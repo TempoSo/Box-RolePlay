@@ -41,6 +41,13 @@
 
 ## 📝 Registro
 
+### 2026-11-25 — Fotos en chats, 2.ª pasada: el prompt de imagen metía la plantilla dentro de otra plantilla
+- Log 18:06 (build con `MediaReuse`): la foto en un chat de 5 turnos tardó 126 s de prompt; `media: reutiliza 715 de 2061 posiciones`. El reuso funcionó, pero solo hasta el primer turno: el prompt de imagen tenía **2061** posiciones para un texto de ~950 tokens.
+- Causa (`LLMInference.cpp::_startMediaCompletion`): Kotlin ya entrega el prompt completo con plantilla Gemma (`<|turn>…<turn|>`), pero el camino de imagen lo añadía como un mensaje de usuario y volvía a aplicar la plantilla: sistema duplicado + plantilla anidada dentro de un turno de usuario. Por eso no coincidía con el KV de los turnos de texto (que sí usan el prompt tal cual) y el modelo recibía un prompt deformado.
+- Fix: si la consulta ya trae plantilla (`<turn|` o `<start_of_turn>`), se usa tal cual, igual que el camino de texto; el formateo nativo queda solo para consultas sin plantilla. También afecta a la app Visión (mismo camino).
+- Hipótesis, sin confirmar: el prompt deformado pudo contribuir a la basura (`<unusedNN>`) vista con Q4_K_M + imagen. Vigilar en la próxima prueba.
+- Re-prueba: foto en chat largo → `media: reutiliza` ≈ todo menos el mensaje nuevo, prompt de ~40 s; la app Visión debe seguir describiendo bien (el texto del prompt cambia: ahora es el correcto).
+
 ### 2026-11-25 — Fotos dentro de un chat: reutilizar el KV (nativo)
 - Log del 25/11 17:23: en un chat con 11 turnos la foto tardó 164 s de prompt (vs 38 s en Visión vacía); el turno con imagen vaciaba el KV y reprocesaba todo, y el siguiente también.
 - `smollm/src/main/cpp/MediaReuse.h` (nuevo) + `LLMInference.cpp::_startMediaCompletion`: se calcula el prefijo común entre el KV y el prompt (cada posición de imagen lleva un id negativo único, así el prefijo se detiene donde empieza la imagen), se recorta el KV y solo se procesa lo nuevo: texto con `llama_decode` por lotes y la imagen con `mtmd_helper_eval_chunk_single`. `_kvDirty` ya no se marca tras una imagen. Línea nueva en logcat: `media: reutiliza X de Y posiciones del prompt`.
