@@ -44,6 +44,11 @@ class LlamaCppEngine {
 
     // Track load params for resetConversation
     var lastLoadParams: SmolLM.InferenceParams? = null
+        private set
+    var lastModelPath: String? = null
+        private set
+    var lastSystemPrompt: String = ""
+        private set
 
     /** Cache de KV en disco (carpeta, clave del modelo, sistema, chat). null = apagada. */
     data class KvCacheConfig(val dir: String, val modelKey: String, val sys: Boolean, val chat: Boolean)
@@ -60,11 +65,6 @@ class LlamaCppEngine {
             Log.w("AGLlamaPerf", "no se pudo guardar el chat en cache: ${e.message}")
         }
     }
-        private set
-    var lastModelPath: String? = null
-        private set
-    var lastSystemPrompt: String = ""
-        private set
 
     // BUG-001/BUG-015: con la plantilla de Gemma 4 aplicada en Kotlin, el prompt se manda ya
     // formateado y el nativo lo tokeniza tal cual (sin _applyContextWindow ni apply_template).
