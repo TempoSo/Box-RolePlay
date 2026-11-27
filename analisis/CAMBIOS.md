@@ -41,6 +41,12 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Arreglar build: copias sueltas de CharacterStore.kt y StorePrefs.kt
+
+- **Qué**: se borran `gallery/CharacterStore.kt` y `gallery/StorePrefs.kt`, restos duplicados (mismo paquete `store`) que quedaron en la carpeta equivocada al crear la tienda; las buenas están en `gallery/store/`.
+- **Por qué**: `Redeclaration` y `when` no exhaustivo (la copia suelta no tenía los sitios nuevos) rompían `compileReleaseKotlin`.
+- **Verificado**: solo contra el log de Actions; sin compilar aquí.
+
 ### 2026-11-27 — Kokoro: lectura más fiable (idioma, texto y archivos)
 
 - **Qué**: (1) Con voces que no son inglés/chino (es, fr, it, pt…) ya no se pasan los lexicon de inglés: antes las palabras españolas que también existen en inglés («me», «a», «sal», «no»…) se leían con fonemas ingleses; ahora todo va por espeak-ng con el idioma de la voz, y si la librería no lo acepta se reintenta con los lexicon (queda en el log el modo: `modo=espeak|lexicon`). (2) Se pasa `dict/` (jieba) y las reglas `.fst` para voces chinas, y la descarga del repo ahora también baja `dict/` y `*.fst`. (3) Limpieza de texto para ambos motores: espacios raros e invisibles, comillas tipográficas, paréntesis/corchetes/barras/`&`, viñetas; y las frases ya no se cortan en decimales («3.5»), abreviaturas pegadas ni en «...». (4) Log por trozo: caracteres → muestras → ms, y aviso si no sale audio.
