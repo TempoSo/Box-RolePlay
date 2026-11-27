@@ -100,6 +100,7 @@ private const val ROUTE_ROLEPLAY_EDIT = "roleplay_edit"
 private const val ROUTE_SETTINGS = "box_settings"
 private const val ROUTE_APPS = "box_apps"
 private const val ROUTE_APP_TTS = "box_app_tts"
+private const val ROUTE_APP_STORE = "box_app_store"
 private const val ROUTE_APP_VISION = "box_app_vision"
 private const val ROUTE_APP_BENCH = "box_app_bench"
 private const val ROUTE_INFERENCE = "box_inference"
@@ -226,6 +227,7 @@ fun GalleryNavHost(
             } else navController.navigate(ROUTE_INFERENCE)
           }
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.TTS -> navController.navigate(ROUTE_APP_TTS)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.STORE -> navController.navigate(ROUTE_APP_STORE)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> navController.navigate(ROUTE_APP_VISION)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.IMAGE_GEN -> openTask(BuiltInTaskId.IMAGE_GEN)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.TRANSCRIBE -> openTask(BuiltInTaskId.WHISPER)
@@ -333,6 +335,7 @@ fun GalleryNavHost(
                 navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${chat.name}?autoResume=false")
               } else navController.navigate(ROUTE_INFERENCE)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.TTS -> navController.navigate(ROUTE_APP_TTS)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.STORE -> navController.navigate(ROUTE_APP_STORE)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> navController.navigate(ROUTE_APP_VISION)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.IMAGE_GEN -> openTask(BuiltInTaskId.IMAGE_GEN)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.TRANSCRIBE -> openTask(BuiltInTaskId.WHISPER)
@@ -345,6 +348,10 @@ fun GalleryNavHost(
           }
         },
       )
+    }
+
+    composable(route = ROUTE_APP_STORE) {
+      com.google.ai.edge.gallery.ui.apps.CharacterStoreScreen(onBack = { navController.navigateUp() })
     }
 
     composable(route = ROUTE_APP_TTS) {
