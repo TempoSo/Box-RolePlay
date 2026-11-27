@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Kokoro: lectura más fiable (idioma, texto y archivos)
+
+- **Qué**: (1) Con voces que no son inglés/chino (es, fr, it, pt…) ya no se pasan los lexicon de inglés: antes las palabras españolas que también existen en inglés («me», «a», «sal», «no»…) se leían con fonemas ingleses; ahora todo va por espeak-ng con el idioma de la voz, y si la librería no lo acepta se reintenta con los lexicon (queda en el log el modo: `modo=espeak|lexicon`). (2) Se pasa `dict/` (jieba) y las reglas `.fst` para voces chinas, y la descarga del repo ahora también baja `dict/` y `*.fst`. (3) Limpieza de texto para ambos motores: espacios raros e invisibles, comillas tipográficas, paréntesis/corchetes/barras/`&`, viñetas; y las frases ya no se cortan en decimales («3.5»), abreviaturas pegadas ni en «...». (4) Log por trozo: caracteres → muestras → ms, y aviso si no sale audio.
+- **Por qué**: lectura de Kokoro irregular con voces en español.
+- **Archivos**: `tts/SherpaKokoroEngine.kt`, `tts/KokoroModelFiles.kt`, `tts/KokoroHfSelect.kt`, `tts/TtsManager.kt`, `data/characters/SpeechText.kt` (+ pruebas en `SpeechTextTest`).
+- **Verificado**: solo la limpieza de texto (kotlinc). El modo espeak de Kokoro es una hipótesis: la documentación de sherpa-onnx dice que el modelo v1_0 solo añade soporte oficial de inglés y chino, así que el español puede seguir sonando mal aunque las voces existan.
+- **Re-probar en el móvil**: descargar de nuevo Kokoro (para bajar `dict/` y `.fst`, si no ya está bien), leer un texto con voz en español y pasarme el log `AGLTts` (líneas «Kokoro cargado… modo=» y «Kokoro: N car → …»). Si aun así falla, probar la voz inglesa (af_heart) con texto en inglés para separar «problema del modelo en español» de «problema de la app».
+
 ### 2026-11-27 — Pocket TTS: limpieza exhaustiva de la muestra de voz
 
 - **Qué**: al guardar una voz en la biblioteca (subida o grabada) se limpia por defecto (interruptor «Limpiar la voz al guardar»): quita nivel DC y graves <80 Hz, reduce el ruido de fondo por sustracción espectral (perfil sacado de los tramos más callados de la propia muestra), recorta silencios del inicio/final y acorta pausas largas (>0,6 s → 0,3 s), limita a 20 s, iguala el volumen (~-20 dBFS) con límite suave de picos y fundidos de 10 ms. Avisa por mensaje si hay saturación, mucho ruido o muy poca voz. La original se guarda aparte (`<id>.src`).

@@ -43,9 +43,28 @@ object SpeechText {
             .replace(Regex("\\.{4,}"), "...") // ...... -> ...
             .replace(Regex("\\s*[-–—]{2,}\\s*"), ", ") // -- -> pausa
             .replace(Regex("\\[([^\\]]*)]\\([^)]*\\)"), "$1") // [texto](url) -> texto
+            .let { normalizeChars(it) }
             .replace(Regex("[ \\t]+"), " ")
             .replace(Regex("\\n{3,}"), "\n\n")
             .trim()
+
+    /**
+     * Deja solo caracteres que los motores de voz entienden: espacios raros -> espacio, invisibles fuera,
+     * comillas tipográficas -> ' o nada, paréntesis/corchetes/barras -> pausa o espacio, viñetas fuera.
+     */
+    fun normalizeChars(s: String): String =
+        s.replace(Regex("[\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000\\t]"), " ")
+            .replace(Regex("[\\u200B-\\u200F\\u2060\\uFEFF\\u00AD\\u202A-\\u202E]"), "")
+            .replace(Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]"), "")
+            .replace(Regex("[’‘´ʼ]"), "'")
+            .replace(Regex("[\"“”„‟«»]"), "")
+            .replace(Regex("(?m)^\\s*[-•·▪●○◦►▶>]+\\s+"), "") // viñetas y citas al inicio de línea
+            .replace(Regex("[()\\[\\]{}]"), ", ")
+            .replace(Regex("[|\\\\^=+/<>@]+"), " ")
+            .replace("&", " y ")
+            .replace(Regex("\\s*,(\\s*,)+"), ",") // ", ," -> ","
+            .replace(Regex("\\s+([,.;:!?])"), "$1") // "hola ," -> "hola,"
+            .replace(Regex("^[,\\s]+"), "")
 
     /** Quita emojis y símbolos gráficos: el motor de voz los lee mal o se atasca con ellos. */
     fun stripEmoji(s: String): String {
@@ -96,9 +115,11 @@ object SpeechText {
             }
             if (rest.isNotEmpty()) out.add(rest)
         }
-        for (ch in text) {
+        for ((i, ch) in text.withIndex()) {
             sentence.append(ch)
-            if (ch == '.' || ch == '!' || ch == '?' || ch == '…' || ch == '\n') flush()
+            // Un punto pegado a una letra o cifra (3.5, p.ej., www.x) no termina la frase; tampoco los de "...".
+            val glued = ch == '.' && i + 1 < text.length && (text[i + 1].isLetterOrDigit() || text[i + 1] == '.')
+            if (!glued && (ch == '.' || ch == '!' || ch == '?' || ch == '…' || ch == '\n')) flush()
         }
         flush()
         return mergeShort(out.filter { s -> s.any { it.isLetterOrDigit() } }, limit)

@@ -258,14 +258,14 @@ object TtsManager {
           val estVoices = KokoroModelFiles.estimatedVoices(kf.voices.parentFile!!)
           val sid = TtsVoiceRef.kokoroSid(inputs.voiceRef) ?: KokoroVoices.defaultSid(estVoices)
           val lang = SherpaKokoroEngine.langFor(KokoroVoices.byIndex(sid))
-          val key = "kokoro|${kf.model.absolutePath}|$lang"
+          val key = "kokoro|${kf.model.absolutePath}|$lang|${KokoroVoices.byIndex(sid)?.langCode == "zh"}"
           val existing = kokoroEngine
           val eng: SherpaKokoroEngine =
             if (existing != null && engineKey == key) existing
             else {
               engine?.release(); engine = null
               existing?.release()
-              SherpaKokoroEngine(kf, SmolLM.performanceCoreCount(), lang).also {
+              SherpaKokoroEngine(kf, SmolLM.performanceCoreCount(), lang, KokoroVoices.byIndex(sid)?.langCode == "zh").also {
                 val t0 = System.currentTimeMillis()
                 it.load()
                 Log.i(TAG, "Kokoro cargado en ${System.currentTimeMillis() - t0} ms")

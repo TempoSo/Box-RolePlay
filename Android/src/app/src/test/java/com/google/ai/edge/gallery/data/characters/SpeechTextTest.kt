@@ -45,4 +45,12 @@ class SpeechTextTest {
     @Test fun dropsPunctuationOnlyChunks() {
         assertEquals(listOf("Hola."), SpeechText.chunks("Hola. ... \n ?"))
     }
+
+    @Test fun normalizaCaracteresParaElMotor() {
+        assertEquals("sonríe, Dijo hola d'accord y más texto; costó 3.5 dólares.", SpeechText.stripFormatting("(sonríe) Dijo “hola” d’accord & más\u00A0texto\u200B; costó 3.5 dólares."))
+    }
+
+    @Test fun decimalesYPuntosSuspensivosNoCortanLaFrase() {
+        assertEquals(listOf("Mide 3.5 metros. Bueno... no sé. Sr. López vino."), SpeechText.chunks("Mide 3.5 metros. Bueno... no sé. Sr. López vino."))
+    }
 }

@@ -40,8 +40,10 @@ object KokoroHfSelect {
           return@mapNotNull null
         }
         val lex = top.filter { it.name.startsWith("lexicon") && it.name.endsWith(".txt") }
+        val fst = top.filter { it.name.endsWith(".fst") }
+        val dict = files.filter { rel(it).startsWith("dict/") }
         val picks =
-          (listOf(model, voices, tokens) + lex + espeak).map { f ->
+          (listOf(model, voices, tokens) + lex + fst + dict + espeak).map { f ->
             // El modelo se guarda siempre como model.onnx o model.int8.onnx.
             KokoroPick(f, if (f === model) (if (f.name.contains("int8")) "model.int8.onnx" else "model.onnx") else rel(f))
           }

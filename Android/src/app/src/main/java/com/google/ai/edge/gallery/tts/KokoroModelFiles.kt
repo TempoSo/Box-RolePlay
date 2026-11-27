@@ -12,6 +12,10 @@ data class KokoroModelFiles(
   val tokens: File,
   val dataDir: File,
   val lexicons: List<File>,
+  /** Carpeta `dict/` (jieba, para chino), si existe. */
+  val dictDir: File? = null,
+  /** Reglas `*.fst` de normalización (fechas, números, teléfonos en chino), si existen. */
+  val ruleFsts: List<File> = emptyList(),
 ) {
   companion object {
     const val VOICES = "voices.bin"
@@ -48,6 +52,8 @@ data class KokoroModelFiles(
         tokens = File(dir, TOKENS),
         dataDir = File(dir, DATA_DIR),
         lexicons = names.filter { it.startsWith("lexicon") && it.endsWith(".txt") }.sorted().map { File(dir, it) },
+        dictDir = File(dir, "dict").takeIf { it.isDirectory },
+        ruleFsts = names.filter { it.endsWith(".fst") }.sorted().map { File(dir, it) },
       )
     }
   }
