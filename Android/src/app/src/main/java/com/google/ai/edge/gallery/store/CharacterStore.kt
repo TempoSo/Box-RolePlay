@@ -18,6 +18,12 @@ object CharacterStore {
     return ChubApi.parseSearch(body, q.nsfw)
   }
 
+  /** Una página de resultados con el total (si Chub lo informa). */
+  fun searchPage(q: StoreQuery): StorePage {
+    val body = StoreHttp.get(ChubApi.searchUrl(q), "application/json").toString(Charsets.UTF_8)
+    return StorePage(ChubApi.parseSearch(body, q.nsfw), ChubApi.parseTotal(body))
+  }
+
   /** Bytes de la tarjeta (PNG con datos incrustados, o JSON) de un resultado de la búsqueda. */
   fun download(card: StoreCard): ByteArray = downloadTarget(LinkTarget(LinkTarget.Site.CHUB, card.id))
 

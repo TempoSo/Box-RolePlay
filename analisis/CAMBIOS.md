@@ -41,6 +41,15 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Tienda de personajes: cuadrícula, páginas numeradas, aleatorio y memoria
+
+- **Qué**: los resultados pasan de lista a **cuadrícula de 2 columnas** (imagen grande con degradado, nombre, autor, 2 etiquetas, estrellas, marca +18 y botón de descarga redondo). El «Cargar más» se cambia por **páginas de 20** con barra numerada (`‹ 1 2 3 … 141 ›`); la app **recuerda texto, orden y página** de la última búsqueda y reabre ahí. Botón **aleatorio** (salta a una página al azar del orden actual), chip **+18** (con la misma confirmación de edad) y la importación por enlace pasa a un diálogo abierto desde un icono. Al cambiar de página vuelve arriba.
+- **Por qué**: pedido del usuario (más estético y poder volver al mismo punto sin recargar listas largas).
+- **Archivos**: `store/StorePager.kt` (nuevo, lógica de la barra), `store/StoreModels.kt` (pageSize 20), `store/ChubApi.kt` (`parseTotal`), `store/CharacterStore.kt` (`searchPage`), `store/StorePrefs.kt`, `ui/apps/CharacterStoreViewModel.kt`, `ui/apps/CharacterStoreScreen.kt`, test `StorePagerTest`.
+- **Verificado**: solo la barra de páginas con kotlinc. La interfaz no está compilada ni vista.
+- **Sin verificar**: que Chub devuelva el total (`data.count`); si no lo hace la barra muestra solo las páginas ya alcanzadas + la siguiente. En «Recientes» y «Tendencia» el contenido de una página cambia con el tiempo, así que «la 7» de hoy no será la de mañana.
+- **Re-probar en el móvil**: cambiar de página, cerrar la app y volver (debe reabrir en la misma), aleatorio, +18, importar por enlace, que no se corten textos en la tarjeta.
+
 ### 2026-11-27 — Arreglar build: copias sueltas de CharacterStore.kt y StorePrefs.kt
 
 - **Qué**: se borran `gallery/CharacterStore.kt` y `gallery/StorePrefs.kt`, restos duplicados (mismo paquete `store`) que quedaron en la carpeta equivocada al crear la tienda; las buenas están en `gallery/store/`.

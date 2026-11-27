@@ -30,5 +30,5 @@ data class StoreQuery(
   val page: Int = 1,
   /** Mostrar también contenido para adultos (NSFW). */
   val nsfw: Boolean = false,
-  val pageSize: Int = 24,
+  val pageSize: Int = 20,
 )

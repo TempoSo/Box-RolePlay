@@ -43,6 +43,13 @@ object ChubApi {
 
   private val json = Json { isLenient = true; ignoreUnknownKeys = true }
 
+  /** Total de resultados si la API lo da (`data.count` o `count`); null si no. */
+  fun parseTotal(text: String): Int? {
+    val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return null
+    val v = ((root["data"] as? JsonObject)?.get("count") ?: root["count"]) as? JsonPrimitive
+    return v?.intOrNull
+  }
+
   /** Lee la lista de resultados; con [allowNsfw] = false descarta además las marcadas NSFW. */
   fun parseSearch(text: String, allowNsfw: Boolean): List<StoreCard> {
     val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return emptyList()

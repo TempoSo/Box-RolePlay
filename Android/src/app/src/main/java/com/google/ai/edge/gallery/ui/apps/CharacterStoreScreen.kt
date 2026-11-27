@@ -15,20 +15,43 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import com.google.ai.edge.gallery.store.StorePager
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,7 +70,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.store.StoreCard
@@ -117,73 +139,87 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
     )
   }
 
-  BoxScaffold(title = "Tienda de personajes", subtitle = "Tarjetas de Chub y otras fuentes", onBack = onBack) {
-    LazyColumn(
-      Modifier.fillMaxSize(),
-      contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-      item {
+  val page by viewModel.page.collectAsState()
+  val totalPages by viewModel.totalPages.collectAsState()
+  val pageToken by viewModel.pageToken.collectAsState()
+  var showLink by remember { mutableStateOf(false) }
+  val gridState = rememberLazyGridState()
+  LaunchedEffect(pageToken) { if (pageToken > 0) gridState.scrollToItem(0) }
+
+  if (showLink) {
+    AlertDialog(
+      onDismissRequest = { showLink = false },
+      title = { Text("Importar por enlace o ID") },
+      text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(
-            "Las tarjetas son de terceros y se descargan de internet. Se añaden a «Personajes».",
+            "Chub (usuario/proyecto), lorebook de Chub (se añade a un personaje), Pygmalion, RisuRealm, AI Character Cards (AICC/autor/tarjeta), Perchance (experimental), JannyAI (puede fallar por su protección anti-bots) o un enlace directo a .png/.json.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
-          OutlinedTextField(
-            value = text,
-            onValueChange = { viewModel.text.value = it },
-            label = { Text("Buscar personajes en Chub") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
-            modifier = Modifier.fillMaxWidth(),
+          OutlinedTextField(value = link, onValueChange = { link = it }, label = { Text("Enlace o ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        }
+      },
+      confirmButton = {
+        TextButton(enabled = link.isNotBlank() && busyId == null, onClick = { viewModel.addFromLink(link); link = ""; showLink = false }) { Text("Añadir") }
+      },
+      dismissButton = { TextButton(onClick = { showLink = false }) { Text("Cancelar") } },
+    )
+  }
+
+  BoxScaffold(title = "Tienda de personajes", subtitle = "Tarjetas de Chub y otras fuentes", onBack = onBack) {
+    Column(Modifier.fillMaxSize()) {
+      Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        OutlinedTextField(
+          value = text,
+          onValueChange = { viewModel.text.value = it },
+          placeholder = { Text("Buscar personajes en Chub") },
+          leadingIcon = { Icon(Icons.Rounded.Search, null) },
+          singleLine = true,
+          shape = RoundedCornerShape(28.dp),
+          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+          keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
+          modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = { viewModel.random() }, enabled = !loading) { Icon(Icons.Rounded.Shuffle, "Aleatorio") }
+        IconButton(onClick = { showLink = true }) { Icon(Icons.Rounded.Link, "Importar por enlace") }
+      }
+      LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        items(StoreSort.entries.toList()) { s ->
+          FilterChip(selected = sort == s, onClick = { viewModel.setSort(s) }, label = { Text(s.label) })
+        }
+        item {
+          FilterChip(
+            selected = nsfw,
+            onClick = { if (nsfw) viewModel.setNsfw(false) else confirmNsfw = true },
+            label = { Text("+18") },
           )
-          FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StoreSort.entries.forEach { s ->
-              FilterChip(selected = sort == s, onClick = { viewModel.setSort(s) }, label = { Text(s.label) })
-            }
-          }
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-              Text("Contenido NSFW (+18)", style = MaterialTheme.typography.titleSmall)
-              Text(
-                if (nsfw) "Se muestran tarjetas para adultos." else "Oculto por defecto.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-            Switch(checked = nsfw, onCheckedChange = { if (it) confirmNsfw = true else viewModel.setNsfw(false) })
-          }
-          Text("Importar por enlace", style = MaterialTheme.typography.titleSmall)
-          Text(
-            "Pega un enlace o ID: Chub (usuario/proyecto), lorebook de Chub (se añade a un personaje), Pygmalion, RisuRealm, AI Character Cards (AICC/autor/tarjeta), Perchance (experimental), JannyAI (puede fallar por su protección anti-bots) o un enlace directo a .png/.json.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-              value = link,
-              onValueChange = { link = it },
-              label = { Text("Enlace o ID") },
-              singleLine = true,
-              modifier = Modifier.weight(1f),
-            )
-            Button(enabled = link.isNotBlank() && busyId == null, onClick = { viewModel.addFromLink(link); link = "" }) {
-              Text(if (busyId == "link") "…" else "Añadir")
-            }
-          }
         }
       }
-      items(results, key = { it.source + it.id }) { card ->
-        StoreCardRow(card, added = card.id in added, busy = busyId == card.id, anyBusy = busyId != null) { viewModel.add(card) }
-      }
-      item {
-        Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-          when {
-            loading -> CircularProgressIndicator()
-            results.isEmpty() -> Text("Sin resultados.", style = MaterialTheme.typography.bodyMedium)
-            hasMore -> OutlinedButton(onClick = { viewModel.loadMore() }) { Text("Cargar más") }
+      LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        state = gridState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp, top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        gridItems(results, key = { it.source + it.id }) { card ->
+          StoreCardTile(card, added = card.id in added, busy = busyId == card.id, anyBusy = busyId != null) { viewModel.add(card) }
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+          Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+            when {
+              loading -> CircularProgressIndicator()
+              results.isEmpty() -> Text("Sin resultados.", style = MaterialTheme.typography.bodyMedium)
+              else -> PageBar(page, totalPages, hasMore, onGo = { viewModel.goTo(it) })
+            }
           }
         }
       }
@@ -193,43 +229,104 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StoreCardRow(card: StoreCard, added: Boolean, busy: Boolean, anyBusy: Boolean, onAdd: () -> Unit) {
-  Card(Modifier.fillMaxWidth()) {
-    Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      RemoteImage(card.avatarUrl, 72.dp)
-      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(card.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(
-          "@${card.author}" + (if (card.stars > 0) " · ★ ${card.stars}" else "") + (if (card.tokens > 0) " · ${card.tokens} tokens" else ""),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (card.tagline.isNotBlank()) {
-          Text(card.tagline, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        }
-        if (card.tags.isNotEmpty()) {
+private fun PageBar(page: Int, totalPages: Int?, hasMore: Boolean, onGo: (Int) -> Unit) {
+  val items = StorePager.items(page, totalPages, hasMore)
+  val canNext = if (totalPages != null) page < totalPages else hasMore
+  FlowRow(
+    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+    modifier = Modifier.fillMaxWidth(),
+  ) {
+    IconButton(onClick = { onGo(page - 1) }, enabled = page > 1) { Icon(Icons.Rounded.ChevronLeft, "Anterior") }
+    items.forEach { p ->
+      if (p == null) {
+        Text("…", Modifier.padding(horizontal = 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+      } else {
+        val sel = p == page
+        Box(
+          Modifier.size(36.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(enabled = !sel) { onGo(p) },
+          contentAlignment = Alignment.Center,
+        ) {
           Text(
-            card.tags.take(5).joinToString(" · ") + if (card.nsfw) "" else "",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (card.nsfw) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            "$p",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (sel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
-        OutlinedButton(onClick = onAdd, enabled = !added && !anyBusy) {
-          Text(if (busy) "Descargando…" else if (added) "Añadido ✓" else "Añadir a mis personajes")
-        }
+      }
+    }
+    IconButton(onClick = { onGo(page + 1) }, enabled = canNext) { Icon(Icons.Rounded.ChevronRight, "Siguiente") }
+  }
+}
+
+private fun compact(n: Int): String = if (n >= 1000) "%.1fk".format(n / 1000f) else "$n"
+
+@Composable
+private fun StoreCardTile(card: StoreCard, added: Boolean, busy: Boolean, anyBusy: Boolean, onAdd: () -> Unit) {
+  Box(
+    Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(18.dp))
+      .background(MaterialTheme.colorScheme.surfaceVariant),
+  ) {
+    RemoteImage(card.avatarUrl, Modifier.fillMaxSize(), RoundedCornerShape(0.dp))
+    Box(
+      Modifier.fillMaxSize().background(
+        Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.85f))
+      )
+    )
+    if (card.stars > 0) {
+      Row(
+        Modifier.align(Alignment.TopStart).padding(8.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.55f))
+          .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Icon(Icons.Rounded.Star, null, tint = Color(0xFFFFC857), modifier = Modifier.size(13.dp))
+        Spacer(Modifier.width(3.dp))
+        Text(compact(card.stars), color = Color.White, style = MaterialTheme.typography.labelSmall)
+      }
+    }
+    if (card.nsfw) {
+      Text(
+        "+18",
+        Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(50)).background(Color(0xCCB3261E)).padding(horizontal = 8.dp, vertical = 3.dp),
+        color = Color.White,
+        style = MaterialTheme.typography.labelSmall,
+      )
+    }
+    Column(Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 54.dp, bottom = 10.dp)) {
+      Text(card.name, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+      Text("@${card.author}", color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      if (card.tags.isNotEmpty()) {
+        Text(
+          card.tags.take(2).joinToString(" · "),
+          color = Color.White.copy(alpha = 0.6f),
+          style = MaterialTheme.typography.labelSmall,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+    }
+    FilledIconButton(
+      onClick = onAdd,
+      enabled = !added && !anyBusy,
+      modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(38.dp),
+    ) {
+      when {
+        busy -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+        added -> Icon(Icons.Rounded.Check, "Añadido")
+        else -> Icon(Icons.Rounded.Download, "Añadir a mis personajes")
       }
     }
   }
 }
 
 @Composable
-private fun RemoteImage(url: String, size: Dp) {
+private fun RemoteImage(url: String, modifier: Modifier, shape: RoundedCornerShape) {
   val bitmap by produceState<Bitmap?>(initialValue = StoreImages.cached(url), url) {
     if (value == null && url.isNotBlank()) value = withContext(Dispatchers.IO) { StoreImages.load(url) }
   }
-  Box(Modifier.size(size).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+  Box(modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceVariant)) {
     bitmap?.let { Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
   }
 }

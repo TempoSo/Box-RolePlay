@@ -13,4 +13,17 @@ class StorePrefs(context: Context) {
   fun added(): Set<String> = prefs.getStringSet("added", emptySet()) ?: emptySet()
 
   fun markAdded(id: String) = prefs.edit().putStringSet("added", added() + id).apply()
+
+  /** Última búsqueda: texto, orden (nombre del enum) y página, para volver justo donde se dejó. */
+  var lastText: String
+    get() = prefs.getString("last_text", "") ?: ""
+    set(v) = prefs.edit().putString("last_text", v).apply()
+
+  var lastSort: String
+    get() = prefs.getString("last_sort", "") ?: ""
+    set(v) = prefs.edit().putString("last_sort", v).apply()
+
+  var lastPage: Int
+    get() = prefs.getInt("last_page", 1).coerceAtLeast(1)
+    set(v) = prefs.edit().putInt("last_page", v).apply()
 }

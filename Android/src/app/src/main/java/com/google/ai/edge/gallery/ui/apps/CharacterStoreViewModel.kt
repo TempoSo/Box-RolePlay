@@ -11,6 +11,7 @@ import com.google.ai.edge.gallery.store.LinkTarget
 import com.google.ai.edge.gallery.store.LorebookConvert
 import com.google.ai.edge.gallery.store.StoreLorebook
 import com.google.ai.edge.gallery.store.StoreCard
+import com.google.ai.edge.gallery.store.StorePager
 import com.google.ai.edge.gallery.store.StorePrefs
 import com.google.ai.edge.gallery.store.StoreQuery
 import com.google.ai.edge.gallery.store.StoreSort
@@ -46,6 +47,15 @@ constructor(
   val loading: StateFlow<Boolean> = _loading.asStateFlow()
   private val _hasMore = MutableStateFlow(false)
   val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
+  private val _page = MutableStateFlow(prefs.lastPage)
+  /** Página actual (empieza en 1). */
+  val page: StateFlow<Int> = _page.asStateFlow()
+  private val _totalPages = MutableStateFlow<Int?>(null)
+  /** Total de páginas si Chub informa del total de resultados. */
+  val totalPages: StateFlow<Int?> = _totalPages.asStateFlow()
+  /** Sube cada vez que llega una página nueva: la pantalla vuelve arriba. */
+  private val _pageToken = MutableStateFlow(0)
+  val pageToken: StateFlow<Int> = _pageToken.asStateFlow()
   private val _added = MutableStateFlow(prefs.added())
   val added: StateFlow<Set<String>> = _added.asStateFlow()
   private val _busyId = MutableStateFlow<String?>(null)
@@ -59,10 +69,10 @@ constructor(
   val characters: StateFlow<List<RoleplayCharacter>> =
     repository.observeAll().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-  private var page = 1
-
   init {
-    search()
+    prefs.lastText.let { text.value = it }
+    StoreSort.entries.firstOrNull { it.name == prefs.lastSort }?.let { _sort.value = it }
+    load(_page.value)
   }
 
   fun clearMessage() { _message.value = null }
@@ -71,22 +81,35 @@ constructor(
 
   fun setNsfw(on: Boolean) { prefs.nsfw = on; _nsfw.value = on; search() }
 
-  fun search() = load(reset = true)
+  /** Nueva búsqueda desde la página 1. */
+  fun search() = load(1)
 
-  fun loadMore() = load(reset = false)
+  fun goTo(page: Int) {
+    val max = _totalPages.value ?: Int.MAX_VALUE
+    load(page.coerceIn(1, max))
+  }
 
-  private fun load(reset: Boolean) {
+  fun next() = goTo(_page.value + 1)
+
+  fun previous() = goTo(_page.value - 1)
+
+  /** Salta a una página al azar del orden actual (para cuando no se sabe qué buscar). */
+  fun random() = goTo(StorePager.randomPage(_page.value, _totalPages.value))
+
+  private fun load(target: Int) {
     if (_loading.value) return
-    if (reset) page = 1 else page++
     _loading.value = true
-    val q = StoreQuery(text = text.value, sort = _sort.value, page = page, nsfw = _nsfw.value)
+    val q = StoreQuery(text = text.value, sort = _sort.value, page = target, nsfw = _nsfw.value)
     viewModelScope.launch {
       try {
-        val list = withContext(Dispatchers.IO) { CharacterStore.search(q) }
-        _results.value = if (reset) list else _results.value + list.filter { n -> _results.value.none { it.id == n.id } }
-        _hasMore.value = list.size >= q.pageSize / 2
+        val res = withContext(Dispatchers.IO) { CharacterStore.searchPage(q) }
+        _results.value = res.cards
+        _page.value = target
+        _totalPages.value = StorePager.totalPages(res.total, q.pageSize)
+        _hasMore.value = res.cards.size >= q.pageSize / 2
+        _pageToken.value++
+        prefs.lastText = q.text; prefs.lastSort = q.sort.name; prefs.lastPage = target
       } catch (e: Exception) {
-        if (!reset) page--
         _message.value = "No se pudo buscar: ${e.message ?: "sin conexión"}"
       } finally {
         _loading.value = false
