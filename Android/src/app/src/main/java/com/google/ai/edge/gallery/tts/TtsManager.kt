@@ -258,6 +258,8 @@ object TtsManager {
           val estVoices = KokoroModelFiles.estimatedVoices(kf.voices.parentFile!!)
           val sid = TtsVoiceRef.kokoroSid(inputs.voiceRef) ?: KokoroVoices.defaultSid(estVoices)
           val lang = SherpaKokoroEngine.langFor(KokoroVoices.byIndex(sid))
+          // El diccionario IPA va en assets; se lee una sola vez, antes de generar el primer trozo.
+          if (lang == "es") KokoroPhonemizer.initialize(app)
           val key = "kokoro|${kf.model.absolutePath}|$lang|${KokoroVoices.byIndex(sid)?.langCode == "zh"}"
           val existing = kokoroEngine
           val eng: SherpaKokoroEngine =

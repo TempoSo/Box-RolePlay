@@ -1,0 +1,7 @@
+kokoro_es_lexicon.txt — diccionario fonético compacto para las voces españolas de Kokoro.
+
+Contenido: 6089 palabras (6000 más frecuentes del español + palabras y nombres habituales en roleplay) con su transcripción IPA en una línea «palabra<TAB>fonemas». Los fonemas se generaron con espeak-ng 1.52.0 (-v es --ipa) y se filtraron para que todos sus símbolos existan en tokens.txt de csukuangfj/kokoro-multi-lang-v1_0.
+
+Motivo: sherpa-onnx >= 2.0 eliminó espeak-ng; kokoro-lang y kokoro-data-dir se ignoran y el modelo multilingüe solo trae lexicon de inglés y chino. Sin fonemas, TokenizeSentence devuelve vacío y la voz no suena.
+
+Nota de licencia: la salida IPA procede de espeak-ng (GPLv3). Revisa esta dependencia antes de redistribuir la app.

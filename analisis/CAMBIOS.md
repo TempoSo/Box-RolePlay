@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Kokoro en español: fonemas propios para que suenen las voces
+
+- **Qué**: añadido `KokoroPhonemizer`, que convierte el texto en símbolos IPA y se los pasa a sherpa-onnx con `GenerationConfig.phonemeCodepoints` (en vez de depender de `kokoro-lang`/espeak-ng). Incluye un diccionario compacto de 6089 palabras con IPA exacto y reglas G2P para palabras fuera de él (nombres propios, etc.). También convierte dígitos a palabras y limpia `¿ ¡ ' … —` porque el modelo no tiene esos tokens.
+- **Por qué**: **causa raíz de las voces mudas**. El AAR es sherpa-onnx >= 2.0.x, que eliminó espeak-ng e ignora `kokoro-lang` y `kokoro-data-dir`; el modelo `kokoro-multi-lang-v1_0` solo trae lexicon de inglés y chino. Sin lexicon, `TokenizeSentence` devuelve vacío → `Failed to convert ... to token IDs` → 0 muestras → silencio. No se podía bajar a 1.12.x sin perder Pocket TTS (añadido en 2.0.0).
+- **Archivos**: `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/KokoroPhonemizer.kt` (nuevo), `Android/src/app/src/main/assets/tts/kokoro_es_lexicon.txt` (nuevo, 120 KB), `Android/src/app/src/main/assets/tts/LEEME.txt` (nuevo), `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/SherpaKokoroEngine.kt` (ruta `generateWithConfigAndCallback`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/TtsManager.kt` (inicializa el diccionario), `analisis/PLAN_PRUEBAS.md` (nuevo ítem 3.9).
+- **Verificado**: `.\gradlew.bat :app:compileReleaseKotlin` → **BUILD SUCCESSFUL**. Comprobado que la API del AAR (`GenerationConfig.phonemeCodepoints` = `int[][]`, `generateWithConfigAndCallback`), los 114 tokens del modelo y el binario contienen la ruta de fonemas. Las 11 palabras de la frase de prueba están en el diccionario.
+- **Sin verificar**: audio real en dispositivo (no hay móvil conectado). Queda comprobar que el acento y los diptongos suenan bien y que los nombres OOV se pronuncian de forma aceptable. Otros idiomas sin lexicon (fr/it/pt/hi/ja) siguen sin arreglo específico.
+
 ### 2026-11-27 — Tienda de personajes: cuadrícula, páginas numeradas, aleatorio y memoria
 
 - **Qué**: los resultados pasan de lista a **cuadrícula de 2 columnas** (imagen grande con degradado, nombre, autor, 2 etiquetas, estrellas, marca +18 y botón de descarga redondo). El «Cargar más» se cambia por **páginas de 20** con barra numerada (`‹ 1 2 3 … 141 ›`); la app **recuerda texto, orden y página** de la última búsqueda y reabre ahí. Botón **aleatorio** (salta a una página al azar del orden actual), chip **+18** (con la misma confirmación de edad) y la importación por enlace pasa a un diálogo abierto desde un icono. Al cambiar de página vuelve arriba.

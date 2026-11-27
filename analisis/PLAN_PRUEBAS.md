@@ -95,6 +95,7 @@ _(El resto del Bloque 1 — LiteRT — quedó cubierto por la prueba 4.5 del Blo
 - [ ] 3.6 Voz en vivo: 1.ª frase mientras genera; comparar gen t/s con voz ON/OFF.
 - [ ] 3.7 Voz por personaje: voz propia / predeterminada en otros / "Quitar" vuelve a la predeterminada.
 - [ ] 3.8 Audio focus: con música o llamada → ¿baja volumen o se corta?
+- [ ] 3.9 **Kokoro español (fix de fonemas, 27/11):** elegir voz `ef_dora` (sid 28) y «Probar voz» → debe oírse «Hola, esta es mi voz. ¿Qué te parece cómo suena?». Revisar logcat `AGLTts`: debe aparecer `Kokoro fonemas:` con IPA y >0 muestras. Probar también un mensaje con nombres propios (OVV) y cifras.
 - [ ] 3.1 (tras BUG-013) Descarga HF: listar carpetas, descargar con reanudación `.part`.
 - [ ] **Verificación del commit `2cec7db` (fix de Claude, tokenizer.json + q4):** buscar `TTSBard/kyutai-en-clone-onnx` → debe listar **"Principal"** (~130 MB, todo en raíz), bajar las piezas int8/normal **ignorando las q4**, y convertir solo el `tokenizer.json` a `vocab.json`/`token_scores.json`. El filtro de `parseFiles` ya está corregido y verificado en BUG-013 (17/11); este ítem comprueba además el commit `2cec7db`.
 

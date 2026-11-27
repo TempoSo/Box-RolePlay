@@ -6,12 +6,13 @@ import android.util.Log
 /**
  * Motor de voz Kokoro sobre sherpa-onnx (por reflexión, igual que [SherpaPocketEngine], para compilar aunque
  * la librería no esté). Las voces vienen dentro del modelo (voices.bin): se elige una por su número (sid).
- * El idioma (para espeak-ng) se fija al cargar, así que cambiar a una voz de otro idioma recarga el motor.
+ * El idioma se fija al cargar, así que cambiar a una voz de otro idioma recarga el motor. Con sherpa-onnx >= 2.0
+ * el español no tiene lexicon en el modelo: [KokoroPhonemizer] genera los fonemas y se pasan a la librería.
  */
 class SherpaKokoroEngine(
   private val files: KokoroModelFiles,
   private val threads: Int,
-  /** Código espeak del idioma ("es", "fr"…); vacío para inglés y chino, que usan los lexicon. */
+  /** Código del idioma ("es", "fr"…); vacío para inglés y chino, que usan los lexicon del modelo. */
   private val lang: String,
   /** La voz es china (activa las reglas de normalización de números/fechas en chino). */
   private val chinese: Boolean = false,
@@ -33,7 +34,7 @@ class SherpaKokoroEngine(
         }
         .getOrDefault(false)
 
-    /** Idioma de espeak para una voz; "" para inglés (EE. UU.) y chino, que van con los lexicon. */
+    /** Idioma de la voz; "" para inglés (EE. UU.) y chino, que van con los lexicon del modelo. */
     fun langFor(voice: KokoroVoice?): String =
       when (voice?.langCode) {
         null, "en-us", "zh" -> ""
@@ -63,9 +64,8 @@ class SherpaKokoroEngine(
   fun load() {
     if (tts != null) return
     if (!isLibraryAvailable()) error("Falta la librería sherpa-onnx con soporte de Kokoro (app/libs/sherpa-onnx.aar).")
-    // Voces de otros idiomas (es, fr, it, pt…): todo el texto va por espeak-ng con su idioma. Si además se
-    // pasan los lexicon de inglés, las palabras que existen en inglés ("me", "a", "sal", "no"…) se leen con
-    // fonemas ingleses. Si esta configuración no la acepta la librería, se reintenta con los lexicon.
+    // Los lexicon del modelo cubren inglés y chino. Para español se generan fonemas en [generate]; el
+    // lexicon se pasa igualmente para que la vía antigua siga funcionando si el fonemizador no está listo.
     val attempts = if (lang.isNotEmpty()) listOf(false, true) else listOf(true)
     var last: Throwable? = null
     for (withLexicon in attempts) {
@@ -117,13 +117,37 @@ class SherpaKokoroEngine(
   fun generate(text: String, sid: Int, speed: Float, onSamples: (FloatArray) -> Boolean) {
     val engine = tts ?: error("El motor de voz no está cargado")
     val safeSid = if (numSpeakers > 0) sid.coerceIn(0, numSpeakers - 1) else sid
-    val method =
-      engine.javaClass.methods.firstOrNull { it.name == "generateWithCallback" && it.parameterCount == 4 }
-        ?: error("sherpa-onnx: falta generateWithCallback (¿versión de la librería antigua?)")
     var total = 0
+    val callback = ChunkCallback { samples -> total += samples.size; onSamples(samples) }
     val t0 = System.currentTimeMillis()
-    method.invoke(engine, text, safeSid, speed, ChunkCallback { samples -> total += samples.size; onSamples(samples) })
-    Log.i("AGLTts", "Kokoro: ${text.length} car → ${total} muestras (${total * 1000L / sampleRate.coerceAtLeast(1)} ms de audio) en ${System.currentTimeMillis() - t0} ms, sid=$safeSid, modo=$mode")
+    var usedMode = mode
+
+    // En español no hay lexicon en el modelo y sherpa-onnx 2.0 ya no trae espeak-ng: hay que darle
+    // los fonemas directamente. Si el fonemizador no está listo, se usa la vía antigua (lexicon).
+    val phonemes = if (lang == "es") KokoroPhonemizer.phonemize(text, lang) else null
+    if (phonemes != null) {
+      val config = cls("GenerationConfig").getDeclaredConstructor().newInstance()
+      config.set("sid", safeSid)
+      config.set("speed", speed)
+      config.set("extra", emptyMap<String, String>())
+      config.set("phonemeCodepoints", arrayOf(phonemes))
+      val method =
+        engine.javaClass.methods.firstOrNull {
+          it.name == "generateWithConfigAndCallback" && it.parameterCount == 3
+        }
+          ?: error("sherpa-onnx: falta generateWithConfigAndCallback (¿versión de la librería antigua?)")
+      val ipa = buildString { phonemes.forEach { appendCodePoint(it) } }
+      Log.i("AGLTts", "Kokoro fonemas: «${text.take(80)}» → $ipa")
+      method.invoke(engine, text, config, callback)
+      usedMode = "$mode+fonemas"
+    } else {
+      val method =
+        engine.javaClass.methods.firstOrNull { it.name == "generateWithCallback" && it.parameterCount == 4 }
+          ?: error("sherpa-onnx: falta generateWithCallback (¿versión de la librería antigua?)")
+      method.invoke(engine, text, safeSid, speed, callback)
+    }
+
+    Log.i("AGLTts", "Kokoro: ${text.length} car → ${total} muestras (${total * 1000L / sampleRate.coerceAtLeast(1)} ms de audio) en ${System.currentTimeMillis() - t0} ms, sid=$safeSid, modo=$usedMode")
     if (total == 0) Log.w("AGLTts", "Kokoro no produjo audio para: «${text.take(80)}»")
   }
 
