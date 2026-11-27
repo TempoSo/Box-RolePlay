@@ -41,6 +41,15 @@
 
 ## 📝 Registro
 
+### 2026-11-26 — Arreglado el build: `download()` duplicado en el diálogo de descarga de voz
+
+**Qué y por qué:** el build de GitHub Actions fallaba en `:app:compileReleaseKotlin` con `Conflicting overloads: fun download(): Unit` y una cadena de errores en `TtsModelDownloadDialog.kt`. Al añadir la descarga común para Pocket y Kokoro quedaron **dos funciones `download()`**: la nueva (Pocket + Kokoro, con subcarpetas) y la antigua (solo Pocket, usando campos que ya no existen en `Choice`: `totalBytes`, `files`, `folder`). Además, el bloque `onSuccess` de la nueva descarga había quedado con el código de `search()` (asignaba `variants`/`picked`). Se elimina la función antigua y se deja el `onSuccess` correcto: liberar el motor, avisar «Modelo descargado.» y cerrar el diálogo; el fallo muestra el mensaje de reintento.
+
+**Archivo exacto:**
+- `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/TtsModelDownloadDialog.kt` — se borra el `download()` duplicado (líneas 157-207) y se corrige el `onSuccess` del `download()` nuevo.
+
+**Verificación:** `.\gradlew.bat :app:compileReleaseKotlin --console=plain` desde `Android/src` → **BUILD SUCCESSFUL in 5m 48s**. Solo quedan avisos de deprecación ya existentes. No se compiló el APK completo ni se probó en el móvil.
+
 ### 2026-11-26 — Voz: pantalla única y motor Kokoro (sin compilar)
 - **Qué:** (1) «Texto a voz» ya no tiene pestaña aparte de ajustes: una sola pantalla con modelos instalados, texto + Leer/Parar, voz y ajustes (lo mismo en el diálogo de ajustes de Roleplay y de Box; ambos usan `TtsSettingsPanel`). (2) Nuevo motor **Kokoro** (sherpa-onnx, offline): las 54 voces vienen dentro del modelo (3 en español: Dora, Alex, Santa), lista con filtro por idioma, ▶ de vista previa en su idioma y selección; también como voz propia de cada personaje (`CharacterVoiceRow`). Una voz guardada se referencia como «kokoro:N» (`TtsVoiceRef`); las muestras de Pocket siguen siendo la ruta del .wav. (3) Descarga: el diálogo de Hugging Face detecta modelos Pocket **y** Kokoro (botones «Pocket» / «Kokoro» con el repo por defecto `csukuangfj/kokoro-multi-lang-v1_0`; baja también la carpeta `espeak-ng-data/` con sus subcarpetas) y cada uno se instala como modelo aparte.
 - **Archivos:** `tts/KokoroModelFiles.kt` (archivos + tabla de voces), `tts/KokoroHfSelect.kt`, `tts/TtsVoiceRef.kt`, `tts/SherpaKokoroEngine.kt`, `tts/TtsModels.kt` (tipo por modelo), `tts/TtsManager.kt` (dos motores, voz por tipo), `data/characters/TtsSettingsStore.kt` (`kokoroDefaultSid`), `ui/roleplay/TtsSettingsDialog.kt`, `ui/roleplay/TtsModelDownloadDialog.kt`, `ui/apps/TtsAppScreen.kt` + textos de Box.

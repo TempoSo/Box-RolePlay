@@ -146,58 +146,6 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
       }
       busy = false
       res.onSuccess {
-        variants = it
-        picked = it.firstOrNull { v -> v.pocket?.folder?.let { f -> f.isNotEmpty() && repoInput.contains("/$f") } == true } ?: it.firstOrNull()
-        status = if (it.isEmpty()) "No encontré ningún modelo de voz compatible (Pocket TTS o Kokoro) en ese repositorio."
-        else "${it.size} modelo(s) compatible(s) encontrado(s). Elige uno:"
-      }.onFailure { status = "No se pudo leer el repo: ${it.message}" }
-    }
-  }
-
-  fun download() {
-    val repo = HfApi.parseRepoId(repoInput) ?: return
-    val v = picked ?: return
-    busy = true; cancelled = false; progress = 0f
-    scope.launch {
-      val total = v.totalBytes.coerceAtLeast(1)
-      var base = 0L
-      val stage = TtsFiles.stagingDir(context)
-      val res = withContext(Dispatchers.IO) {
-        runCatching {
-          for (pk in v.files) {
-            status = "Descargando ${pk.file.name}…"
-            HfClient.download(
-              HfApi.downloadUrl(repo, pk.file.path), File(stage, pk.localName), pk.file.size,
-              onProgress = { done, _ -> progress = ((base + done).toFloat() / total).coerceIn(0f, 1f) },
-              isCancelled = { cancelled },
-            )
-            base += pk.file.size
-          }
-          // El formato v2 trae tokenizer.model: se convierte a los dos JSON que usa sherpa-onnx.
-          val tokM = File(stage, PocketHfSelect.TOKENIZER)
-          val tokJ = File(stage, PocketHfSelect.TOKENIZER_JSON)
-          if (tokM.exists() || tokJ.exists()) {
-            status = "Preparando el tokenizador…"
-            val pieces =
-              if (tokM.exists()) SentencePieceModel.parse(tokM.readBytes())
-              else SentencePieceModel.parseHfJson(tokJ.readText())
-            File(stage, "vocab.json").writeText(SentencePieceModel.vocabJson(pieces))
-            File(stage, "token_scores.json").writeText(SentencePieceModel.scoresJson(pieces))
-          }
-          // Todo bajado: se instala como un modelo más (no borra los otros) y pasa a ser el activo.
-          val repoName = repo.substringAfterLast('/')
-          val model = TtsModels.create(context, if (v.folder.isEmpty()) repoName else "${v.label} · $repoName")
-          // Solo las piezas de este modelo (en la carpeta de trabajo pueden quedar restos de otra descarga).
-          val wanted = v.files.map { it.localName }.toSet() + setOf("vocab.json", "token_scores.json")
-          stage.listFiles()?.filter { it.name in wanted }?.forEach { f ->
-            val dest = File(model.dir, f.name)
-            if (!f.renameTo(dest)) { f.copyTo(dest, overwrite = true); f.delete() }
-          }
-          TtsModels.setActive(context, model.id)
-        }
-      }
-      busy = false
-      res.onSuccess {
         TtsManager.release()
         status = "Modelo descargado."
         onDone()
