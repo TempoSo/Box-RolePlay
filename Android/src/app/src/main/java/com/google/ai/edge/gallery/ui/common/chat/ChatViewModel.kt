@@ -70,6 +70,9 @@ abstract class ChatViewModel : ViewModel() {
 
   open fun regenerateLast(model: Model, onError: (String) -> Unit) {}
 
+  /** Continúa la última respuesta recortándola y pidiendo al modelo que siga desde ahí. */
+  open fun continueLast(model: Model, onError: (String) -> Unit) {}
+
   /** delta -1 = versión anterior; +1 = siguiente (si no hay, genera una nueva). */
   open fun swipeLast(model: Model, delta: Int, onError: (String) -> Unit) {}
 

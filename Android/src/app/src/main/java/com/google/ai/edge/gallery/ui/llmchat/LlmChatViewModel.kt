@@ -152,6 +152,65 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     )
   }
 
+  /**
+   * «Continuar»: recorta el final de la última respuesta del modelo y le pide que siga desde ahí.
+   * El recorte se guarda en la conversación y la continuación entra como mensaje nuevo del modelo;
+   * la instrucción para seguir no se muestra ni se persiste (persistInput = false).
+   */
+  override fun continueLast(model: Model, onError: (String) -> Unit) {
+    if (uiState.value.inProgress) return
+    val messages = uiState.value.messagesByModel[model.name] ?: return
+    val index = messages.indexOfLast { it.type == ChatMessageType.TEXT && it.side == ChatSide.AGENT }
+    val last = messages.getOrNull(index) as? ChatMessageText ?: return
+    val truncated =
+      com.google.ai.edge.gallery.data.characters.Continuation.cutForContinuation(last.content)
+    if (truncated == null) {
+      onError("La respuesta es demasiado corta para continuar")
+      return
+    }
+    replaceMessage(
+      model = model,
+      index = index,
+      message =
+        ChatMessageText(
+          content = truncated,
+          side = last.side,
+          latencyMs = last.latencyMs,
+          isMarkdown = last.isMarkdown,
+          llmBenchmarkResult = last.llmBenchmarkResult,
+          accelerator = last.accelerator,
+          hideSenderLabel = last.hideSenderLabel,
+          data = last.data,
+        ),
+    )
+    // Que al reabrir el chat no reaparezca el texto completo que acabamos de recortar.
+    val convId = currentConversationId
+    val repo = chatRepository
+    if (convId != null && repo != null) {
+      val position =
+        messages.subList(0, index).count {
+          it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM
+        }
+      viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+          conversationMutex.withLock { repo.editMessageAt(convId, position, "assistant", truncated) }
+        }
+      }
+    }
+    // GGUF rearma el historial desde pantalla; LiteRT necesita invalidar su ventana.
+    liteRtWindows.remove(model.name)
+    generateResponse(
+      model = model,
+      input = "Continúa exactamente donde se cortó el mensaje anterior, sin repetir lo ya escrito.",
+      onError = onError,
+      allowThinking = lastAllowThinking,
+      persistInput = false,
+      regenerate = false,
+      promptSuffix = lastTurnRestriction?.instruction,
+      sceneRestriction = lastTurnRestriction,
+    )
+  }
+
   override fun swipeLast(model: Model, delta: Int, onError: (String) -> Unit) {
     if (uiState.value.inProgress) return
     val state = _swipeState.value

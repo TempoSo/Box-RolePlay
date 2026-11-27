@@ -41,6 +41,13 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Chat: botones de Copiar/Editar/Hablar/Regenerar/Continuar en cada mensaje
+
+- **Qué**: en chats de personaje los botones del último intercambio están siempre visibles (en los mensajes anteriores siguen apareciendo al mantener pulsado). En la respuesta del modelo: Editar, Hablar/Parar, Copiar, Regenerar y Continuar. En el mensaje del usuario: Editar, Hablar/Parar, Copiar y Regenerar (sin Continuar, no tiene sentido ahí). «Continuar» recorta el final de la respuesta, guarda el recorte y pide al modelo que siga desde ahí, sin dejar un mensaje de usuario visible.
+- **Por qué**: el usuario pidió acciones tipo Edge Gallery directas sobre los mensajes; hasta ahora Copiar/Editar/Voz estaban ocultos tras pulsación larga y no existía Regenerar ni Continuar como botones.
+- **Archivos**: `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatPanel.kt` (barras de acciones con `FlowRow`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatViewModel.kt` (`continueLast`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` (implementación de `continueLast`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/Continuation.kt` (nuevo, recorte puro), `Android/src/app/src/test/java/com/google/ai/edge/gallery/data/characters/ContinuationTest.kt` (nuevo, 3 tests).
+- **Verificado**: `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --tests "...ContinuationTest"` → **BUILD SUCCESSFUL**, 3 tests, 0 fallos. Sin verificar en móvil: que el modelo continúe con naturalidad y que los botones no se corten en pantallas estrechas.
+
 ### 2026-11-27 — Tienda: personaje aleatorio «Sorpréndeme» e ir a una página escribiendo el número
 
 - **Qué**: el botón de dados elige una página al azar, toma un personaje de ella que aún no esté añadido y lo importa (antes el botón de aleatorio solo cambiaba de página). Tocar el número de página actual abre un diálogo para escribir la página destino exacta («estoy en la 100, quiero la 200»). Los números distintos siguen yendo directos y las flechas se mantienen.
