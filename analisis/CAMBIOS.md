@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Pocket TTS: limpieza exhaustiva de la muestra de voz
+
+- **Qué**: al guardar una voz en la biblioteca (subida o grabada) se limpia por defecto (interruptor «Limpiar la voz al guardar»): quita nivel DC y graves <80 Hz, reduce el ruido de fondo por sustracción espectral (perfil sacado de los tramos más callados de la propia muestra), recorta silencios del inicio/final y acorta pausas largas (>0,6 s → 0,3 s), limita a 20 s, iguala el volumen (~-20 dBFS) con límite suave de picos y fundidos de 10 ms. Avisa por mensaje si hay saturación, mucho ruido o muy poca voz. La original se guarda aparte (`<id>.src`).
+- **Por qué**: Pocket clona la muestra tal cual suena (ruido, silencios, volumen); antes se usaba cruda.
+- **Archivos**: `tts/VoiceCleaner.kt` (nuevo, lógica pura), `tts/VoiceStore.kt`, `ui/roleplay/VoiceLibraryDialog.kt`, test `VoiceCleanerTest.kt`.
+- **Verificado**: lógica pura con kotlinc (señal sintética: recorte, picos, FFT). Sin compilar en Android ni oír el resultado.
+- **Re-probar en el móvil**: grabar/subir una muestra con ruido, guardar con y sin limpieza y comparar cómo suena la voz clonada. Los parámetros (sobresustracción 1,8; umbral de silencio) quizá haya que afinarlos al oído.
+
 ### 2026-11-26 — Tienda de personajes: lorebooks de Chub, IDs sueltos y Perchance
 
 - **Qué**: el campo «Importar por enlace» ahora acepta también IDs sin URL (`usuario/proyecto` de Chub, `AICC/autor/tarjeta`, UUID de Pygmalion, `UUID_slug` de Janitor) y enlaces de lorebooks de Chub (`chub.ai/lorebooks/usuario/proyecto` o `lorebooks/u/p`). Un lorebook se baja (`api/lorebooks/{u}/{p}` → `node.id` → `sillytavern_raw.json`), se convierte al `character_book` de la app y un diálogo pide a qué personaje añadirlo (se conservan las entradas que ya tenga y no se duplican las de igual contenido). Perchance (`ai-character-chat?data=Nombre~hash.gz`) se intenta bajar de `user-uploads.perchance.org/file/{hash}`.

@@ -15,6 +15,10 @@ class VoiceStore(private val context: Context) {
     private val dir = TtsFiles.voicesDir(context)
     private val file = File(dir.parentFile, "voices.json")
 
+    /** Avisos de la última limpieza (ruido, saturación, duración…). */
+    @Volatile var lastNotes: List<String> = emptyList()
+        private set
+
     fun pathOf(id: String): String = File(dir, "$id.wav").absolutePath
 
     @Synchronized
@@ -36,11 +40,25 @@ class VoiceStore(private val context: Context) {
 
     /** Guarda un WAV como voz nueva; null si los bytes no son un WAV legible. */
     @Synchronized
-    fun add(bytes: ByteArray, name: String, tags: Collection<String>): Voice? {
-        val pcm = WavReader.parse(bytes) ?: return null
+    fun add(bytes: ByteArray, name: String, tags: Collection<String>, clean: Boolean = true): Voice? {
+        var pcm = WavReader.parse(bytes) ?: return null
         val current = all()
         val id = UUID.randomUUID().toString()
-        File(pathOf(id)).writeBytes(bytes)
+        lastNotes = emptyList()
+        if (clean) {
+            // Se guarda la limpia como voz y la original aparte (.src) por si se quiere rehacer.
+            val r = VoiceCleaner.clean(pcm.samples, pcm.sampleRate)
+            lastNotes = r.report.notes
+            File(dir, "$id.src").writeBytes(bytes)
+            val pcm16 = ByteArray(r.samples.size * 2)
+            r.samples.forEachIndexed { i, f ->
+                val v = (f * 32767f).toInt().coerceIn(-32768, 32767)
+                pcm16[2 * i] = (v and 0xFF).toByte(); pcm16[2 * i + 1] = ((v shr 8) and 0xFF).toByte()
+            }
+            val wav = WavWriter.pcm16Mono(pcm16, r.sampleRate)
+            File(pathOf(id)).writeBytes(wav)
+            pcm = WavReader.parse(wav) ?: return null
+        } else File(pathOf(id)).writeBytes(bytes)
         val voice =
             Voice(id, VoiceLibrary.uniqueName(current, name), VoiceLibrary.cleanTags(tags), System.currentTimeMillis(), (pcm.seconds * 1000).toLong())
         file.writeText(VoiceLibrary.encode(current + voice))
@@ -51,6 +69,7 @@ class VoiceStore(private val context: Context) {
     fun delete(id: String) {
         val path = pathOf(id)
         File(path).delete()
+        File(dir, "$id.src").delete()
         file.writeText(VoiceLibrary.encode(VoiceLibrary.without(all(), id)))
         // Si era la predeterminada, se limpia; las de personajes caen solas a la predeterminada (el archivo ya no existe).
         val settings = TtsSettingsStore(context)

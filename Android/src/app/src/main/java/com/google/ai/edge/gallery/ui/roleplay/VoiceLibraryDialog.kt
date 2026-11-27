@@ -87,6 +87,7 @@ fun VoiceLibraryDialog(onDismiss: () -> Unit, currentPath: String? = null, onPic
     var playingKey by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<Voice?>(null) }
     var recording by remember { mutableStateOf(false) }
+    var cleanVoice by remember { mutableStateOf(true) }
     var recSeconds by remember { mutableIntStateOf(0) }
     val stopFlag = remember { AtomicBoolean(false) }
     val player = remember { PreviewPlayer() }
@@ -193,14 +194,28 @@ fun VoiceLibraryDialog(onDismiss: () -> Unit, currentPath: String? = null, onPic
                                 onClick = { pendingTags = pendingTags + customTag.trim().lowercase(); customTag = "" },
                             ) { Text("Añadir") }
                         }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Limpiar la voz al guardar", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Quita ruido y graves, recorta silencios, limita a 20 s e iguala el volumen. Recomendado para Pocket TTS, que clona la muestra tal cual suena.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            androidx.compose.material3.Switch(checked = cleanVoice, onCheckedChange = { cleanVoice = it })
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(
                                 enabled = pendingName.isNotBlank(),
                                 onClick = {
                                     player.stop(); playingKey = null
-                                    val saved = store.add(p.bytes, pendingName, pendingTags)
+                                    val saved = store.add(p.bytes, pendingName, pendingTags, cleanVoice)
                                     if (saved == null) Toast.makeText(context, "No se pudo guardar la voz.", Toast.LENGTH_LONG).show()
-                                    else { voices = store.all(); pending = null }
+                                    else {
+                                        voices = store.all(); pending = null
+                                        if (store.lastNotes.isNotEmpty()) Toast.makeText(context, store.lastNotes.joinToString("\n"), Toast.LENGTH_LONG).show()
+                                    }
                                 },
                             ) { Text("Guardar voz") }
                             TextButton(onClick = { player.stop(); playingKey = null; pending = null }) { Text("Descartar") }
