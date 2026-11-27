@@ -1,6 +1,8 @@
 # 🧠 Memoria a largo plazo — Layla vs Box RolePlay (análisis de diseño)
 
 > **Documento vivo de diseño.** No describe bugs: describe cómo funciona la memoria de Layla (referencia), cómo funciona la de Box hoy (verificado en código) y las modificaciones propuestas para acercarla a Layla. Actualizado: 2026-11-16.
+>
+> **Nota (27/11/2026):** la sección 2 quedó rezagada. La absorción ya no es «un recuerdo por todas las notas» ni crashea (BUG-002 cerrado): va por tandas de 3500 chars con watchdog, y el prompt del archivista incluye campos del personaje. La investigación comparativa actualizada y la priorización de mejoras están en [`MEMORIA_MEJORAS.md`](MEMORIA_MEJORAS.md).
 
 ---
 
