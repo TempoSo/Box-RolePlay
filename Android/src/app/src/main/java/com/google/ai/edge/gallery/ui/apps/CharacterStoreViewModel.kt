@@ -96,6 +96,35 @@ constructor(
   /** Salta a una página al azar del orden actual (para cuando no se sabe qué buscar). */
   fun random() = goTo(StorePager.randomPage(_page.value, _totalPages.value))
 
+  /**
+   * «¿No encuentras lo que quieres?»: va a una página al azar, elige un personaje de entre los que
+   * aún no se han añadido y lo importa. A diferencia de [random], deja un personaje concreto listo.
+   */
+  fun randomCharacter() {
+    if (_loading.value || _busyId.value != null) return
+    _loading.value = true
+    val target = StorePager.randomPage(_page.value, _totalPages.value)
+    val q = StoreQuery(text = text.value, sort = _sort.value, page = target, nsfw = _nsfw.value)
+    viewModelScope.launch {
+      try {
+        val res = withContext(Dispatchers.IO) { CharacterStore.searchPage(q) }
+        _results.value = res.cards
+        _page.value = target
+        _totalPages.value = StorePager.totalPages(res.total, q.pageSize)
+        _hasMore.value = res.cards.size >= q.pageSize / 2
+        _pageToken.value++
+        prefs.lastText = q.text; prefs.lastSort = q.sort.name; prefs.lastPage = target
+        val card = StorePager.randomCard(res.cards, _added.value)
+        if (card == null) _message.value = "Ya tienes todos los personajes de esta página; prueba otra vez"
+        else add(card)
+      } catch (e: Exception) {
+        _message.value = "No se pudo buscar: ${e.message ?: "sin conexión"}"
+      } finally {
+        _loading.value = false
+      }
+    }
+  }
+
   private fun load(target: Int) {
     if (_loading.value) return
     _loading.value = true

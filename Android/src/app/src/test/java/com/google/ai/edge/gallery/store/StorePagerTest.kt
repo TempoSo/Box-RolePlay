@@ -2,6 +2,7 @@ package com.google.ai.edge.gallery.store
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class StorePagerTest {
@@ -25,5 +26,13 @@ class StorePagerTest {
 
   @Test fun aleatorioNoRepiteLaActual() {
     repeat(50) { assertNotEquals(3, StorePager.randomPage(3, 10)) }
+  }
+
+  @Test fun aleatorioDePersonajeEvitaLosYaAnadidos() {
+    fun card(id: String) = StoreCard("chub", id, id, "", "u", emptyList(), "", 0, 0, false)
+    val cards = listOf(card("a"), card("b"), card("c"))
+    repeat(20) { assertEquals("c", StorePager.randomCard(cards, setOf("a", "b"), kotlin.random.Random(it))?.id) }
+    assertNull(StorePager.randomCard(cards, setOf("a", "b", "c")))
+    assertNull(StorePager.randomCard(emptyList(), emptySet()))
   }
 }

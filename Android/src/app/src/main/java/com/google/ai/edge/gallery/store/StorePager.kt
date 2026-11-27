@@ -46,4 +46,11 @@ object StorePager {
     do { p = rnd.nextInt(max) + 1 } while (p == current)
     return p
   }
+
+  /** Tarjeta al azar entre las que aún no están añadidas; null si todas las de la página ya lo están. */
+  fun randomCard(
+    cards: List<StoreCard>,
+    addedIds: Set<String>,
+    rnd: kotlin.random.Random = kotlin.random.Random.Default,
+  ): StoreCard? = cards.filter { it.id !in addedIds }.randomOrNull(rnd)
 }

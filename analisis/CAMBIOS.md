@@ -41,6 +41,13 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Tienda: personaje aleatorio «Sorpréndeme» e ir a una página escribiendo el número
+
+- **Qué**: el botón de dados elige una página al azar, toma un personaje de ella que aún no esté añadido y lo importa (antes el botón de aleatorio solo cambiaba de página). Tocar el número de página actual abre un diálogo para escribir la página destino exacta («estoy en la 100, quiero la 200»). Los números distintos siguen yendo directos y las flechas se mantienen.
+- **Por qué**: el usuario pidió un segundo modo aleatorio que diera un personaje concreto y un atajo para saltar a páginas lejanas sin pulsar flecha por flecha.
+- **Archivos**: `Android/src/app/src/main/java/com/google/ai/edge/gallery/store/StorePager.kt` (`randomCard`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/CharacterStoreViewModel.kt` (`randomCharacter()`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/CharacterStoreScreen.kt` (botón, diálogo de salto, `PageBar.onEdit`), `Android/src/app/src/test/java/com/google/ai/edge/gallery/store/StorePagerTest.kt` (test de dedupe).
+- **Verificado**: `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --tests "...StorePagerTest"` → **BUILD SUCCESSFUL**, 5 tests, 0 fallos. Falta la comprobación visual en móvil (no hay dispositivo conectado).
+
 ### 2026-11-27 — Tienda de personajes: cuadrícula, páginas numeradas, aleatorio y memoria
 
 - **Qué**: los resultados pasan de lista a **cuadrícula de 2 columnas** (imagen grande con degradado, nombre, autor, 2 etiquetas, estrellas, marca +18 y botón de descarga redondo). El «Cargar más» se cambia por **páginas de 20** con barra numerada (`‹ 1 2 3 … 141 ›`); la app **recuerda texto, orden y página** de la última búsqueda y reabre ahí. Botón **aleatorio** (salta a una página al azar del orden actual), chip **+18** (con la misma confirmación de edad) y la importación por enlace pasa a un diálogo abierto desde un icono. Al cambiar de página vuelve arriba.
