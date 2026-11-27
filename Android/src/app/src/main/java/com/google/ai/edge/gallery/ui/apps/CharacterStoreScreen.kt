@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -70,11 +71,35 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
   val added by viewModel.added.collectAsState()
   val busyId by viewModel.busyId.collectAsState()
   val message by viewModel.message.collectAsState()
+  val pendingLore by viewModel.pendingLore.collectAsState()
+  val characters by viewModel.characters.collectAsState()
   var link by remember { mutableStateOf("") }
   var confirmNsfw by remember { mutableStateOf(false) }
 
   LaunchedEffect(message) {
     message?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show(); viewModel.clearMessage() }
+  }
+
+  pendingLore?.let { lore ->
+    AlertDialog(
+      onDismissRequest = { viewModel.dismissLore() },
+      title = { Text("Lorebook: ${lore.name}") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Text("${lore.entryCount} entradas. Elige el personaje al que se añaden (las entradas que ya tiene se conservan).", style = MaterialTheme.typography.bodySmall)
+          if (characters.isEmpty()) Text("Aún no tienes personajes.", style = MaterialTheme.typography.bodyMedium)
+          LazyColumn(Modifier.heightIn(max = 280.dp)) {
+            items(characters, key = { it.id }) { c ->
+              TextButton(onClick = { viewModel.attachLore(c.id) }, modifier = Modifier.fillMaxWidth()) {
+                Text(c.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {},
+      dismissButton = { TextButton(onClick = { viewModel.dismissLore() }) { Text("Cancelar") } },
+    )
   }
 
   if (confirmNsfw) {
@@ -132,7 +157,7 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
           }
           Text("Importar por enlace", style = MaterialTheme.typography.titleSmall)
           Text(
-            "Pega el enlace de una tarjeta de Chub, Pygmalion, RisuRealm, AI Character Cards o JannyAI (este último puede fallar por su protección anti-bots), o un enlace directo a un .png/.json.",
+            "Pega un enlace o ID: Chub (usuario/proyecto), lorebook de Chub (se añade a un personaje), Pygmalion, RisuRealm, AI Character Cards (AICC/autor/tarjeta), Perchance (experimental), JannyAI (puede fallar por su protección anti-bots) o un enlace directo a .png/.json.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -140,7 +165,7 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
             OutlinedTextField(
               value = link,
               onValueChange = { link = it },
-              label = { Text("https://…") },
+              label = { Text("Enlace o ID") },
               singleLine = true,
               modifier = Modifier.weight(1f),
             )

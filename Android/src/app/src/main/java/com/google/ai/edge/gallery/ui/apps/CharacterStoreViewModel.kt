@@ -5,7 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.characters.CharacterCardException
 import com.google.ai.edge.gallery.data.characters.CharacterRepository
+import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
 import com.google.ai.edge.gallery.store.CharacterStore
+import com.google.ai.edge.gallery.store.LinkTarget
+import com.google.ai.edge.gallery.store.LorebookConvert
+import com.google.ai.edge.gallery.store.StoreLorebook
 import com.google.ai.edge.gallery.store.StoreCard
 import com.google.ai.edge.gallery.store.StorePrefs
 import com.google.ai.edge.gallery.store.StoreQuery
@@ -15,7 +19,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +52,12 @@ constructor(
   val busyId: StateFlow<String?> = _busyId.asStateFlow()
   private val _message = MutableStateFlow<String?>(null)
   val message: StateFlow<String?> = _message.asStateFlow()
+
+  private val _pendingLore = MutableStateFlow<StoreLorebook?>(null)
+  /** Lorebook descargado que espera a que se elija a qué personaje se añade. */
+  val pendingLore: StateFlow<StoreLorebook?> = _pendingLore.asStateFlow()
+  val characters: StateFlow<List<RoleplayCharacter>> =
+    repository.observeAll().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
   private var page = 1
 
@@ -107,15 +119,37 @@ constructor(
     _busyId.value = "link"
     viewModelScope.launch {
       try {
-        val (target, bytes) = withContext(Dispatchers.IO) { CharacterStore.downloadLink(link) }
-        val c = repository.importFromBytes(bytes)
-        _message.value = "Añadido desde ${target.site.label}: ${c.name}"
+        val first = CharacterStore.resolve(link)
+        if (first.site == LinkTarget.Site.CHUB_LORE) {
+          _pendingLore.value = withContext(Dispatchers.IO) { CharacterStore.downloadLorebook(first.id) }
+        } else {
+          val (target, bytes) = withContext(Dispatchers.IO) { CharacterStore.downloadLink(link) }
+          val c = repository.importFromBytes(bytes)
+          _message.value = "Añadido desde ${target.site.label}: ${c.name}"
+        }
       } catch (e: CharacterCardException) {
         _message.value = e.message ?: "La tarjeta no es válida"
       } catch (e: Exception) {
         _message.value = "No se pudo descargar: ${e.message ?: "error"}"
       } finally {
         _busyId.value = null
+      }
+    }
+  }
+
+  fun dismissLore() { _pendingLore.value = null }
+
+  /** Añade las entradas del lorebook pendiente al personaje elegido (sin duplicar las que ya tiene). */
+  fun attachLore(characterId: String) {
+    val lore = _pendingLore.value ?: return
+    _pendingLore.value = null
+    viewModelScope.launch {
+      try {
+        val c = repository.getById(characterId) ?: return@launch
+        repository.save(c.copy(characterBookJson = LorebookConvert.merge(c.characterBookJson, lore)))
+        _message.value = "Lorebook «${lore.name}» (${lore.entryCount} entradas) añadido a ${c.name}"
+      } catch (e: Exception) {
+        _message.value = "No se pudo añadir el lorebook: ${e.message ?: "error"}"
       }
     }
   }

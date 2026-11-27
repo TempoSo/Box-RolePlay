@@ -21,11 +21,26 @@ object CharacterStore {
   /** Bytes de la tarjeta (PNG con datos incrustados, o JSON) de un resultado de la búsqueda. */
   fun download(card: StoreCard): ByteArray = downloadTarget(LinkTarget(LinkTarget.Site.CHUB, card.id))
 
+  /** Reconoce un enlace o ID pegado; lanza si no se entiende. */
+  fun resolve(link: String): LinkTarget = StoreLinks.parse(link) ?: throw CharacterCardException(
+    "No reconozco eso. Vale un enlace o ID de Chub (usuario/proyecto), un lorebook de Chub, Pygmalion, RisuRealm, AI Character Cards (AICC/autor/tarjeta), JannyAI, Perchance o un enlace directo a .png/.json."
+  )
+
+  /** Descarga un lorebook de Chub y lo convierte al formato de la app. */
+  fun downloadLorebook(id: String): StoreLorebook {
+    val info = json.parseToJsonElement(StoreHttp.get(StoreLinks.chubLorebookUrl(id), "application/json").toString(Charsets.UTF_8)).jsonObject
+    val node = info["node"] as? JsonObject ?: throw CharacterCardException("Chub no encontró ese lorebook")
+    val pid = (node["id"] as? JsonPrimitive)?.contentOrNull ?: throw CharacterCardException("Chub no devolvió el lorebook")
+    val name = (node["name"] as? JsonPrimitive)?.contentOrNull ?: id.substringAfter('/')
+    val raw = StoreHttp.get(StoreLinks.chubLorebookRawUrl(pid), "application/json").toString(Charsets.UTF_8)
+    return LorebookConvert.fromWorldInfo(raw, name)?.copy(name = name)
+      ?: throw CharacterCardException("El lorebook no tiene entradas con texto")
+  }
+
   /** Descarga desde un enlace pegado. Devuelve el sitio y los bytes; lanza si el enlace no se reconoce. */
   fun downloadLink(link: String): Pair<LinkTarget, ByteArray> {
-    val target = StoreLinks.parse(link) ?: throw CharacterCardException(
-      "No reconozco ese enlace. Vale el de una tarjeta de Chub, Pygmalion, RisuRealm, AI Character Cards o JannyAI, o un enlace directo a un .png/.json."
-    )
+    val target = resolve(link)
+    if (target.site == LinkTarget.Site.CHUB_LORE) throw CharacterCardException("Eso es un lorebook, no un personaje")
     return target to downloadTarget(target)
   }
 
@@ -58,6 +73,12 @@ object CharacterStore {
           ?: throw CharacterCardException("JannyAI no permitió la descarga (protección anti-bots). Descarga el archivo desde el navegador e impórtalo desde Personajes.")
         StoreHttp.get(url)
       }
+      LinkTarget.Site.PERCHANCE -> {
+        // Experimental: formato de Perchance deducido, sin verificar.
+        val text = LorebookConvert.maybeGunzip(StoreHttp.get(StoreLinks.perchanceUrl(t.id))).toString(Charsets.UTF_8)
+        (LorebookConvert.perchanceToCard(text) ?: throw CharacterCardException("No pude leer ese personaje de Perchance")).toByteArray()
+      }
+      LinkTarget.Site.CHUB_LORE -> throw CharacterCardException("Eso es un lorebook, no un personaje")
       LinkTarget.Site.DIRECT -> StoreHttp.get(t.id)
     }
 

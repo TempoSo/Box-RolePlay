@@ -41,6 +41,15 @@
 
 ## 📝 Registro
 
+### 2026-11-26 — Tienda de personajes: lorebooks de Chub, IDs sueltos y Perchance
+
+- **Qué**: el campo «Importar por enlace» ahora acepta también IDs sin URL (`usuario/proyecto` de Chub, `AICC/autor/tarjeta`, UUID de Pygmalion, `UUID_slug` de Janitor) y enlaces de lorebooks de Chub (`chub.ai/lorebooks/usuario/proyecto` o `lorebooks/u/p`). Un lorebook se baja (`api/lorebooks/{u}/{p}` → `node.id` → `sillytavern_raw.json`), se convierte al `character_book` de la app y un diálogo pide a qué personaje añadirlo (se conservan las entradas que ya tenga y no se duplican las de igual contenido). Perchance (`ai-character-chat?data=Nombre~hash.gz`) se intenta bajar de `user-uploads.perchance.org/file/{hash}`.
+- **Por qué**: en la app el lorebook vive dentro de cada personaje (no hay biblioteca aparte), por eso se añade a uno existente.
+- **Archivos**: `store/LorebookConvert.kt` (nuevo), `store/StoreLinks.kt`, `store/CharacterStore.kt`, `ui/apps/CharacterStoreViewModel.kt`, `ui/apps/CharacterStoreScreen.kt`.
+- **Verificado**: solo la lógica pura (reconocer enlaces/IDs, convertir world-info → character_book, mezclar, Perchance → tarjeta) con kotlinc. Sin compilar en Android ni probar red.
+- **Sin verificar / pendiente**: Perchance (formato deducido, marcado experimental); búsqueda de lorebooks dentro de la tienda (no pude confirmar el parámetro de la API de Chub, por eso solo enlace/ID); JannyAI sigue con su protección anti-bots.
+- **Re-probar en el móvil**: pegar `https://chub.ai/lorebooks/…`, elegir personaje y mirar el lorebook en su edición; pegar un ID `usuario/proyecto`.
+
 ### 2026-11-26 — Arreglado el build: `download()` duplicado en el diálogo de descarga de voz
 
 **Qué y por qué:** el build de GitHub Actions fallaba en `:app:compileReleaseKotlin` con `Conflicting overloads: fun download(): Unit` y una cadena de errores en `TtsModelDownloadDialog.kt`. Al añadir la descarga común para Pocket y Kokoro quedaron **dos funciones `download()`**: la nueva (Pocket + Kokoro, con subcarpetas) y la antigua (solo Pocket, usando campos que ya no existen en `Choice`: `totalBytes`, `files`, `folder`). Además, el bloque `onSuccess` de la nueva descarga había quedado con el código de `search()` (asignaba `variants`/`picked`). Se elimina la función antigua y se deja el `onSuccess` correcto: liberar el motor, avisar «Modelo descargado.» y cerrar el diálogo; el fallo muestra el mensaje de reintento.
