@@ -47,6 +47,7 @@
 - **Por qué**: el usuario pidió dejar una sola rama de pruebas para no perder el hilo y trabajar todo ahí; lo validado se fusiona en `main` y lo pendiente se queda en `desarrollo`. La ficha previa de la tienda sigue en `desarrollo` porque aún no está probada en móvil.
 - **Archivos**: `AGENTS.md`, `analisis/CAMBIOS.md`. Sin cambios de código; el commit de la tienda (`cdfc8cd`) sigue intacto bajo el nombre `desarrollo`.
 - **Verificado**: `git branch -a` muestra solo `main` y `desarrollo` (más sus referencias remotas); la ficha previa de la tienda sigue sin fusionar en `main`.
+- **Nota**: el comando de clonado de `AGENTS.md` también apuntaba a `fase1-rendimiento`; ahora usa `-b main`.
 
 ### 2026-11-27 — main: fusión de las ramas de trabajo y README en dos idiomas
 
