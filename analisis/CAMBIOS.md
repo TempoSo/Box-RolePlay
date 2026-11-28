@@ -41,6 +41,13 @@
 
 ## 📝 Registro
 
+### 2026-11-28 — Artefactos de Nexo: APK local y nuevo Workflow
+
+- **Qué**: tras el commit `7deef50` se compiló `assembleDebug` solo para `arm64-v8a` y se copió el resultado a `APK/Nexo-arm64.apk` (excluido de Git por `.git/info/exclude`). El `output-metadata.json` confirma `applicationId=com.temposo.nexo`, `versionCode=100`, `versionName=1.1.0`. Se lanzó además el Workflow `Build APK` de GitHub Actions sobre `desarrollo` (run `46143387896`) para descargar mañana el APK con la identidad nueva y el modo manos libres ya fusionado.
+- **Por qué**: el usuario pidió juntar las ramas y darle otra identidad a la app instalada; los Workflows anteriores seguían generando APKs con el nombre y paquete de Box.
+- **Archivos**: `APK/Nexo-arm64.apk` (generado, no versionado), `analisis/CAMBIOS.md`. Sin cambios de código.
+- **Verificado**: `:app:assembleDebug '-Pandroid.injected.build.abi=arm64-v8a'` → BUILD SUCCESSFUL; metadatos del APK revisados. Sin instalar todavía en el móvil; el Workflow está en cola.
+
 ### 2026-11-28 — Identidad propia: la app se instala como «Nexo»
 
 - **Qué**: la app deja de mostrarse como «Box» y de instalarse sobre Box. El `applicationId` pasa a `com.temposo.nexo`, `versionCode` a 100 y `versionName` a `1.1.0`; el `AndroidManifest.xml` toma la etiqueta de `@string/app_name` (antes tenía `android:label="Box"` fijo) y el esquema de enlace profundo pasa a `com.temposo.nexo`. Se renombran los textos visibles: «Nexo» en `app_name`, «Nexo / IA» en el título animado de inicio, «Welcome to Nexo» en los términos, «Nexo» en los diálogos biométricos y en la pantalla de inicio, y «Nexo download notification» en el canal de descargas. El icono se mantiene (decisión del usuario). El repositorio sigue llamándose Box RolePlay.
