@@ -25,6 +25,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,10 @@ class HoldToDictateViewModel @Inject constructor(@ApplicationContext private val
   private var onRecognitionDone: ((String) -> Unit)? = null
   private var onAmplitudeChanged: ((Int) -> Unit)? = null
 
+  // Modo manos libres: el reconocimiento se reinicia solo cuando el turno termina.
+  private var handsFree = false
+  private var onHandsFreeError: ((String) -> Unit)? = null
+
   init {
     // Initialize SpeechRecognizer
     speechRecognizer =
@@ -62,7 +67,7 @@ class HoldToDictateViewModel @Inject constructor(@ApplicationContext private val
     recognizerIntent =
       Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
       }
@@ -89,6 +94,48 @@ class HoldToDictateViewModel @Inject constructor(@ApplicationContext private val
     setRecognizing(recognizing = false)
   }
 
+  /**
+   * Inicia el bucle manos libres: escucha, entrega la transcripción y avisa cuando termina el ciclo
+   * para que la pantalla decida cuándo volver a escuchar (después de hablar la respuesta).
+   */
+  fun startHandsFree(
+    onDone: (String) -> Unit,
+    onAmplitudeChanged: (Int) -> Unit,
+    onError: (String) -> Unit,
+  ) {
+    onRecognitionDone = onDone
+    this.onAmplitudeChanged = onAmplitudeChanged
+    onHandsFreeError = onError
+    handsFree = true
+    restartListening()
+  }
+
+  /** Vuele a poner el micrófono a la escucha dentro de un ciclo manos libres. */
+  fun restartListening() {
+    if (!handsFree) return
+    try {
+      speechRecognizer.startListening(recognizerIntent)
+      setRecognizedText(text = "")
+      setRecognizing(recognizing = true)
+    } catch (e: Exception) {
+      android.util.Log.e(TAG, "No se pudo reiniciar la escucha", e)
+      onHandsFreeError?.invoke("No se pudo activar el micrófono: ${e.message ?: e.javaClass.simpleName}")
+      stopHandsFree()
+    }
+  }
+
+  /** Corta el bucle manos libres y libera el reconocedor. */
+  fun stopHandsFree() {
+    handsFree = false
+    onHandsFreeError = null
+    try {
+      speechRecognizer.cancel()
+    } catch (e: Exception) {
+      android.util.Log.w(TAG, "Error al cancelar la escucha", e)
+    }
+    setRecognizing(recognizing = false)
+  }
+
   fun setRecognizing(recognizing: Boolean) {
     _uiState.update { uiState.value.copy(recognizing = recognizing) }
   }
@@ -109,7 +156,25 @@ class HoldToDictateViewModel @Inject constructor(@ApplicationContext private val
 
   override fun onEndOfSpeech() {}
 
-  override fun onError(error: Int) {}
+  override fun onError(error: Int) {
+    if (!handsFree) return
+    // Silencio, "no match" y "reconocedor ocupado" son normales entre turnos: reintentamos.
+    if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT ||
+      error == SpeechRecognizer.ERROR_NO_MATCH ||
+      error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ||
+      error == SpeechRecognizer.ERROR_CLIENT
+    ) {
+      viewModelScope.launch {
+        delay(500)
+        if (handsFree) restartListening()
+      }
+      return
+    }
+    setRecognizing(recognizing = false)
+    val mensaje = "Reconocimiento de voz: error $error"
+    onHandsFreeError?.invoke(mensaje)
+    stopHandsFree()
+  }
 
   override fun onResults(results: Bundle?) {
     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)

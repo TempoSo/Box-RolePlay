@@ -183,6 +183,8 @@ fun MessageInputText(
   // App de visión: permite enviar solo una imagen (sin texto). El texto del turno lo pone la
   // pantalla con la instrucción de imagen configurada.
   allowImageOnlySend: Boolean = false,
+  // Chat de roleplay: botón de conversación manos libres, inyectado por ChatPanel.
+  handsFreeComposable: @Composable () -> Unit = {},
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -703,6 +705,9 @@ fun MessageInputText(
                     }
                   }
                 }
+
+                // Conversación manos libres (solo se pasa desde el chat de roleplay).
+                handsFreeComposable()
 
                 // Stop button.
                 if (inProgress && showStopButtonWhenInProgress) {
