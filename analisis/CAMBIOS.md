@@ -17,7 +17,7 @@
 
 - **Qué es:** fork de [Box](https://github.com/jegly/Box) de jegly (que deriva de Google AI Edge Gallery) reorientado a **roleplay con IA 100 % local** (personajes, escenas multipersonaje, memoria a largo plazo, TTS por personaje).
 - **Base del fork: Box 1.0.1.** El README upstream que venía en el repo era el de la 3.5.7: sus funciones posteriores (Box Assist, Nano Hub, upscale, música, Bonsai/FLUX, MCP…) **NO están en este código**.
-- **Rama activa:** `fase1-rendimiento`.
+- **Ramas:** solo `main` (estable) y `desarrollo` (única rama de pruebas; ahí se pulsa todo lo pendiente antes de fusionarlo a `main`). No crear ramas nuevas por fase.
 - **Nombre de la app:** "Box RolePlay" (`Android/src/app/src/main/res/values/strings.xml` → `app_name`; paquete raíz `com.box.gallery` con código bajo `com.google.ai.edge.gallery`).
 - **Convenciones:** commits y documentación en **español**, sin tildes en muchos commits históricos. Los submódulos (`llama.cpp`, `stable-diffusion.cpp`, `whisper.cpp`) son obligatorios al clonar.
 - **Historia previa:** el trabajo roleplay empezó con parches "roleplay fase 2→8" (personas, contexto, muestreo, motor, memoria, lorebook, biblioteca, voz base, especulativa) y continuó con la estructura actual de fases 1–6 y A–E2 (ver git log).
@@ -40,6 +40,13 @@
 ---
 
 ## 📝 Registro
+
+### 2026-11-27 — Ramas: una sola rama de pruebas (`desarrollo`)
+
+- **Qué**: se consolidan las ramas. Se conservan solo `main` (estable) y `desarrollo` (única rama de trabajo). `fase2-store-preview` se renombra a `desarrollo` y conserva el commit `cdfc8cd` de la ficha previa de la tienda; se borran localmente y en `origin` `fase1-tts`, `fase1-rendimiento`, `fase2-voice-studio` y `Prueba1`, que ya estaban dentro de `main` o no tenían commits propios. Se actualizan las referencias de ramas en `AGENTS.md` y en el contexto de `analisis/CAMBIOS.md`.
+- **Por qué**: el usuario pidió dejar una sola rama de pruebas para no perder el hilo y trabajar todo ahí; lo validado se fusiona en `main` y lo pendiente se queda en `desarrollo`. La ficha previa de la tienda sigue en `desarrollo` porque aún no está probada en móvil.
+- **Archivos**: `AGENTS.md`, `analisis/CAMBIOS.md`. Sin cambios de código; el commit de la tienda (`cdfc8cd`) sigue intacto bajo el nombre `desarrollo`.
+- **Verificado**: `git branch -a` muestra solo `main` y `desarrollo` (más sus referencias remotas); la ficha previa de la tienda sigue sin fusionar en `main`.
 
 ### 2026-11-27 — main: fusión de las ramas de trabajo y README en dos idiomas
 
