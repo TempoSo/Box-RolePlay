@@ -553,6 +553,12 @@ private fun ContextWindowIndicator(model: Model, viewModel: LlmChatViewModelBase
             if (summary.isBlank()) "Todavía no hay nada que resumir." else summary,
             style = MaterialTheme.typography.bodySmall,
           )
+          Text("\nRecuperación de memoria (este turno):", style = MaterialTheme.typography.titleSmall)
+          Text(
+            viewModel.lastMemoryTrace.ifBlank { "Sin recuperación de memoria en este chat." },
+            style = MaterialTheme.typography.bodySmall,
+            color = muted,
+          )
           Text("\nPrompt del personaje:", style = MaterialTheme.typography.titleSmall)
           Text(
             viewModel.currentSystemPrompt.value.ifBlank { "(vacío)" },

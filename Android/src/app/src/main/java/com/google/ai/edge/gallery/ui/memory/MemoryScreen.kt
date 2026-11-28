@@ -105,19 +105,36 @@ class MemoryViewModel @Inject constructor(
           onMessage(if (total <= 1) "Absorbiendo…" else "Absorbiendo tanda ${done + 1} de $total…")
         },
         onResult = { outputs ->
-          val limpios = outputs.map { MemoryAbsorbPrompt.clean(it) }
-          if (limpios.all { it == null }) {
+          val extraidos = outputs.map { MemoryAbsorbPrompt.parse(it) }
+          if (extraidos.all { it == null }) {
             onMessage("El modelo no generó un resumen útil. Tus notas se conservan.")
             return@run
           }
           viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val idsBorrados = mutableSetOf<String>()
             var recuerdos = 0
-            limpios.forEachIndexed { i, clean ->
-              if (clean != null) {
-                memoryRepository.save(CharacterMemory(characterId = character.id, content = clean))
-                tandas.getOrNull(i)?.forEach { idsBorrados.add(it.id) }
-                recuerdos++
+            extraidos.forEachIndexed { i, recuerdo ->
+              if (recuerdo != null) {
+                val keysJson =
+                  recuerdo.keys.joinToString(",", "[", "]") {
+                    "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+                  }
+                val guardado =
+                  memoryRepository.save(
+                    CharacterMemory(
+                      characterId = character.id,
+                      content = recuerdo.resumen,
+                      topic = recuerdo.topic,
+                      keysJson = keysJson,
+                      importance = recuerdo.importance,
+                      updatedAt = System.currentTimeMillis(),
+                    )
+                  )
+                // Si el recuerdo era duplicado no se guarda: sus notas tampoco se borran.
+                if (guardado) {
+                  tandas.getOrNull(i)?.forEach { idsBorrados.add(it.id) }
+                  recuerdos++
+                }
               }
             }
             rawStore.remove(idsBorrados); refreshRaw()

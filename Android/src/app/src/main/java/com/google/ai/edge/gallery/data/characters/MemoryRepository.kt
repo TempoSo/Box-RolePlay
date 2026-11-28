@@ -16,6 +16,15 @@ class MemoryRepository @Inject constructor(private val memoryDao: MemoryDao) {
     suspend fun getAll(characterId: String): List<CharacterMemory> =
         withContext(Dispatchers.IO) { memoryDao.getAll(characterId) }
 
+    suspend fun getForRetrieval(characterId: String): List<CharacterMemory> =
+        withContext(Dispatchers.IO) { memoryDao.getForRetrieval(characterId) }
+
+    suspend fun bumpAccess(ids: List<String>, now: Long) = withContext(Dispatchers.IO) {
+        if (ids.isNotEmpty()) memoryDao.bumpAccess(ids, now)
+    }
+
+    suspend fun supersede(id: String, now: Long) = withContext(Dispatchers.IO) { memoryDao.markSuperseded(id, now) }
+
     /**
      * Guarda un recuerdo si no hay otro con el mismo contenido normalizado para el personaje.
      * Devuelve false si estaba vacío o ya existía (dedupe on write).

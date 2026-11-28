@@ -27,11 +27,38 @@ class RoleplaySettingsStore(context: Context) {
     prefs.edit().putBoolean("automemory_$characterId", enabled).apply()
   }
 
-  /** Cuántos recuerdos (los más recientes) se inyectan en el prompt. */
-  fun memoryMaxInjections(): Int = prefs.getInt(KEY_MEMORY_MAX, 3).coerceIn(0, 20)
+  /** Cuántos recuerdos como máximo se inyectan por turno (antes eran los N más recientes). */
+  fun memoryMaxInjections(): Int = prefs.getInt(KEY_MEMORY_MAX, 2).coerceIn(0, 20)
 
   fun setMemoryMaxInjections(n: Int) {
     prefs.edit().putInt(KEY_MEMORY_MAX, n.coerceIn(0, 20)).apply()
+  }
+
+  /** Ajustes de recuperación por turno, con los mismos nombres conceptuales que Layla. */
+  fun memoryInjectionSettings(characterId: String = ""): MemoryInjectionSettings =
+    MemoryInjectionSettings(
+      enabled = if (characterId.isBlank()) true else memoryEnabled(characterId),
+      maxInjections = memoryMaxInjections(),
+      minScore = prefs.getFloat(KEY_MEMORY_MIN_SCORE, 0.60f).toDouble().coerceIn(0.0, 1.0),
+      includeRelativeTime = prefs.getBoolean(KEY_MEMORY_RELATIVE_TIME, true),
+      injectLastOnNewChat = prefs.getBoolean(KEY_MEMORY_LAST_NEW_CHAT, true),
+      excludeActiveSession = prefs.getBoolean(KEY_MEMORY_EXCLUDE_ACTIVE, true),
+    )
+
+  fun setMinMemoryScore(value: Float) {
+    prefs.edit().putFloat(KEY_MEMORY_MIN_SCORE, value.coerceIn(0f, 1f)).apply()
+  }
+
+  fun setIncludeRelativeTime(value: Boolean) {
+    prefs.edit().putBoolean(KEY_MEMORY_RELATIVE_TIME, value).apply()
+  }
+
+  fun setInjectLastOnNewChat(value: Boolean) {
+    prefs.edit().putBoolean(KEY_MEMORY_LAST_NEW_CHAT, value).apply()
+  }
+
+  fun setExcludeActiveSession(value: Boolean) {
+    prefs.edit().putBoolean(KEY_MEMORY_EXCLUDE_ACTIVE, value).apply()
   }
 
   /** Cuántas entradas del lorebook (como máximo) se añaden al prompt por mensaje. */
@@ -67,6 +94,10 @@ class RoleplaySettingsStore(context: Context) {
     const val KEY_SPECULATIVE_SUPPORTED_PREFIX = "speculative_supported_"
     const val KEY_LORE_MAX = "lore_max_entries"
     const val KEY_MEMORY_MAX = "memory_max_injections"
+    const val KEY_MEMORY_MIN_SCORE = "memory_min_score"
+    const val KEY_MEMORY_RELATIVE_TIME = "memory_relative_time"
+    const val KEY_MEMORY_LAST_NEW_CHAT = "memory_inject_last_new_chat"
+    const val KEY_MEMORY_EXCLUDE_ACTIVE = "memory_exclude_active_session"
     const val KEY_MODEL = "default_model"
   }
 }

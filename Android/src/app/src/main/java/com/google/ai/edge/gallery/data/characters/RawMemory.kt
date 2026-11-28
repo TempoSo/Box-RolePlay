@@ -2,9 +2,12 @@ package com.google.ai.edge.gallery.data.characters
 
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -108,7 +111,9 @@ object MemoryAbsorbPrompt {
             if (personality.isNotBlank()) append("Character personality: ").append(personality.take(MAX_FIELD_CHARS)).append('\n')
             append("\nWrite ONE concise memory (3 to 6 sentences) from $char's point of view, in the third person, ")
             append("in the same language as the notes. Keep names, facts, promises, plans and feelings. ")
-            append("Do not invent anything that is not in the notes. Output only the memory text.\n\nNotes:\n")
+            append("Do not invent anything that is not in the notes. ")
+            append("Output ONLY a JSON object with: summary (the memory), topic (short label), ")
+            append("keys (3 to 5 short keywords for later recall), importance (1 to 10).\n\nNotes:\n")
             kept.forEach { append("- ").append(it.replace('\n', ' ')).append('\n') }
             append("\nMemory:")
         }
@@ -128,6 +133,41 @@ object MemoryAbsorbPrompt {
             val end = c.lastIndexOfAny(charArrayOf('.', '!', '?'))
             if (end > 600) c.take(end + 1) else c
         }
+    }
+
+    /** Recuerdo destilado con metadatos; si el modelo no respeta el JSON se derivan del texto. */
+    data class RecuerdoExtraido(
+        val resumen: String,
+        val topic: String = "",
+        val keys: List<String> = emptyList(),
+        val importance: Int = 5,
+    )
+
+    /**
+     * Parseo tolerante del archivista: JSON si viene en JSON, y si no, texto plano con valores
+     * por defecto. Un modelo local pequeño no garantiza el formato, así que la memoria no puede
+     * depender de que lo acierte.
+     */
+    fun parse(output: String): RecuerdoExtraido? {
+        val objeto = runCatching { Json.parseToJsonElement(output.trim()).jsonObject }.getOrNull()
+        if (objeto != null) {
+            val resumen =
+                (objeto["summary"] as? JsonPrimitive)?.contentOrNull?.let { clean(it) }
+                    ?: (objeto["memory"] as? JsonPrimitive)?.contentOrNull?.let { clean(it) }
+            if (resumen != null) {
+                val topic = (objeto["topic"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty().take(60)
+                val keys =
+                    ((objeto["keys"] as? JsonArray)
+                            ?: JsonArray(emptyList()))
+                        .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim() }
+                        .filter { it.length in 2..40 }
+                        .distinct()
+                        .take(5)
+                val importance = (objeto["importance"] as? JsonPrimitive)?.intOrNull?.coerceIn(1, 10) ?: 5
+                return RecuerdoExtraido(resumen, topic, keys, importance)
+            }
+        }
+        return clean(output)?.let { RecuerdoExtraido(it) }
     }
 
     /**

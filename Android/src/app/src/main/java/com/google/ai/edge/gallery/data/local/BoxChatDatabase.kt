@@ -25,7 +25,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
  */
 @Database(
     entities = [Conversation::class, Message::class, RoleplayCharacter::class, UserPersona::class, CharacterMemory::class],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class BoxChatDatabase : RoomDatabase() {
@@ -121,6 +121,39 @@ abstract class BoxChatDatabase : RoomDatabase() {
             }
         }
 
+        // Roleplay: campos de recuperación por relevancia y tablas del grafo (fase posterior).
+        // Todos los DEFAULT son obligatorios en SQLite para ALTER TABLE sobre filas existentes.
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact'")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN topic TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN source TEXT NOT NULL DEFAULT 'derived'")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN sourceConversationId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN keysJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN importance INTEGER NOT NULL DEFAULT 5")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN accessCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN lastAccess INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN valid INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE character_memories ADD COLUMN supersedesId TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_character_memories_characterId_valid " +
+                        "ON character_memories(characterId, valid)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS memory_nodes (" +
+                        "id TEXT NOT NULL, characterId TEXT NOT NULL, label TEXT NOT NULL, " +
+                        "type TEXT NOT NULL, topic TEXT NOT NULL, PRIMARY KEY(id))"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS memory_edges (" +
+                        "id TEXT NOT NULL, characterId TEXT NOT NULL, sourceId TEXT NOT NULL, " +
+                        "targetId TEXT NOT NULL, relation TEXT NOT NULL, linkType TEXT NOT NULL, " +
+                        "PRIMARY KEY(id))"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: BoxChatDatabase? = null
 
@@ -143,7 +176,10 @@ abstract class BoxChatDatabase : RoomDatabase() {
                 DB_NAME
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                )
                 .fallbackToDestructiveMigration()
                 .build()
         }
