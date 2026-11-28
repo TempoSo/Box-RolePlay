@@ -40,6 +40,20 @@ class MemoryRepository @Inject constructor(
 
     suspend fun supersede(id: String, now: Long) = withContext(Dispatchers.IO) { memoryDao.markSuperseded(id, now) }
 
+    /** Deja de inyectar los originales ya resumidos; se conservan en la BD y en la vista. */
+    suspend fun markConsolidated(ids: List<String>, now: Long) = withContext(Dispatchers.IO) {
+        if (ids.isNotEmpty()) memoryDao.markConsolidated(ids, now)
+    }
+
+    /** Refinamiento del grafo: quita los nodos y aristas de los recuerdos ya consolidados. */
+    suspend fun refinarGrafo(characterId: String, ids: List<String>) = withContext(Dispatchers.IO) {
+        val nodos = MemoryConsolidation.nodosAEliminar(ids)
+        if (nodos.isNotEmpty()) {
+            graphDao.deleteEdgesFor(characterId, nodos)
+            graphDao.deleteNodesFor(characterId, nodos)
+        }
+    }
+
     /**
      * Guarda un recuerdo si no hay otro con el mismo contenido normalizado para el personaje.
      * Devuelve false si estaba vacío o ya existía (dedupe on write).

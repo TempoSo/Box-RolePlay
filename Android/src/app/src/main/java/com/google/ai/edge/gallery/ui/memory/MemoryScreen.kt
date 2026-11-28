@@ -45,11 +45,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.characters.CharacterRepository
 import com.google.ai.edge.gallery.data.characters.MemoryAbsorbPrompt
+import com.google.ai.edge.gallery.data.characters.MemoryConsolidation
 import com.google.ai.edge.gallery.data.characters.MemoryGraphBuilder
 import com.google.ai.edge.gallery.data.characters.MemoryRepository
 import com.google.ai.edge.gallery.data.characters.PersonaRepository
-import com.google.ai.edge.gallery.data.characters.idsBorrablesTrasAbsorber
-import com.google.ai.edge.gallery.data.characters.paraInyectar
 import com.google.ai.edge.gallery.data.characters.RawMemory
 import com.google.ai.edge.gallery.data.characters.RawMemoryStore
 import android.content.Context
@@ -86,47 +85,70 @@ class MemoryViewModel @Inject constructor(
   fun editRaw(id: String, text: String) { viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { rawStore.updateText(id, text); refreshRaw() } }
   fun deleteRaw(id: String) { viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { rawStore.remove(setOf(id)); refreshRaw() } }
 
-  /** Absorber clústeres: el modelo resume las notas sin procesar en recuerdos reales, por tandas. */
-  fun absorb(character: RoleplayCharacter, absorber: MemoryAbsorber, preferredModel: String?, onMessage: (String) -> Unit) {
+  /**
+   * Fase 3: «Absorber» pasa a ser «Consolidar». En una sola pasada destila las notas ligeras,
+   * re-resume los recuerdos antiguos por tema, invalida los originales, limpia sus nodos del grafo
+   * y borra **todas** las notas puente. Si el modelo no rinde nada, no se borra nada. La firma del
+   * bloque inyectado sigue siendo ids|día|notas, así que la caché de prefijo no se rompe.
+   */
+  fun consolidate(
+    character: RoleplayCharacter,
+    absorber: MemoryAbsorber,
+    preferredModel: String?,
+    onMessage: (String) -> Unit,
+  ) {
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       val notes = rawStore.forCharacter(character.id)
-      if (notes.isEmpty()) { onMessage("No hay recuerdos sin procesar."); return@launch }
+      val ahora = System.currentTimeMillis()
+      val cohortes = MemoryConsolidation.cohortes(memoryRepository.getAll(character.id), ahora)
+      if (notes.isEmpty() && cohortes.isEmpty()) {
+        onMessage("No hay notas ni recuerdos antiguos suficientes para consolidar (3 recuerdos de al menos 7 días).")
+        return@launch
+      }
       val persona = personaRepository.getActive()
       val userName = persona?.name ?: "User"
-      // BUG-002: la absorción va por tandas para que el prompt no desborde el contexto del
-      // modelo (crash GGUF al deslizar la ventana / timeout LiteRT). Cada tanda produce un
-      // recuerdo; si una tanda no rinde, sus notas no se borran.
-      // El almacén devuelve las notas de la más nueva a la más vieja: tandasFromNewestFirst las ordena.
+      // BUG-002: por tandas, para no desbordar el contexto del modelo local.
       val tandas = MemoryAbsorbPrompt.tandasFromNewestFirst(notes, sizeOf = { it.text.length })
-      // Contexto del personaje por campos, como el "ingest" de Layla (archivista).
-      val prompts = tandas.map { tanda ->
-        MemoryAbsorbPrompt.build(
-          userName,
-          character.name,
-          tanda.map { it.text },
-          persona = persona?.description ?: "",
-          description = character.description,
-          personality = character.personality,
-        )
-      }
+      val prompts =
+        tandas.map { tanda ->
+          MemoryAbsorbPrompt.build(
+            userName,
+            character.name,
+            tanda.map { it.text },
+            persona = persona?.description ?: "",
+            description = character.description,
+            personality = character.personality,
+          )
+        } + cohortes.map { cohorte ->
+          MemoryConsolidation.prompt(
+            cohorte,
+            userName,
+            character.name,
+            persona = persona?.description ?: "",
+            description = character.description,
+            personality = character.personality,
+          )
+        }
       absorber.run(preferredModel, prompts,
         onProgress = { done, total ->
-          onMessage(if (total <= 1) "Absorbiendo…" else "Absorbiendo tanda ${done + 1} de $total…")
+          onMessage(if (total <= 1) "Consolidando…" else "Consolidando tanda ${done + 1} de $total…")
         },
         onResult = { outputs ->
           val extraidos = outputs.map { MemoryAbsorbPrompt.parse(it) }
           if (extraidos.all { it == null }) {
-            onMessage("El modelo no generó un resumen útil. Tus notas se conservan.")
+            onMessage("El modelo no generó un resumen útil. No se ha borrado nada.")
             return@run
           }
           viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val idsBorrados = mutableSetOf<String>()
-            var recuerdos = 0
+            var destilados = 0
+            var consolidados = 0
+            val idsInvalidados = mutableSetOf<String>()
             var anteriorId = memoryRepository.getAll(character.id).firstOrNull()?.id.orEmpty()
-            extraidos.forEachIndexed { i, recuerdo ->
-              if (recuerdo != null) {
+            extraidos.forEachIndexed { i, extraido ->
+              if (extraido == null) return@forEachIndexed
+              if (i < tandas.size) {
                 val keysJson =
-                  recuerdo.keys.joinToString(",", "[", "]") {
+                  extraido.keys.joinToString(",", "[", "]") {
                     "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
                   }
                 val guardado =
@@ -134,35 +156,50 @@ class MemoryViewModel @Inject constructor(
                     memory =
                       CharacterMemory(
                         characterId = character.id,
-                        content = recuerdo.resumen,
-                        topic = recuerdo.topic,
+                        content = extraido.resumen,
+                        topic = extraido.topic,
                         keysJson = keysJson,
-                        importance = recuerdo.importance,
-                        updatedAt = System.currentTimeMillis(),
+                        importance = extraido.importance,
+                        updatedAt = ahora,
+                        sourceConversationId = "",
                       ),
-                    rawText = tandas.getOrNull(i)?.joinToString("\n") { it.text }.orEmpty(),
+                    rawText = tandas[i].joinToString("\n") { it.text },
                     userName = userName,
                     charName = character.name,
                     anteriorId = anteriorId,
                   )
-                if (guardado) anteriorId = memoryRepository.getAll(character.id).firstOrNull()?.id.orEmpty()
-                // Si el recuerdo era duplicado no se guarda: sus notas tampoco se borran.
                 if (guardado) {
-                  tandas.getOrNull(i)?.forEach { idsBorrados.add(it.id) }
-                  recuerdos++
+                  anteriorId = memoryRepository.getAll(character.id).firstOrNull()?.id.orEmpty()
+                  destilados++
+                }
+              } else {
+                val cohorte = cohortes.getOrNull(i - tandas.size) ?: return@forEachIndexed
+                val nuevo = MemoryConsolidation.unir(cohorte, extraido, ahora) ?: return@forEachIndexed
+                val guardado =
+                  memoryRepository.saveStructured(
+                    memory = nuevo,
+                    rawText = cohorte.joinToString("\n") { it.content },
+                    userName = userName,
+                    charName = character.name,
+                  )
+                val plan = MemoryConsolidation.plan(nuevo, cohorte, guardado)
+                if (plan != null) {
+                  idsInvalidados.addAll(plan.idsAInvalidar)
+                  consolidados++
                 }
               }
             }
-            // Las 2 notas más nuevas se conservan como "puente": el modelo las ve en el próximo
-            // chat junto a los recuerdos ya destilados, para que la escena no pierda frescura.
-            val idsBorrables = notes.idsBorrablesTrasAbsorber(idsBorrados)
-            rawStore.remove(idsBorrables); refreshRaw()
-            val borradas = idsBorrables.size
-            val conservadas = notes.paraInyectar().size
-            val resumen =
-              if (recuerdos == 1) "$borradas notas absorbidas en un recuerdo."
-              else "$borradas notas absorbidas en $recuerdos recuerdos (por tandas)."
-            onMessage("$resumen Se conservan $conservadas notas recientes para el próximo chat.")
+            if (idsInvalidados.isNotEmpty()) {
+              memoryRepository.markConsolidated(idsInvalidados.toList(), ahora)
+              memoryRepository.refinarGrafo(character.id, idsInvalidados.toList())
+            }
+            // Limpieza de la Fase 3: se van TODAS las notas, incluidas las 2 puente.
+            val borradas = notes.size
+            if (borradas > 0) { rawStore.remove(notes.map { it.id }.toSet()); refreshRaw() }
+            onMessage(
+              "$destilados recuerdo(s) destilado(s), $consolidados consolidado(s); " +
+                "${idsInvalidados.size} original(es) dejado(s) de inyectar y $borradas nota(s) eliminada(s).",
+            )
           }
         },
         onError = { onMessage(it) })
@@ -208,7 +245,7 @@ fun MemoryScreen(
   val characters by viewModel.characters.collectAsState()
   val memories by viewModel.memories.collectAsState()
   val rawNotes by viewModel.raw.collectAsState()
-  var absorbing by remember { mutableStateOf(false) }
+  var consolidating by remember { mutableStateOf(false) }
   var selected by remember { mutableStateOf("") }
   var query by remember { mutableStateOf("") }
   var editing by remember { mutableStateOf<CharacterMemory?>(null) }
@@ -282,19 +319,24 @@ fun MemoryScreen(
           }
           BoxSectionLabel("Recuerdos sin procesar (${rawNotes.size})")
           Text(
-            note ?: "Notas ligeras que se guardan al instante mientras chateas. Cada una ya nace como recuerdo estructurado y suma nodos al grafo; «Absorber» solo refina y agrupa. Las 2 más recientes se conservan como puente al próximo chat.",
+            note ?: "Notas ligeras que se guardan al instante mientras chateas. Cada una ya nace como recuerdo estructurado y suma nodos al grafo; «Consolidar» las destila, re-resume los recuerdos antiguos y elimina todas las notas, incluidas las 2 puente.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Button(
             onClick = {
               current?.let { c ->
-                absorbing = true; note = "Absorbiendo… (puede tardar si el modelo debe cargarse; no salgas de esta pantalla)"
-                viewModel.absorb(c, absorber, preferredModel) { msg -> note = msg; absorbing = false }
+                consolidating = true; note = "Consolidando… (puede tardar si el modelo debe cargarse; no salgas de esta pantalla)"
+                viewModel.consolidate(c, absorber, preferredModel) { msg -> note = msg; consolidating = false }
               }
             },
-            enabled = rawNotes.isNotEmpty() && !absorbing,
+            enabled = (rawNotes.isNotEmpty() || memories.size >= 3) && !consolidating,
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-          ) { Text(if (absorbing) "Absorbiendo…" else "Absorber clústeres") }
+          ) { Text(if (consolidating) "Consolidando…" else "Consolidar (absorber + limpiar)") }
+          Text(
+            "«Consolidar» sustituye a «Absorber»: destila notas, re-resume recuerdos antiguos, limpia sus nodos del grafo y elimina TODAS las notas puente.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
           rawNotes.take(30).forEach { r ->
             Card(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
               Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {

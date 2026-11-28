@@ -28,6 +28,10 @@ interface MemoryDao {
     @Query("UPDATE character_memories SET valid = 0, updatedAt = :now WHERE id = :id")
     suspend fun markSuperseded(id: String, now: Long)
 
+    /** Consolidación: varios recuerdos se resumen en uno; los originales dejan de inyectarse. */
+    @Query("UPDATE character_memories SET valid = 0, updatedAt = :now WHERE id IN (:ids)")
+    suspend fun markConsolidated(ids: List<String>, now: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(memory: CharacterMemory)
 

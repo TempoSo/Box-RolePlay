@@ -49,6 +49,10 @@
 11. ⏳ **Re-ranking** con cross-encoder: sigue pendiente y no es el primer paso.
 12. ✅ **Grafo de entidades en SQLite** (no Neo4j), sin modelo extra: las tablas `memory_nodes`/`memory_edges` ya las creó la migración 7→8. Desde la Fase 1 cada recuerdo nace con resumen + texto sin procesar + tripletas y suma nodos al grafo al guardarse. En esta Fase 2 el grafo entra como refuerzo de 0,10 en el scoring (`MemoryGraphScorer`) y se puede ver en 2D desde la pantalla de memoria con filtros Todo/T0/T1/Temporal. **No cambia el texto inyectado**: la firma/caché de prefijo sigue dependiendo solo de los recuerdos elegidos y del día.
 
+### Fase 3 (estado real a 28/11)
+13. ✅ **«Absorber» → «Consolidar»** (tipo SupaMemory, sin modelo nuevo): un solo botón destila las notas ligeras, re-resume por tema los recuerdos vigentes con al menos 7 días y 3 elementos, guarda un recuerdo `kind="summary"` con `sourceConversationId=""`, marca los originales `valid=0` **solo si el nuevo se guardó**, **borra sus nodos/aristas del grafo** (evita boosts fantasma en `MemoryGraphScorer`) y **elimina TODAS las notas, incluidas las 2 puente**. No hay migración nueva (`supersedesId` ya existía) y la firma `ids|día|notas` sigue igual: cuando no hay notas, el bloque inyectado depende solo de los ids elegidos y del día. Lógica pura en `MemoryConsolidation` con tests JVM.
+14. ⏳ **Ver/editar la memoria inyectada desde el chat** y **consolidación automática en background** siguen pendientes. Tampoco se ha tocado el formato de backup: si exportas/importas, `valid`/`kind`/`supersedesId` se pierden y los originales invalidados pueden "resucitar" al restaurar.
+
 ## 4. Formato propuesto para la memoria inyectada
 
 Presupuesto objetivo 200-350 tokens, después de la ficha del personaje y antes del historial:
