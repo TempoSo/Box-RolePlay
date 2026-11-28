@@ -27,14 +27,12 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -116,7 +114,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Composable function for the main chat panel, displaying messages and handling user input. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatPanel(
   modelManagerViewModel: ModelManagerViewModel,
@@ -535,56 +533,56 @@ fun ChatPanel(
                         !uiState.inProgress &&
                         (showCopyButton || message === lastAgentText)
                     if (toolsVisible) {
-                      FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                      ) {
-                        MessageActionButton(
-                          label = "Editar",
-                          icon = Icons.Outlined.Edit,
-                          onClick = {
-                            editText = message.content
-                            editTarget = message
-                            showCopyButton = false
-                          },
-                        )
-                        val ttsContext = androidx.compose.ui.platform.LocalContext.current
-                        MessageActionButton(
-                          label = if (ttsSpeaking) "Parar" else "Hablar",
-                          icon = if (ttsSpeaking) Icons.Outlined.Stop else Icons.Outlined.VolumeUp,
-                          onClick = {
-                            if (ttsSpeaking) com.google.ai.edge.gallery.tts.TtsManager.stop()
-                            else com.google.ai.edge.gallery.tts.TtsManager.speak(ttsContext, message.content)
-                          },
-                        )
-                        MessageActionButton(
-                          label = "Copiar",
-                          icon = Icons.Outlined.ContentCopy,
-                          onClick = {
-                            clipboardManager.setText(AnnotatedString(message.content))
-                            showCopyButton = false
-                            scope.launch { snackbarHostState.showSnackbar("Copiado") }
-                          },
-                        )
-                        MessageActionButton(
-                          label = "Regenerar",
-                          icon = Icons.Rounded.Refresh,
-                          onClick = {
-                            viewModel.regenerateLast(selectedModel) { error ->
-                              scope.launch { snackbarHostState.showSnackbar(error) }
-                            }
-                          },
-                        )
-                        MessageActionButton(
-                          label = "Continuar",
-                          icon = Icons.Rounded.PlayArrow,
-                          onClick = {
-                            viewModel.continueLast(selectedModel) { error ->
-                              scope.launch { snackbarHostState.showSnackbar(error) }
-                            }
-                          },
-                        )
-                      }
+                      val ttsContext = androidx.compose.ui.platform.LocalContext.current
+                      MessageActions(
+                        acciones =
+                          listOf(
+                            MessageAction(
+                              etiqueta = if (ttsSpeaking) "Parar" else "Hablar",
+                              icono = if (ttsSpeaking) Icons.Outlined.Stop else Icons.Outlined.VolumeUp,
+                              onClick = {
+                                if (ttsSpeaking) com.google.ai.edge.gallery.tts.TtsManager.stop()
+                                else com.google.ai.edge.gallery.tts.TtsManager.speak(ttsContext, message.content)
+                              },
+                            ),
+                            MessageAction(
+                              etiqueta = "Copiar",
+                              icono = Icons.Outlined.ContentCopy,
+                              onClick = {
+                                clipboardManager.setText(AnnotatedString(message.content))
+                                showCopyButton = false
+                                scope.launch { snackbarHostState.showSnackbar("Copiado") }
+                              },
+                            ),
+                            MessageAction(
+                              etiqueta = "Regenerar",
+                              icono = Icons.Rounded.Refresh,
+                              onClick = {
+                                viewModel.regenerateLast(selectedModel) { error ->
+                                  scope.launch { snackbarHostState.showSnackbar(error) }
+                                }
+                              },
+                            ),
+                            MessageAction(
+                              etiqueta = "Editar",
+                              icono = Icons.Outlined.Edit,
+                              onClick = {
+                                editText = message.content
+                                editTarget = message
+                                showCopyButton = false
+                              },
+                            ),
+                            MessageAction(
+                              etiqueta = "Continuar",
+                              icono = Icons.Rounded.PlayArrow,
+                              onClick = {
+                                viewModel.continueLast(selectedModel) { error ->
+                                  scope.launch { snackbarHostState.showSnackbar(error) }
+                                }
+                              },
+                            ),
+                          ),
+                      )
                     }
                   } else if (message.side == ChatSide.USER) {
                     Row(
@@ -621,45 +619,45 @@ fun ChatPanel(
                         !uiState.inProgress &&
                         (showCopyButton || message === lastUserText)
                     if (toolsVisible) {
-                      FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                      ) {
-                        MessageActionButton(
-                          label = "Editar",
-                          icon = Icons.Outlined.Edit,
-                          onClick = {
-                            editText = message.content
-                            editTarget = message
-                            showCopyButton = false
-                          },
-                        )
-                        val ttsContext = androidx.compose.ui.platform.LocalContext.current
-                        MessageActionButton(
-                          label = if (ttsSpeaking) "Parar" else "Hablar",
-                          icon = if (ttsSpeaking) Icons.Outlined.Stop else Icons.Outlined.VolumeUp,
-                          onClick = {
-                            if (ttsSpeaking) com.google.ai.edge.gallery.tts.TtsManager.stop()
-                            else com.google.ai.edge.gallery.tts.TtsManager.speak(ttsContext, message.content)
-                          },
-                        )
-                        MessageActionButton(
-                          label = "Copiar",
-                          icon = Icons.Outlined.ContentCopy,
-                          onClick = {
-                            clipboardManager.setText(AnnotatedString(message.content))
-                            showCopyButton = false
-                            scope.launch { snackbarHostState.showSnackbar("Copiado") }
-                          },
-                        )
-                        // Equivale a regenerar la respuesta a partir de este mensaje. Continuar
-                        // no se ofrece aquí: no tiene sentido sobre un mensaje del usuario.
-                        MessageActionButton(
-                          label = "Regenerar",
-                          icon = Icons.Rounded.Refresh,
-                          onClick = { onRunAgainClicked(selectedModel, message) },
-                        )
-                      }
+                      val ttsContext = androidx.compose.ui.platform.LocalContext.current
+                      // Equivale a regenerar la respuesta a partir de este mensaje. Continuar
+                      // no se ofrece aquí: no tiene sentido sobre un mensaje del usuario.
+                      MessageActions(
+                        acciones =
+                          listOf(
+                            MessageAction(
+                              etiqueta = if (ttsSpeaking) "Parar" else "Hablar",
+                              icono = if (ttsSpeaking) Icons.Outlined.Stop else Icons.Outlined.VolumeUp,
+                              onClick = {
+                                if (ttsSpeaking) com.google.ai.edge.gallery.tts.TtsManager.stop()
+                                else com.google.ai.edge.gallery.tts.TtsManager.speak(ttsContext, message.content)
+                              },
+                            ),
+                            MessageAction(
+                              etiqueta = "Copiar",
+                              icono = Icons.Outlined.ContentCopy,
+                              onClick = {
+                                clipboardManager.setText(AnnotatedString(message.content))
+                                showCopyButton = false
+                                scope.launch { snackbarHostState.showSnackbar("Copiado") }
+                              },
+                            ),
+                            MessageAction(
+                              etiqueta = "Regenerar",
+                              icono = Icons.Rounded.Refresh,
+                              onClick = { onRunAgainClicked(selectedModel, message) },
+                            ),
+                            MessageAction(
+                              etiqueta = "Editar",
+                              icono = Icons.Outlined.Edit,
+                              onClick = {
+                                editText = message.content
+                                editTarget = message
+                                showCopyButton = false
+                              },
+                            ),
+                          ),
+                      )
                     }
                   }
                 }

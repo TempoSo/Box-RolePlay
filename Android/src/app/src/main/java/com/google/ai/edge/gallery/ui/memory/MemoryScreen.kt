@@ -1,14 +1,19 @@
 package com.google.ai.edge.gallery.ui.memory
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -25,6 +30,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +45,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.characters.CharacterRepository
 import com.google.ai.edge.gallery.data.characters.MemoryAbsorbPrompt
+import com.google.ai.edge.gallery.data.characters.MemoryGraphBuilder
 import com.google.ai.edge.gallery.data.characters.MemoryRepository
 import com.google.ai.edge.gallery.data.characters.PersonaRepository
 import com.google.ai.edge.gallery.data.characters.idsBorrablesTrasAbsorber
@@ -68,7 +75,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class MemoryViewModel @Inject constructor(
   @ApplicationContext context: Context,
-  characterRepository: CharacterRepository,
+  private val characterRepository: CharacterRepository,
   private val memoryRepository: MemoryRepository,
   private val personaRepository: PersonaRepository,
 ) : ViewModel() {
@@ -170,7 +177,20 @@ class MemoryViewModel @Inject constructor(
     selectedId.flatMapLatest { id -> if (id.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else memoryRepository.observe(id) }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-  fun save(m: CharacterMemory) { viewModelScope.launch { memoryRepository.save(m) } }
+  suspend fun grafo(characterId: String) = memoryRepository.grafo(characterId)
+
+  fun save(m: CharacterMemory) {
+    viewModelScope.launch {
+      val charName = characterRepository.getById(m.characterId)?.name.orEmpty()
+      val userName = personaRepository.getActive()?.name.orEmpty()
+      memoryRepository.saveStructured(
+        memory = m,
+        rawText = m.content,
+        userName = userName,
+        charName = charName,
+      )
+    }
+  }
   fun delete(m: CharacterMemory) { viewModelScope.launch { memoryRepository.delete(m) } }
   fun clear(characterId: String) { viewModelScope.launch { memoryRepository.deleteAll(characterId) } }
 }
@@ -197,6 +217,12 @@ fun MemoryScreen(
   var editingRaw by remember { mutableStateOf<RawMemory?>(null) }
   var editRawText by remember { mutableStateOf("") }
   var confirmClear by remember { mutableStateOf(false) }
+  var mostrarGrafo by remember { mutableStateOf(false) }
+  var grafo by remember { mutableStateOf<MemoryGraphBuilder.Grafo?>(null) }
+  var filtroGrafo by remember { mutableStateOf(FiltroGrafo.TODO) }
+  LaunchedEffect(mostrarGrafo, selected) {
+    if (mostrarGrafo && selected.isNotBlank()) grafo = viewModel.grafo(selected)
+  }
   var enabled by remember(selected) { mutableStateOf(selected.isBlank() || store.memoryEnabled(selected)) }
   var auto by remember(selected) { mutableStateOf(selected.isBlank() || store.autoMemory(selected)) }
   var note by remember { mutableStateOf<String?>(null) }
@@ -221,7 +247,14 @@ fun MemoryScreen(
           FilterChip(selected = c.id == selected, onClick = { selected = c.id; viewModel.select(c.id) }, label = { Text(c.name) })
         }
       }
-      Text("Recuerdos de ${current?.name ?: ""}", style = MaterialTheme.typography.titleLarge)
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+          "Recuerdos de ${current?.name ?: ""}",
+          style = MaterialTheme.typography.titleLarge,
+          modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { mostrarGrafo = true }) { Text("Ver grafo") }
+      }
       OutlinedTextField(
         value = query, onValueChange = { query = it },
         placeholder = { Text("Buscar recuerdos…") },
@@ -249,7 +282,7 @@ fun MemoryScreen(
           }
           BoxSectionLabel("Recuerdos sin procesar (${rawNotes.size})")
           Text(
-            note ?: "Notas ligeras que se guardan al instante mientras chateas. Al absorberlas, el modelo las resume en recuerdos reales; las 2 más recientes se conservan y también se usan en el próximo chat.",
+            note ?: "Notas ligeras que se guardan al instante mientras chateas. Cada una ya nace como recuerdo estructurado y suma nodos al grafo; «Absorber» solo refina y agrupa. Las 2 más recientes se conservan como puente al próximo chat.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Button(
@@ -312,6 +345,46 @@ fun MemoryScreen(
       title = { Text("¿Borrar todos los recuerdos de ${current?.name ?: ""}?") },
       confirmButton = { TextButton(onClick = { viewModel.clear(selected); confirmClear = false }) { Text("Borrar") } },
       dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancelar") } },
+    )
+  }
+  if (mostrarGrafo) {
+    AlertDialog(
+      onDismissRequest = { mostrarGrafo = false },
+      title = { Text("Grafo de ${current?.name ?: ""}") },
+      text = {
+        Column {
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+          ) {
+            FiltroGrafo.entries.forEach { filtro ->
+              FilterChip(
+                selected = filtro == filtroGrafo,
+                onClick = { filtroGrafo = filtro },
+                label = { Text(filtro.etiqueta) },
+              )
+            }
+          }
+          val g = grafo
+          if (g == null) {
+            Text("Cargando grafo…", style = MaterialTheme.typography.bodySmall)
+          } else {
+            Text(
+              "${g.nodes.size} nodos · ${g.edges.size} relaciones",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Box(
+              Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp)
+                .horizontalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState()),
+            ) { MemoryGraphView(g, filtroGrafo) }
+          }
+        }
+      },
+      confirmButton = { TextButton(onClick = { mostrarGrafo = false }) { Text("Cerrar") } },
     )
   }
 }

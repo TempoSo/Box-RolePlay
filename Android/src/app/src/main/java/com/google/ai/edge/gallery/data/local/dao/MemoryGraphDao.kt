@@ -27,4 +27,14 @@ interface MemoryGraphDao {
 
     @Query("DELETE FROM memory_edges WHERE characterId = :characterId")
     suspend fun deleteEdges(characterId: String)
+
+    /** Limpia el grafo de un recuerdo al editarlo o borrarlo, sin tocar el de los demás. */
+    @Query(
+        "DELETE FROM memory_edges WHERE characterId = :characterId " +
+            "AND (sourceId IN (:ids) OR targetId IN (:ids))",
+    )
+    suspend fun deleteEdgesFor(characterId: String, ids: List<String>)
+
+    @Query("DELETE FROM memory_nodes WHERE characterId = :characterId AND id IN (:ids)")
+    suspend fun deleteNodesFor(characterId: String, ids: List<String>)
 }

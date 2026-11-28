@@ -472,13 +472,18 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       val bloqueMemoria =
         if (isRoleplayChat && memorySettings.enabled && memoryCharacterId.isNotBlank() && repo != null) {
           try {
-            val memorias = withContext(Dispatchers.IO) { repo.getForRetrieval(memoryCharacterId) }
+            val consulta = (previous.takeLast(2).map { it.content } + input).joinToString("\n")
+            // El grafo solo afina la selección: no se mete en el prompt, así que la firma/caché
+            // de prefijo sigue dependiendo únicamente de los recuerdos elegidos y del día.
+            val (memorias, boosts) =
+              withContext(Dispatchers.IO) {
+                repo.getForRetrieval(memoryCharacterId) to repo.graphBoosts(memoryCharacterId, consulta)
+              }
             // Notas puente: las 2 más recientes sobreviven a absorber y dan continuidad al chat.
             val notas =
               if (::chatRepository.isInitialized && memoryCharacterId.isNotBlank()) {
                 chatRepository.recentRawMemories(memoryCharacterId)
               } else emptyList()
-            val consulta = (previous.takeLast(2).map { it.content } + input).joinToString("\n")
             val resultado =
               retriever.seleccionar(
                 memorias = memorias,
@@ -488,6 +493,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
                 conversacionActual = memoryConversationId,
                 ajustes = memorySettings,
                 notasRecientes = notas,
+                boostsPorId = boosts,
               )
             // Solo se reescribe el bloque si cambian los recuerdos elegidos o el día.
             if (resultado.firma != memorySignature) {

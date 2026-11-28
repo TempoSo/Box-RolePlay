@@ -23,6 +23,17 @@ class MemoryRepository @Inject constructor(
     suspend fun getForRetrieval(characterId: String): List<CharacterMemory> =
         withContext(Dispatchers.IO) { memoryDao.getForRetrieval(characterId) }
 
+    /** Grafo completo del personaje, para la vista 2D y para el refuerzo de recuperación. */
+    suspend fun grafo(characterId: String): MemoryGraphBuilder.Grafo =
+        withContext(Dispatchers.IO) {
+            MemoryGraphBuilder.Grafo(graphDao.nodes(characterId), graphDao.edges(characterId))
+        }
+
+    suspend fun graphBoosts(characterId: String, consulta: String): Map<String, Double> =
+        withContext(Dispatchers.IO) {
+            MemoryGraphScorer.boosts(graphDao.nodes(characterId), graphDao.edges(characterId), consulta)
+        }
+
     suspend fun bumpAccess(ids: List<String>, now: Long) = withContext(Dispatchers.IO) {
         if (ids.isNotEmpty()) memoryDao.bumpAccess(ids, now)
     }
@@ -57,6 +68,7 @@ class MemoryRepository @Inject constructor(
     ): Boolean =
         withContext(Dispatchers.IO) {
             if (!save(memory)) return@withContext false
+            deleteGraphOf(memory.characterId, memory.id)
             val grafo =
                 MemoryGraphBuilder.construir(
                     characterId = memory.characterId,
@@ -71,7 +83,17 @@ class MemoryRepository @Inject constructor(
             true
         }
 
-    suspend fun delete(memory: CharacterMemory) = withContext(Dispatchers.IO) { memoryDao.delete(memory) }
+    private suspend fun deleteGraphOf(characterId: String, memoryId: String) {
+        val ids = listOf("m|$memoryId", "r|$memoryId")
+        graphDao.deleteEdgesFor(characterId, ids)
+        graphDao.deleteNodesFor(characterId, ids)
+    }
+
+    suspend fun delete(memory: CharacterMemory) =
+        withContext(Dispatchers.IO) {
+            memoryDao.delete(memory)
+            deleteGraphOf(memory.characterId, memory.id)
+        }
 
     suspend fun deleteAll(characterId: String) =
         withContext(Dispatchers.IO) {

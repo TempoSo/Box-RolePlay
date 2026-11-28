@@ -17,7 +17,7 @@ data class CharacterMemory(
     val createdAt: Long = System.currentTimeMillis(),
     /** fact / preference / impression / session. Lo derivado nunca sustituye al canon de la tarjeta. */
     val kind: String = "fact",
-    /** Clúster temático del grafo (todavía solo etiqueta). */
+    /** Clúster temático del grafo; en recuerdos nuevos se deriva del texto al guardar. */
     val topic: String = "",
     /** user / character / derived. */
     val source: String = "derived",

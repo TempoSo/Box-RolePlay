@@ -86,18 +86,25 @@ object MemoryRetriever {
   }
 
   /**
-   * score = 0,45·similitud + 0,30·recencia + 0,15·importancia + 0,10·uso.
-   * Sin coincidencia de claves el máximo es 0,55, por debajo del umbral por defecto (0,60):
-   * un recuerdo que no tiene nada que ver con el mensaje nunca entra en el prompt.
+   * score = 0,40·similitud + 0,25·recencia + 0,15·importancia + 0,10·uso + 0,10·grafo.
+   * El refuerzo del grafo es opcional: si no hay entidades para ese recuerdo, la suma máxima sin
+   * coincidencia de claves es 0,50, por debajo del umbral por defecto (0,60). Un recuerdo sin
+   * relación con el mensaje sigue sin entrar en el prompt.
    */
-  fun puntuacion(memoria: CharacterMemory, consulta: List<String>, now: Long): Double {
+  fun puntuacion(
+    memoria: CharacterMemory,
+    consulta: List<String>,
+    now: Long,
+    boostGrafo: Double = 0.0,
+  ): Double {
     val claves = claves(memoria)
     val sim = if (claves.isEmpty()) 0.0 else consulta.intersect(claves.toSet()).size.toDouble() / claves.size
     val dias = ((now - memoria.createdAt).coerceAtLeast(0) / DAY).toDouble()
     val rec = Math.pow(0.5, dias / 30.0)
     val imp = (memoria.importance.coerceIn(1, 10)).toDouble() / 10.0
     val uso = kotlin.math.min(1.0, kotlin.math.log2(1.0 + memoria.accessCount.coerceAtLeast(0)) / 4.0)
-    return (0.45 * sim + 0.30 * rec + 0.15 * imp + 0.10 * uso).coerceIn(0.0, 1.0)
+    val grafo = boostGrafo.coerceIn(0.0, 1.0)
+    return (0.40 * sim + 0.25 * rec + 0.15 * imp + 0.10 * uso + 0.10 * grafo).coerceIn(0.0, 1.0)
   }
 
   /** Quita el bloque que los chats antiguos tenían congelado en su system prompt. */
@@ -163,6 +170,8 @@ object MemoryRetriever {
     notasRecientes: List<RawMemory> = emptyList(),
     maxNotasRecientes: Int = NOTAS_PUENTE,
     maxNotasChars: Int = 400,
+    /** Refuerzo por entidades del grafo, calculado fuera; no altera el texto inyectado. */
+    boostsPorId: Map<String, Double> = emptyMap(),
   ): Resultado {
     val consulta = tokens(textoConsulta)
     // Las notas puente no compiten con los recuerdos: van detrás, con su propio tope y presupuesto.
@@ -174,7 +183,7 @@ object MemoryRetriever {
       memorias.filter { it.valid && it.content.isNotBlank() }
         .filterNot { ajustes.excludeActiveSession && conversacionActual.isNotBlank() && it.sourceConversationId == conversacionActual }
     val evaluados =
-      candidatos.map { it to puntuacion(it, consulta, now) }
+      candidatos.map { it to puntuacion(it, consulta, now, boostsPorId[it.id] ?: 0.0) }
         .sortedWith(compareByDescending<Pair<CharacterMemory, Double>> { it.second }
           .thenByDescending { it.first.createdAt }.thenBy { it.first.id })
 
@@ -231,7 +240,9 @@ object MemoryRetriever {
     val bloque =
       armarBloque(nombrePersonaje, lineas, notas, now, ajustes.includeRelativeTime, maxNotasChars)
     val detalle = elegidos.take(lineas.size).joinToString(", ") {
-      "${it.first.id.take(8)}=${String.format(Locale.ROOT, "%.2f", it.second)}"
+      val g = boostsPorId[it.first.id] ?: 0.0
+      "${it.first.id.take(8)}=${String.format(Locale.ROOT, "%.2f", it.second)}" +
+        (if (g > 0.0) "(g=${String.format(Locale.ROOT, "%.2f", g)})" else "")
     }
     val traza =
       "LTM: evaluados=${candidatos.size}, umbral=$umbral, entraron=$detalle" +

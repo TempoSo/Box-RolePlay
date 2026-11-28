@@ -44,10 +44,10 @@
 8. ⏳ **Ver/editar la memoria inyectada** desde el chat (Layla v4.9), no solo en la pantalla de memoria.
 9. ✅ **Log de recuperación**: candidatos, umbral, IDs con puntuación y fallback; visible en «Información del chat» y en logcat con prefijo del ViewModel.
 
-### Fase 2 (con modelo extra)
-10. **Embeddings locales** (MiniLM-L6 INT8 ~22 MB / e5-small multilingüe ~30 MB, LiteRT, 384 dims) con índice por personaje y caché del embedding de la query. Solo si keyword + recencia no bastan.
-11. **Re-ranking** con cross-encoder: el último paso, no el primero.
-12. **Grafo de entidades en SQLite** (no Neo4j): solo si el dolor es razonamiento temporal.
+### Fase 2 (estado real a 27/11)
+10. ⏳ **Embeddings locales** (MiniLM-L6 INT8 ~22 MB / e5-small multilingüe ~30 MB, LiteRT, 384 dims): siguen sin implementarse; solo si keyword + recencia no bastan.
+11. ⏳ **Re-ranking** con cross-encoder: sigue pendiente y no es el primer paso.
+12. ✅ **Grafo de entidades en SQLite** (no Neo4j), sin modelo extra: las tablas `memory_nodes`/`memory_edges` ya las creó la migración 7→8. Desde la Fase 1 cada recuerdo nace con resumen + texto sin procesar + tripletas y suma nodos al grafo al guardarse. En esta Fase 2 el grafo entra como refuerzo de 0,10 en el scoring (`MemoryGraphScorer`) y se puede ver en 2D desde la pantalla de memoria con filtros Todo/T0/T1/Temporal. **No cambia el texto inyectado**: la firma/caché de prefijo sigue dependiendo solo de los recuerdos elegidos y del día.
 
 ## 4. Formato propuesto para la memoria inyectada
 
