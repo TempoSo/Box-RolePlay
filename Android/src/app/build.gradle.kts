@@ -30,7 +30,7 @@ plugins {
 
 android {
   namespace = "com.google.ai.edge.gallery"
-  compileSdk = 36
+  compileSdk = 37
 
   defaultConfig {
     applicationId = "com.box.gallery"
@@ -55,13 +55,16 @@ android {
       signingConfig = signingConfigs.getByName("debug")
     }
   }
+  packaging {
+    jniLibs {
+      pickFirsts.add("**/liblitertlm_jni.so")
+      pickFirsts.add("**/libonnxruntime.so")
+      pickFirsts.add("**/libc++_shared.so")
+    }
+  }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
-  }
-  kotlinOptions {
-    jvmTarget = "11"
-    freeCompilerArgs += "-Xcontext-receivers"
   }
   buildFeatures {
     compose = true
@@ -89,6 +92,17 @@ dependencies {
   implementation(libs.androidx.security.crypto)
   implementation(libs.androidx.webkit)
   implementation(libs.litertlm)
+
+  // Voz (Pocket TTS con sherpa-onnx). Opcional y a prueba de fallos: la app compila sin esto y el
+  // motor de voz avisa si falta. Dos formas de añadirlo:
+  //  - copiar el .aar a app/libs/sherpa-onnx.aar, o
+  //  - compilar con -PsherpaVersion=<version> (Maven Central: com.k2fsa.sherpa.onnx:sherpa-onnx-android).
+  val sherpaAar = file("libs/sherpa-onnx.aar")
+  if (sherpaAar.exists()) {
+    implementation(files(sherpaAar))
+  } else if (project.hasProperty("sherpaVersion")) {
+    implementation("com.k2fsa.sherpa.onnx:sherpa-onnx-android:${project.property("sherpaVersion")}")
+  }
   implementation(libs.commonmark)
   implementation(libs.richtext)
   implementation(libs.tflite)
@@ -154,4 +168,10 @@ protobuf {
 // the OssLicensesMenuActivity still compiles — it just won't have license data at runtime.
 tasks.configureEach {
   if (name.endsWith("OssLicensesTask")) enabled = false
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
 }

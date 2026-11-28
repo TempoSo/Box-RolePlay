@@ -4,6 +4,10 @@
 #include "llama.h"
 #include "common.h"
 #include "ggml.h"
+#include "SamplerSettings.h"
+#include "EngineOptions.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 #include <string>
 #include <vector>
 
@@ -11,13 +15,42 @@ class LLMInference {
 public:
     void loadModel(const char *model_path, float minP, float temperature, float topP, int topK,
                    float repeatPenalty, bool storeChats, long contextSize, const char *chatTemplate,
-                   int nThreads, bool useMmap, bool useMlock);
+                   int nThreads, bool useMmap, bool useMlock,
+                   const EngineOptions &options = EngineOptions());
     void addChatMessage(const char *message, const char *role);
     float getResponseGenerationTime() const;
     int getContextSizeUsed() const;
     void startCompletion(const char *query);
     std::string completionLoop();
     void stopCompletion();
+    // Roleplay: borra el historial y el cache de KV sin recargar el modelo.
+    void resetChat();
+    // Reconstruye la cadena de muestreo con estos ajustes (se puede llamar entre turnos).
+    void setSampler(const SamplerSettings &settings);
+    // Roleplay: activa el canal de pensamiento (Gemma 4, token <|think|>) para el proximo turno.
+    void setThinking(bool enabled);
+    // Umbrales de la ventana deslizante, como fraccion del contexto (alto > bajo).
+    void setContextWindow(float high, float low);
+    // Limite de tokens por respuesta (-1 = sin limite); se puede cambiar entre turnos.
+    void setMaxResponse(int maxTokens) { _maxResponse = maxTokens; }
+    // Cache de KV en disco: carpeta, clave del modelo (hash de ruta/tamano/contexto/KV) y que tipos
+    // de archivo se usan (.sys = solo el bloque de sistema, .chat = la conversacion completa).
+    void setKvCache(const std::string &dir, const std::string &modelKey, bool sys, bool chat);
+    // Guarda la conversacion actual (.chat). No debe llamarse mientras se genera.
+    bool saveKvChat();
+    // [tokens del prompt procesados, segundos, tokens generados, segundos] del ultimo turno.
+    void getPerf(float *out4) const;
+    // BUG-029: motivo del fin del ultimo turno. "token" (el modelo emitio su EOG),
+    // "stop:<texto>" (lo cerro un stop string propio) o "max_tokens" (tope de respuesta).
+    // Cadena vacia mientras genera o si aun no ha terminado ningun turno.
+    std::string getStopReason() const;
+    // Vision (mmproj): carga el proyector multimodal; false si no es valido o no admite imagenes.
+    bool loadMmproj(const char *mmprojPath, int nThreads);
+    bool supportsVision() const { return _mtmd != nullptr && mtmd_support_vision(_mtmd); }
+    // Imagen RGB (3 bytes por pixel) para el proximo mensaje; el texto debe llevar un marcador
+    // "<__media__>" por imagen.
+    bool addImage(int width, int height, const unsigned char *rgb);
+    static const char *mediaMarker() { return mtmd_default_marker(); }
     std::string benchModel(int pp, int tg, int pl, int nr);
     ~LLMInference();
 
@@ -40,8 +73,44 @@ private:
     int64_t _responseGenerationTime = 0;
     int _responseNumTokens = 0;
     int _nCtxUsed = 0;
+    int _maxResponse = -1;
+    int64_t _prefillTimeUs = 0;
+    int _prefillTokens = 0;
+    int64_t _genTimeUs = 0;
+    int _genTokens = 0;
+    int64_t _turnStartUs = 0;
+    std::string _stopReason; // BUG-029: por que termino el ultimo turno (ver getStopReason)
 
     llama_batch g_batch;
+
+    // Tokens que ya estan procesados en el cache de KV (prompt + respuesta). Sirve para no
+    // volver a procesar el prefijo del prompt en cada turno.
+    std::vector<llama_token> _kvTokens;
+    std::vector<llama_token> _pendingPrompt;
+    bool _promptDecoded = false;
+    mtmd_context *_mtmd = nullptr;
+    std::vector<mtmd_bitmap *> _pendingBitmaps;
+    bool _mediaPrefilled = false; // el prompt (con imagenes) ya esta en el KV; solo falta muestrear
+    int _nextPlaceholder = -2;    // ids negativos unicos para las posiciones de imagen en _kvTokens
+    std::string _kvDir;       // vacia = cache en disco apagada
+    std::string _kvModelKey;
+    bool _kvSysOn = false;
+    bool _kvChatOn = false;
+    bool _kvIsEog(int tok) const;
+    void _kvColdStart();
+    bool _kvDirty = false;        // el KV tiene tokens de imagen que _kvTokens no refleja
+    bool _isGemma4 = false;   // plantilla <|turn> ... <turn|>: se formatea a mano
+    bool _enableThinking = false; // <|think|> al inicio del turno de sistema (Gemma 4)
+    float _windowHigh = 0.75f;
+    float _windowLow = 0.45f;
+
+    std::string _formatPrompt(const std::vector<llama_chat_message> &msgs);
+    std::vector<llama_token> _tokenizeMessages(const std::vector<llama_chat_message> &msgs);
+    void _startMediaCompletion(const std::string &query);
+    void _clearPendingBitmaps();
+    void _applyContextWindow();
+    void _buildSampler(const SamplerSettings &settings);
+    void _prepareDecode();
 
     static bool _isValidUtf8(const char *response);
 };

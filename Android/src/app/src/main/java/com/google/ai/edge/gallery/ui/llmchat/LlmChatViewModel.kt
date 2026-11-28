@@ -21,6 +21,8 @@ import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.ConfigKeys
+import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
+import com.google.ai.edge.gallery.data.characters.ContextWindowPlanner
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.data.local.ChatRepository
@@ -38,6 +40,7 @@ import com.google.ai.edge.gallery.ui.common.chat.ChatMessageType
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageWarning
 import com.google.ai.edge.gallery.ui.common.chat.ChatSide
 import com.google.ai.edge.gallery.ui.common.chat.ChatViewModel
+import com.google.ai.edge.gallery.ui.common.chat.SwipeState
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ExperimentalApi
@@ -52,6 +55,11 @@ import kotlinx.coroutines.sync.withLock
 
 private const val TAG = "AGLlmChatViewModel"
 
+// BUG-016: el primer mensaje se encola hasta que el motor esté listo, con un límite para no
+// dejar la interfaz esperando indefinidamente si la carga falló.
+private const val ESPERA_MODELO_MS = 180_000L
+private const val ERROR_CARGA_MODELO = "El modelo sigue cargando"
+
 @OptIn(ExperimentalApi::class)
 open class LlmChatViewModelBase() : ChatViewModel() {
 
@@ -59,6 +67,192 @@ open class LlmChatViewModelBase() : ChatViewModel() {
   override lateinit var chatRepository: ChatRepository
   private var currentConversationId: String? = null
   private val conversationMutex = Mutex()
+
+  // ---------------------------------------------------------------------------------------------
+  // Roleplay: regenerar, swipes y editar mensajes.
+  // ---------------------------------------------------------------------------------------------
+  override val supportsMessageTools: Boolean = true
+
+  private val _swipeState = MutableStateFlow(SwipeState())
+  override val swipeState: StateFlow<SwipeState> = _swipeState.asStateFlow()
+
+  // Para regenerar con los mismos ajustes del último envío.
+  private var lastAllowThinking = false
+
+  /** BUG-003/004: nombres de la escena abierta (vacío = chat 1 a 1 o normal). */
+  @Volatile private var currentSceneNames: List<String> = emptyList()
+
+  /** Última restricción de turno aplicada; se reutiliza al regenerar. */
+  @Volatile
+  private var lastTurnRestriction: com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? =
+    null
+
+  /**
+   * Restricción para regenerar: se reutiliza la del último turno (así el swipe no cambia de
+   * personaje). Si no hay ninguna en memoria (app reabierta), se deduce del primer `Nombre:` de la
+   * respuesta anterior.
+   */
+  private fun turnRestrictionFor(
+    clue: String? = null,
+  ): com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? {
+    val names = currentSceneNames
+    val derived =
+      clue?.takeIf { names.isNotEmpty() }?.let {
+        com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.restrictionForReply(it, names)
+      }
+    return lastTurnRestriction ?: derived
+  }
+
+  override fun refreshMessageTools() {
+    val convId = currentConversationId ?: return
+    val repo = chatRepository ?: return
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val info = repo.swipeInfo(convId)
+        _swipeState.value = if (info == null) SwipeState() else SwipeState(info.first, info.second)
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to read swipe info", e)
+      }
+    }
+  }
+
+  /** Índice del último mensaje de texto del usuario en pantalla, o -1. */
+  private fun lastUserTextIndex(model: Model): Int =
+    (uiState.value.messagesByModel[model.name] ?: emptyList()).indexOfLast {
+      it.type == ChatMessageType.TEXT && it.side == ChatSide.USER
+    }
+
+  override fun regenerateLast(model: Model, onError: (String) -> Unit) {
+    if (uiState.value.inProgress) return
+    val messages = uiState.value.messagesByModel[model.name] ?: return
+    val userIndex = lastUserTextIndex(model)
+    if (userIndex < 0) return // Solo hay saludo: no hay nada que regenerar.
+    val userMessage = messages[userIndex] as? ChatMessageText ?: return
+    // BUG-003: al regenerar se vuelve a aplicar la restricción del turno (nunca como mensaje).
+    val restriction =
+      turnRestrictionFor(
+        (messages.drop(userIndex + 1).lastOrNull { it is ChatMessageText && it.side == ChatSide.AGENT } as? ChatMessageText)
+          ?.content
+      )
+    // Quita todo lo que vino después del último mensaje del usuario (respuesta, pensamiento, errores).
+    while ((uiState.value.messagesByModel[model.name]?.size ?: 0) > userIndex + 1) {
+      removeLastMessage(model = model)
+    }
+    // El motor debe volver a verse "desde el principio del turno": se invalida su estado.
+    liteRtWindows.remove(model.name)
+    generateResponse(
+      model = model,
+      input = userMessage.content,
+      onError = onError,
+      allowThinking = lastAllowThinking,
+      persistInput = false,
+      regenerate = true,
+      promptSuffix = restriction?.instruction,
+      sceneRestriction = restriction,
+    )
+  }
+
+  override fun swipeLast(model: Model, delta: Int, onError: (String) -> Unit) {
+    if (uiState.value.inProgress) return
+    val state = _swipeState.value
+    // Pasar de la última versión hacia la derecha genera una nueva.
+    if (delta > 0 && state.index >= state.count - 1) {
+      regenerateLast(model, onError)
+      return
+    }
+    if (delta < 0 && state.index <= 0) return
+    val convId = currentConversationId ?: return
+    val repo = chatRepository ?: return
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val updated = conversationMutex.withLock { repo.moveSwipe(convId, delta) } ?: return@launch
+        val messages = uiState.value.messagesByModel[model.name] ?: return@launch
+        val index = messages.indexOfLast { it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM }
+        val old = messages.getOrNull(index) as? ChatMessageText ?: return@launch
+        if (old.side != ChatSide.AGENT) return@launch
+        replaceMessage(
+          model = model,
+          index = index,
+          message =
+            ChatMessageText(
+              content = updated.content,
+              side = ChatSide.AGENT,
+              latencyMs = updated.latencyMs.toFloat(),
+              accelerator = old.accelerator,
+              isMarkdown = old.isMarkdown,
+              hideSenderLabel = old.hideSenderLabel,
+            ),
+        )
+        liteRtWindows.remove(model.name)
+        refreshMessageTools()
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to swipe", e)
+      }
+    }
+  }
+
+  override fun editMessage(model: Model, message: ChatMessageText, newText: String) {
+    val text = newText.trim()
+    if (text.isEmpty() || text == message.content || uiState.value.inProgress) return
+    val messages = uiState.value.messagesByModel[model.name] ?: return
+    val index = messages.indexOf(message)
+    if (index < 0) return
+    // Posición entre los mensajes de usuario/asistente, para encontrar el mismo en la base de datos.
+    val position =
+      messages.subList(0, index).count { it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM }
+    replaceMessage(
+      model = model,
+      index = index,
+      message =
+        ChatMessageText(
+          content = text,
+          side = message.side,
+          latencyMs = message.latencyMs,
+          accelerator = message.accelerator,
+          isMarkdown = message.isMarkdown,
+          hideSenderLabel = message.hideSenderLabel,
+        ),
+    )
+    // Para GGUF el historial se rearma desde la pantalla en cada turno; LiteRT necesita invalidar.
+    liteRtWindows.remove(model.name)
+    val convId = currentConversationId ?: return
+    val repo = chatRepository ?: return
+    val role = if (message.side == ChatSide.USER) "user" else "assistant"
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        conversationMutex.withLock { repo.editMessageAt(convId, position, role, text) }
+        refreshMessageTools()
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to persist edited message", e)
+      }
+    }
+  }
+
+  // true si el chat abierto es de un personaje de Roleplay.
+  private var isRoleplayChat = false
+
+  // Lorebook del personaje (entradas activadas por palabras clave) y cuántas se permiten por mensaje.
+  @Volatile private var loreEntries: List<com.google.ai.edge.gallery.data.characters.LoreEntry> = emptyList()
+  private var loreMaxEntries = 3
+
+  fun setRoleplayChat(value: Boolean, characterId: String = "", loreMaxEntries: Int = 3) {
+    isRoleplayChat = value
+    com.google.ai.edge.gallery.tts.TtsManager.currentCharacterId = if (value) characterId else ""
+    this.loreMaxEntries = loreMaxEntries
+    loreEntries = emptyList()
+    if (value && characterId.isNotBlank()) {
+      viewModelScope.launch(Dispatchers.IO) {
+        try {
+          loreEntries =
+            com.google.ai.edge.gallery.data.characters.LorebookMatcher.parse(
+              chatRepository.getCharacterBookJson(characterId)
+            )
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed to load lorebook", e)
+        }
+      }
+    }
+  }
 
   private val _currentSystemPrompt = MutableStateFlow("")
   val currentSystemPrompt: StateFlow<String> = _currentSystemPrompt.asStateFlow()
@@ -79,6 +273,238 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       }
     }
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // Roleplay: prompt de sistema, historial y ventana deslizante de contexto.
+  // Box guardaba el prompt de sistema pero no se lo pasaba al modelo; aquí se aplica antes de cada
+  // respuesta. La ventana (como la de Layla) borra los mensajes más viejos cuando el contexto se
+  // llena, para que el chat pueda seguir "infinito".
+  // ---------------------------------------------------------------------------------------------
+
+  /** Estado de la ventana de LiteRT para un modelo: qué ve el motor ahora mismo. */
+  private class LiteRtWindowState(
+    val instance: Any,
+    val prompt: String,
+    val dropped: Int,
+    val previousSize: Int,
+  )
+
+  private val liteRtWindows = mutableMapOf<String, LiteRtWindowState>()
+
+  /** Contador de rendimiento del último turno ("" = aún sin datos), mostrado sobre la entrada. */
+  private val _perfLine = MutableStateFlow("")
+  val perfLine: StateFlow<String> = _perfLine.asStateFlow()
+
+  private fun formatPerf(
+    isGguf: Boolean,
+    ttftMs: Long,
+    chunks: Int,
+    genMs: Long,
+    totalMs: Long,
+  ): String {
+    val st = if (isGguf) com.google.ai.edge.gallery.data.characters.LastEnginePerf.stats else null
+    return if (st != null && st.generatedTokens > 0) {
+      "⚡ gen %.1f t/s · prompt %.0f t/s (%d tok) · %d tok · %.1f s"
+        .format(st.generationTokensPerSecond, st.promptTokensPerSecond, st.promptTokens, st.generatedTokens, totalMs / 1000f)
+    } else if (chunks > 0 && genMs > 0) {
+      "⚡ ~%.1f frag/s · 1er token %.1f s · %.1f s".format(chunks * 1000f / genMs, ttftMs / 1000f, totalMs / 1000f)
+    } else ""
+  }
+
+  /** GGUF: cuántos mensajes (tras el saludo) ya salieron de la ventana de la app, y el tamaño visto. */
+  private class GgufWindowState(val dropped: Int, val previousSize: Int)
+
+  private val ggufWindows = mutableMapOf<String, GgufWindowState>()
+
+  /** Resumen de lo ya borrado de la ventana (memoria larga), para el panel "Información del chat". */
+  @Volatile var lastMemorySummary: String = ""
+    private set
+
+  private fun summaryBudget(maxTokens: Int) = (maxTokens * 0.12f).toInt().coerceIn(0, 600)
+
+  private fun buildSummary(previous: List<ChatMessageText>, keep: Int, dropped: Int, maxTokens: Int): String {
+    if (dropped <= 0) return ""
+    val gone = previous.drop(keep).take(dropped).map { (it.side == ChatSide.USER) to it.content }
+    return com.google.ai.edge.gallery.data.characters.MemorySummarizer.summarize(gone, summaryBudget(maxTokens))
+  }
+
+  /** Uso real del contexto (lo que el motor ve ahora), para el indicador de la pantalla. */
+  fun contextUsage(model: Model): com.google.ai.edge.gallery.data.characters.ContextUsage {
+    val texts =
+      (uiState.value.messagesByModel[model.name] ?: emptyList())
+        .filter { it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM }
+        .filterIsInstance<ChatMessageText>()
+    val keep = if (texts.firstOrNull()?.side == ChatSide.AGENT) 1 else 0
+    val maxTokens =
+      model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+    return com.google.ai.edge.gallery.data.characters.ContextUsage.compute(
+      promptText = _currentSystemPrompt.value,
+      texts = texts.map { it.content },
+      keep = keep,
+      dropped = liteRtWindows[model.name]?.dropped ?: ggufWindows[model.name]?.dropped ?: 0,
+      maxTokens = maxTokens,
+    )
+  }
+
+  private fun allTexts(model: Model): List<ChatMessageText> =
+    (uiState.value.messagesByModel[model.name] ?: emptyList())
+      .filter { it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM }
+      .filterIsInstance<ChatMessageText>()
+
+  /**
+   * BUG-033: mensajes del usuario guardados solo como contexto (sin respuesta) y todavía sin enviar
+   * al motor: los USER consecutivos del final de la conversación.
+   */
+  private fun trailingUserTexts(model: Model): List<ChatMessageText> =
+    allTexts(model).takeLastWhile { it.side == ChatSide.USER }
+
+  /**
+   * Mensajes de texto anteriores al que se envía ahora. Normalmente se quita el último mensaje del
+   * usuario (es el que se envía); si el turno va sin texto (Aleatorio / hablante forzado), se quitan
+   * los [contextTail] mensajes de contexto, que viajan dentro del propio turno.
+   */
+  private fun previousTexts(model: Model, contextTail: Int = 0): List<ChatMessageText> {
+    val texts = allTexts(model)
+    if (contextTail > 0) return texts.dropLast(contextTail)
+    return if (texts.lastOrNull()?.side == ChatSide.USER) texts.dropLast(1) else texts
+  }
+
+  /** BUG-033: guarda un mensaje del usuario como contexto de la escena; el modelo no responde. */
+  fun saveContextMessage(model: Model, content: String) {
+    persistUserMessage(model, content)
+  }
+
+  private fun applySystemPromptIfNeeded(model: Model, input: String, contextTail: Int = 0) {
+    val helper = model.runtimeHelper
+    val basePrompt = _currentSystemPrompt.value
+    try {
+      val previous = previousTexts(model, contextTail)
+      // Lorebook: las entradas cuyas palabras clave aparecen en las últimas charlas o en el
+      // mensaje nuevo se añaden al prompt de este turno (solo en chats de personaje).
+      val prompt =
+        if (isRoleplayChat && loreEntries.isNotEmpty()) {
+          com.google.ai.edge.gallery.data.characters.LorebookMatcher.applyToPrompt(
+            prompt = basePrompt,
+            entries = loreEntries,
+            scanTexts = previous.takeLast(3).map { it.content } + input,
+            maxEntries = loreMaxEntries,
+          )
+        } else basePrompt
+
+      // GGUF (llama.cpp): el historial nativo se deja igual al de la pantalla; la ventana
+      // deslizante y la caché de prefijo trabajan dentro del motor nativo.
+      if (helper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper) {
+        // Memoria larga: la app decide qué mensajes salen de la ventana y los resume en el prompt.
+        val ctx =
+          helper.contextSizeOf(model)
+            ?: model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+        val gKeep = if (previous.firstOrNull()?.side == ChatSide.AGENT) 1 else 0
+        val st = ggufWindows[model.name]
+        var gDropped = if (st != null && previous.size >= st.previousSize) st.dropped else 0
+        val reserve = if (gDropped > 0) summaryBudget(ctx) else 0
+        fun plan(extraReserve: Int): Int =
+          ContextWindowPlanner.planDrop(
+            systemTokens = ContextWindowPlanner.estimateTokens(prompt) + extraReserve,
+            history = (previous.take(gKeep) + previous.drop(gKeep + gDropped)).map { it.content },
+            inputTokens = ContextWindowPlanner.estimateTokens(input),
+            keep = gKeep,
+            maxTokens = ctx,
+          )
+        var extra = plan(reserve)
+        if (extra > 0 && reserve == 0) extra = plan(summaryBudget(ctx))
+        gDropped += extra
+        ggufWindows[model.name] = GgufWindowState(gDropped, previous.size)
+        val summary = buildSummary(previous, gKeep, gDropped, ctx)
+        lastMemorySummary = summary
+        val window = previous.take(gKeep) + previous.drop(gKeep + gDropped)
+        val history =
+          window.map { (if (it.side == ChatSide.USER) "user" else "assistant") to it.content }
+        // El muestreo de Roleplay solo vale en chats de personaje; los normales usan el del modelo.
+        if (isRoleplayChat) helper.refreshSampler(model) else helper.resetSampler(model)
+        helper.seedConversation(
+          model,
+          com.google.ai.edge.gallery.data.characters.MemorySummarizer.withSummary(prompt, summary),
+          history,
+        )
+        return
+      }
+
+      // LiteRT-LM: la conversación vive dentro del motor y no se puede recortar, así que cuando
+      // se llena se reinicia con el prompt del personaje + los mensajes más recientes.
+      if (helper !is LlmChatModelHelper) return
+      val instance = model.instance ?: return
+      val maxTokens =
+        model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+
+      val previousState = liteRtWindows[model.name]
+      // Está sincronizado si es el mismo motor y prompt y el motor vio justo el turno anterior.
+      val inSync =
+        previousState != null &&
+          previousState.instance === instance &&
+          previousState.prompt == prompt &&
+          previous.size == previousState.previousSize + 2
+      val alreadyDropped = if (inSync) previousState!!.dropped else 0
+
+      // El saludo del personaje (primer mensaje del asistente) nunca se borra.
+      val keep = if (previous.firstOrNull()?.side == ChatSide.AGENT) 1 else 0
+      val visible = previous.take(keep) + previous.drop(keep + alreadyDropped)
+      val extraDrop =
+        ContextWindowPlanner.planDrop(
+          systemTokens =
+            ContextWindowPlanner.estimateTokens(prompt) +
+              (if (alreadyDropped > 0) summaryBudget(maxTokens) else 0),
+          history = visible.map { it.content },
+          inputTokens = ContextWindowPlanner.estimateTokens(input),
+          keep = keep,
+          maxTokens = maxTokens,
+        )
+      val dropped = alreadyDropped + extraDrop
+      val summary = buildSummary(previous, keep, dropped, maxTokens)
+      lastMemorySummary = summary
+      // I-6: si el turno anterior se detuvo a mano, la conversación de LiteRT quedó inservible
+      // (devolvía vacíos en ~0 ms). Se recrea siempre, aunque parezca "en sincronía" con el motor.
+      val cancelled = helper.consumeCancelled(model)
+      if (cancelled) {
+        Log.i(TAG, "Conversación de '${model.name}' cancelada: se recrea con el historial")
+      }
+      val needsReset =
+        cancelled || extraDrop > 0 || (!inSync && (prompt.isNotBlank() || previous.isNotEmpty()))
+
+      if (needsReset) {
+        val window = previous.take(keep) + previous.drop(keep + dropped)
+        helper.resetConversationWithHistory(
+          model = model,
+          supportImage = model.llmSupportImage,
+          supportAudio = model.llmSupportAudio,
+          systemInstruction =
+            com.google.ai.edge.gallery.data.characters.MemorySummarizer.withSummary(prompt, summary)
+              .let { if (it.isBlank()) null else Contents.of(it) },
+          history = window.map { (if (it.side == ChatSide.USER) "user" else "assistant") to it.content },
+        )
+        if (extraDrop > 0) {
+          Log.d(TAG, "Context window: dropped $extraDrop old messages (total dropped $dropped)")
+        }
+      }
+      liteRtWindows[model.name] =
+        LiteRtWindowState(
+          instance = instance,
+          prompt = prompt,
+          dropped = dropped,
+          previousSize = previous.size,
+        )
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to prepare the conversation", e)
+    }
+  }
+
+  suspend fun sceneMemberNames(conversationId: String): List<String> {
+    val names = chatRepository.sceneMemberNames(conversationId)
+    currentSceneNames = names
+    return names
+  }
+
+  /** Opciones de la escena abierta (narrador, persona, respuesta al usuario); null si no es una escena. */
+  suspend fun sceneOptions(conversationId: String) = chatRepository.sceneOptions(conversationId)
 
   suspend fun getConversationById(conversationId: String) =
     chatRepository.getConversationById(conversationId)
@@ -170,7 +596,12 @@ open class LlmChatViewModelBase() : ChatViewModel() {
   /**
    * Box: Persist an assistant response to the encrypted database.
    */
-  private fun persistAssistantMessage(model: Model, content: String, latencyMs: Long = 0) {
+  private fun persistAssistantMessage(
+    model: Model,
+    content: String,
+    latencyMs: Long = 0,
+    asSwipe: Boolean = false,
+  ) {
     val repo = chatRepository ?: return
     Log.d(TAG, "Attempting to persist assistant message for model: ${model.name}")
     viewModelScope.launch(Dispatchers.IO) {
@@ -183,6 +614,14 @@ open class LlmChatViewModelBase() : ChatViewModel() {
             return@withLock
           }
           
+          if (asSwipe) {
+            // Regeneración: la respuesta nueva es otra versión de la última respuesta guardada.
+            if (repo.addSwipe(convId, content, latencyMs) != null) {
+              refreshMessageTools()
+              return@withLock
+            }
+          }
+
           try {
             repo.saveMessage(
               conversationId = convId,
@@ -190,6 +629,9 @@ open class LlmChatViewModelBase() : ChatViewModel() {
               content = content,
               latencyMs = latencyMs,
             )
+            refreshMessageTools()
+            // Memoria automática (sin modelo, instantánea): solo chats con personaje.
+            if (isRoleplayChat) runCatching { repo.captureAutoMemory(convId) }
             Log.d(TAG, "Successfully persisted assistant message to conversation: $convId")
           } catch (fkException: android.database.sqlite.SQLiteConstraintException) {
             Log.w(TAG, "Foreign key constraint failed for assistant message, conversation might not be committed yet. Retrying...", fkException)
@@ -219,25 +661,49 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     onDone: () -> Unit = {},
     onError: (String) -> Unit,
     allowThinking: Boolean = false,
+    // Regenerar: el mensaje del usuario ya existe (no se guarda otra vez) y la respuesta es un swipe.
+    persistInput: Boolean = true,
+    regenerate: Boolean = false,
+    // BUG-003: instrucción oculta del turno de escena. Se concatena al prompt del motor y no crea
+    // mensaje ni se persiste. Si [input] viene vacío (botón "Aleatorio"), es lo único que se envía.
+    promptSuffix: String? = null,
+    // BUG-004: filtro defensivo de hablantes no permitidos en la respuesta de una escena.
+    sceneRestriction: com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? = null,
+    // BUG-016: si tras unos segundos el motor no está listo, se pide una (re)inicialización al
+    // llamador (la pantalla, que tiene contexto y ModelManagerViewModel). Sin esto, un estado
+    // "INITIALIZED" obsoleto o un motor liberado hacían esperar 180 s y fallar el envío.
+    onModelStuck: (() -> Unit)? = null,
+    // App de visión: tope de tokens solo para este turno (por defecto 256, como Layla). En GGUF
+    // viaja como "max_response_tokens"; el motor lo restaura al terminar.
+    maxResponseTokens: Int? = null,
   ) {
+    // BUG-033: un turno sin texto (Aleatorio / hablante forzado) lleva dentro los mensajes que el
+    // usuario escribió como contexto y que el motor aún no ha visto.
+    val contextTail = if (input.isBlank() && !promptSuffix.isNullOrBlank()) trailingUserTexts(model) else emptyList()
+    val engineInput =
+      com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.engineInput(
+        input = input,
+        suffix = promptSuffix,
+        contextTail = contextTail.map { it.content },
+      )
+    // Se recuerda el turno para que regenerar/swipe mantenga el mismo hablante (BUG-004).
+    lastTurnRestriction = sceneRestriction
     val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
+    lastAllowThinking = allowThinking
+    // Si la voz sigue leyendo la respuesta anterior, se corta al enviar o regenerar.
+    com.google.ai.edge.gallery.tts.TtsManager.stop()
     viewModelScope.launch(Dispatchers.Default) {
       setInProgress(true)
       setPreparing(true)
 
       // Box: Persist user message to encrypted DB
-      if (input.isNotEmpty()) {
+      if (persistInput && input.isNotEmpty()) {
         persistUserMessage(model, input)
       }
 
-      // Loading.
+      // Loading. BUG-016: el mensaje queda encolado aquí; la espera al motor y el armado del
+      // prompt se hacen justo antes de inferir (ver más abajo).
       addMessage(model = model, message = ChatMessageLoading(accelerator = accelerator))
-
-      // Wait for instance to be initialized.
-      while (model.instance == null) {
-        delay(100)
-      }
-      delay(500)
 
       // Run inference.
       val audioClips: MutableList<ByteArray> = mutableListOf()
@@ -247,6 +713,30 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
       var firstRun = true
       val start = System.currentTimeMillis()
+      var perfFirstAt = 0L
+      var perfChunks = 0
+      _perfLine.value = "⏳ procesando…"
+      // Voz en vivo (opcional): habla frase a frase mientras el modelo sigue escribiendo.
+      val liveText = StringBuilder()
+      var liveTried = false
+      var liveOn = false
+      // BUG-004: texto crudo del motor para poder filtrar bloques de otros hablantes sobre el total.
+      val rawAssistant = StringBuilder()
+      val sceneFilter = sceneRestriction
+      var agentBubbleStarted = false
+      // BUG-044 (diagnóstico): LiteRT no pasa por LlamaCppEngine, así que se registra aquí. Lo que
+      // se guarda es lo que la app le da al motor (historial + mensaje); el formateo interno de
+      // LiteRT no se ve desde Kotlin.
+      val diagIsGguf = model.runtimeHelper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper
+      val diagPrompt =
+        if (!diagIsGguf && com.google.ai.edge.gallery.data.characters.DiagLog.isEnabled()) {
+          runCatching {
+            buildString {
+              previousTexts(model, contextTail.size).forEach { appendLine("<${it.side}> ${it.content}") }
+              appendLine("[MENSAJE ACTUAL]"); append(engineInput)
+            }
+          }.getOrDefault(engineInput)
+        } else ""
 
       try {
         val resultListener: (String, Boolean, String?) -> Unit =
@@ -254,6 +744,52 @@ open class LlmChatViewModelBase() : ChatViewModel() {
             if (partialResult.startsWith("<ctrl")) {
               // Do nothing. Ignore control tokens.
             } else {
+              if (partialResult.isNotEmpty()) {
+                if (perfFirstAt == 0L) perfFirstAt = System.currentTimeMillis()
+                perfChunks++
+              }
+              if (isRoleplayChat && partialResult.isNotEmpty() && partialThinkingResult.isNullOrEmpty()) {
+                if (!liveTried) {
+                  liveTried = true
+                  liveOn = com.google.ai.edge.gallery.tts.TtsManager.liveBegin()
+                }
+                if (liveOn) {
+                  liveText.append(partialResult)
+                  val speak =
+                    if (sceneFilter != null)
+                      com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.filterReply(
+                        liveText.toString(),
+                        sceneFilter,
+                      )
+                    else liveText.toString()
+                  com.google.ai.edge.gallery.tts.TtsManager.liveFeed(speak)
+                }
+              }
+              if (done) {
+                val now = System.currentTimeMillis()
+                if (!diagIsGguf) {
+                  val ttft = if (perfFirstAt > 0) perfFirstAt - start else -1L
+                  com.google.ai.edge.gallery.data.characters.DiagLog.record(
+                    com.google.ai.edge.gallery.data.characters.DiagRecord(
+                      engine = "LiteRT", model = model.name, params = "acelerador=$accelerator",
+                      promptLabel = "SOLO PIEZAS: historial + mensaje; LiteRT arma la plantilla por dentro",
+                      prompt = diagPrompt, response = rawAssistant.toString() + partialResult,
+                      stopReason = "terminó la respuesta (LiteRT no informa el motivo)",
+                      generatedTokens = perfChunks, generationSeconds = if (perfFirstAt > 0) (now - perfFirstAt) / 1000f else -1f,
+                      firstTokenMs = ttft, totalMs = now - start,
+                      extra = "los tokens son trozos de texto del streaming, no tokens exactos",
+                    ),
+                  )
+                }
+                _perfLine.value =
+                  formatPerf(
+                    isGguf = model.runtimeHelper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper,
+                    ttftMs = if (perfFirstAt > 0) perfFirstAt - start else 0,
+                    chunks = perfChunks,
+                    genMs = if (perfFirstAt > 0) now - perfFirstAt else 0,
+                    totalMs = now - start,
+                  )
+              }
               // Remove the last message if it is a "loading" message.
               // This will only be done once.
               val lastMessage = getLastMessage(model = model)
@@ -305,10 +841,14 @@ open class LlmChatViewModelBase() : ChatViewModel() {
                   }
                 }
                 currentLastMessage = getLastMessage(model = model)
+                // BUG-032: sin mensaje del usuario de por medio (Aleatorio, hablante forzado) la
+                // última burbuja puede ser la respuesta anterior: cada turno abre su propia burbuja.
                 if (
-                  currentLastMessage?.type != ChatMessageType.TEXT ||
+                  !agentBubbleStarted ||
+                    currentLastMessage?.type != ChatMessageType.TEXT ||
                     currentLastMessage.side != ChatSide.AGENT
                 ) {
+                  agentBubbleStarted = true
                   // Add an empty message that will receive streaming results.
                   addMessage(
                     model = model,
@@ -326,7 +866,23 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
                 // Incrementally update the streamed partial results.
                 val latencyMs: Long = if (done) System.currentTimeMillis() - start else -1
-                if (partialResult.isNotEmpty() || wasLoading || done) {
+                if (sceneFilter != null) {
+                  // BUG-004: se guarda el texto crudo y se pinta el filtrado. Como el bloque de un
+                  // hablante no permitido desaparece, el mensaje visible puede encoger: se reemplaza
+                  // su contenido en vez de concatenar.
+                  if (partialResult.isNotEmpty()) rawAssistant.append(partialResult)
+                  if (partialResult.isNotEmpty() || wasLoading || done) {
+                    setLastTextMessageContent(
+                      model = model,
+                      content =
+                        com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.filterReply(
+                          rawAssistant.toString(),
+                          sceneFilter,
+                        ),
+                      latencyMs = latencyMs.toFloat(),
+                    )
+                  }
+                } else if (partialResult.isNotEmpty() || wasLoading || done) {
                   updateLastTextMessageContentIncrementally(
                     model = model,
                     partialContent = partialResult,
@@ -365,8 +921,17 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
                 // Box: Persist assistant response to encrypted DB
                 val assistantMsg = getLastMessageWithTypeAndSide(model, ChatMessageType.TEXT, ChatSide.AGENT)
+                if (isRoleplayChat && assistantMsg is ChatMessageText && assistantMsg.content.isNotEmpty()) {
+                  if (liveOn) com.google.ai.edge.gallery.tts.TtsManager.liveEnd(assistantMsg.content)
+                  else com.google.ai.edge.gallery.tts.TtsManager.autoSpeak(assistantMsg.content)
+                }
                 if (assistantMsg is ChatMessageText && assistantMsg.content.isNotEmpty()) {
-                  persistAssistantMessage(model, assistantMsg.content, assistantMsg.latencyMs.toLong())
+                  persistAssistantMessage(
+                    model,
+                    assistantMsg.content,
+                    assistantMsg.latencyMs.toLong(),
+                    asSwipe = regenerate,
+                  )
                 }
               }
             }
@@ -375,23 +940,74 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         val cleanUpListener: () -> Unit = {
           setInProgress(false)
           setPreparing(false)
+          clearWaitingPerfLine()
         }
 
         val errorListener: (String) -> Unit = { message ->
           Log.e(TAG, "Error occurred while running inference")
+          com.google.ai.edge.gallery.tts.TtsManager.liveCancel()
           setInProgress(false)
           setPreparing(false)
+          clearWaitingPerfLine()
           onError(message)
         }
 
         val enableThinking =
           allowThinking &&
             model.getBooleanConfigValue(key = ConfigKeys.ENABLE_THINKING, defaultValue = false)
-        val extraContext = if (enableThinking) mapOf("enable_thinking" to "true") else null
+        val extraContext =
+          buildMap {
+            if (enableThinking) put("enable_thinking", "true")
+            // El tope auxiliar solo lo entiende el motor GGUF; LiteRT gestiona su propio límite
+            // (y su visión integrada) con sus opciones, así que no se le manda esta clave.
+            if (maxResponseTokens != null &&
+              maxResponseTokens > 0 &&
+              model.runtimeHelper is com.google.ai.edge.gallery.runtime.LlamaCppModelHelper
+            ) {
+              put("max_response_tokens", "$maxResponseTokens")
+            }
+          }.ifEmpty { null }
+
+        // BUG-016 (vía A): no inferir mientras el modelo recién seleccionado se está cargando.
+        // `model.instance` puede apuntar todavía al motor anterior durante el cambio, así que se
+        // pregunta al runtime (isModelReady) en vez de mirar solo esa referencia.
+        _perfLine.value = "⏳ cargando modelo…"
+        val esperaInicio = System.currentTimeMillis()
+        var pedidosDeCarga = 0
+        var ultimoAviso = 0L
+        while (!model.runtimeHelper.isModelReady(model)) {
+          val transcurrido = System.currentTimeMillis() - esperaInicio
+          if (transcurrido > ESPERA_MODELO_MS) {
+            Log.e(TAG, "Timeout esperando a que cargue ${model.name}")
+            errorListener("$ERROR_CARGA_MODELO (${model.name}). Vuelve a enviar el mensaje en unos segundos.")
+            return@launch
+          }
+          // BUG-016: a los 15 s, y como máximo 3 veces, pedir que se (re)inicie el modelo. Si ya
+          // hay una carga en curso, initializeModel la ignora; si el estado era obsoleto, la relanza.
+          if (onModelStuck != null && transcurrido >= 15_000 && pedidosDeCarga < 3) {
+            val tramo = transcurrido / 15_000
+            if (tramo > ultimoAviso) {
+              ultimoAviso = tramo
+              pedidosDeCarga++
+              Log.w(
+                TAG,
+                "El modelo ${model.name} no está listo tras ${transcurrido / 1000} s " +
+                  "(instancia=${model.instance != null}, inicializando=${model.initializing}); se pide reinicializar",
+              )
+              onModelStuck()
+            }
+          }
+          delay(100)
+        }
+        // I-6: terminada la espera, la línea de estado vuelve a "procesando…"; antes se quedaba en
+        // "⏳ cargando modelo…" durante toda la generación (no se actualiza hasta el `done`).
+        _perfLine.value = "⏳ procesando…"
+        delay(500)
+        applySystemPromptIfNeeded(model, engineInput, contextTail.size)
 
         model.runtimeHelper.runInference(
           model = model,
-          input = input,
+          input = engineInput,
           images = images,
           audioClips = audioClips,
           resultListener = resultListener,
@@ -404,6 +1020,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         Log.e(TAG, "Error occurred while running inference", e)
         setInProgress(false)
         setPreparing(false)
+        clearWaitingPerfLine()
         onError(e.message ?: "")
       }
     }
@@ -414,9 +1031,19 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     if (getLastMessage(model = model) is ChatMessageLoading) {
       removeLastMessage(model = model)
     }
+    // I-6: al cancelar se limpian también el indicador de preparación y el "⏳ cargando/procesando…";
+    // antes quedaban pegados y el chat parecía seguir ocupado ("cargando modelo…").
     setInProgress(false)
+    setPreparing(false)
+    clearWaitingPerfLine()
+    com.google.ai.edge.gallery.tts.TtsManager.liveCancel()
     model.runtimeHelper.stopResponse(model)
     Log.d(TAG, "Done stopping response")
+  }
+
+  /** I-6: quita el "⏳ …" de estado si sigue en pantalla; no toca las métricas reales del turno. */
+  private fun clearWaitingPerfLine() {
+    if (_perfLine.value.startsWith("⏳")) _perfLine.value = ""
   }
 
   fun resetSession(
@@ -462,20 +1089,21 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     allowThinking: Boolean = false,
   ) {
     viewModelScope.launch(Dispatchers.Default) {
-      // Wait for model to be initialized.
-      while (model.instance == null) {
-        delay(100)
-      }
-
+      // BUG-016: generateResponse ya espera a que el motor esté listo; este bucle solo miraba
+      // model.instance y podía seguir con una instancia obsoleta durante un cambio de modelo.
       // Clone the clicked message and add it.
       addMessage(model = model, message = message.clone())
 
+      // BUG-003/004: se reaplica la restricción de escena del último turno, sin crear mensajes.
+      val restriction = turnRestrictionFor()
       // Run inference.
       generateResponse(
         model = model,
         input = message.content,
         onError = onError,
         allowThinking = allowThinking,
+        promptSuffix = restriction?.instruction,
+        sceneRestriction = restriction,
       )
     }
   }
@@ -491,9 +1119,19 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     if (getLastMessage(model = model) is ChatMessageLoading) {
       removeLastMessage(model = model)
     }
+    // I-6: LiteRT puede entregar un mensaje sin contenido antes de cerrar el turno; esa burbuja
+    // vacía no debe quedarse en el chat cuando el turno acaba en error.
+    val lastAfterLoading = getLastMessage(model = model)
+    if (lastAfterLoading is ChatMessageText && lastAfterLoading.content.isBlank()) {
+      removeLastMessage(model = model)
+    }
 
     // Show error message.
     addMessage(model = model, message = ChatMessageError(content = errorMessage))
+
+    // BUG-016: si el error es solo "todavía está cargando", limpiar y reinicializar aquí empeoraría
+    // la carrera (el modelo ya se está cargando). Se muestra el aviso y se deja la carga en curso.
+    if (errorMessage.startsWith(ERROR_CARGA_MODELO)) return
 
     // Clean up and re-initialize.
     viewModelScope.launch(Dispatchers.Default) {

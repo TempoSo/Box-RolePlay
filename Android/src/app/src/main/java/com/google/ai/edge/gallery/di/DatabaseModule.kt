@@ -2,8 +2,11 @@ package com.google.ai.edge.gallery.di
 
 import android.content.Context
 import com.google.ai.edge.gallery.data.local.BoxChatDatabase
+import com.google.ai.edge.gallery.data.local.dao.CharacterDao
 import com.google.ai.edge.gallery.data.local.dao.ConversationDao
 import com.google.ai.edge.gallery.data.local.dao.MessageDao
+import com.google.ai.edge.gallery.data.local.dao.MemoryDao
+import com.google.ai.edge.gallery.data.local.dao.PersonaDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -26,4 +29,14 @@ object DatabaseModule {
 
     @Provides
     fun provideMessageDao(db: BoxChatDatabase): MessageDao = db.messageDao()
+
+    @Provides
+    fun provideCharacterDao(db: BoxChatDatabase): CharacterDao = db.characterDao()
+
+    @Provides
+    @Singleton
+    fun providePersonaDao(db: BoxChatDatabase): PersonaDao = db.personaDao()
+
+    @Provides
+    fun provideMemoryDao(db: BoxChatDatabase): MemoryDao = db.memoryDao()
 }

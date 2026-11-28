@@ -23,10 +23,8 @@ import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.AppLifecycleProvider
-import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.common.ProjectConfig
-import com.google.ai.edge.gallery.common.getJsonResponse
 import com.google.ai.edge.gallery.common.isAICoreSupported
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.data.Accelerator
@@ -56,6 +54,7 @@ import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.proto.ImportedModel
 import com.google.ai.edge.gallery.proto.Theme
 import com.google.ai.edge.gallery.runtime.aicore.AICoreModelHelper
+import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -66,6 +65,8 @@ import java.net.URL
 import javax.inject.Inject
 import kotlin.collections.sortedWith
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -82,6 +83,9 @@ private const val MODEL_ALLOWLIST_FILENAME = "model_allowlist.json"
 private const val MODEL_ALLOWLIST_TEST_FILENAME = "model_allowlist_test.json"
 private const val ALLOWLIST_BASE_URL =
   "https://raw.githubusercontent.com/google-ai-edge/gallery/refs/heads/main/model_allowlists"
+
+/** Tiempo en segundo plano tras el cual se libera el modelo (10 min). */
+private const val IDLE_UNLOAD_MS = 10L * 60 * 1000
 
 private const val TEST_MODEL_ALLOW_LIST = ""
 
@@ -396,33 +400,55 @@ constructor(
     onDone: () -> Unit = {},
   ) {
     viewModelScope.launch(Dispatchers.Default) {
-      // Skip if initialized already.
+      // BUG-016: el estado puede decir INITIALIZED aunque el motor ya no esté cargado (p. ej. tras
+      // una limpieza o un cambio de modelo). Hasta ahora se saltaba la carga y el chat esperaba
+      // 180 s para acabar en "El modelo sigue cargando". Se comprueba también el runtime.
+      val status = uiState.value.modelInitializationStatus[model.name]?.status
       if (
         !force &&
-          uiState.value.modelInitializationStatus[model.name]?.status ==
-            ModelInitializationStatusType.INITIALIZED
+          status == ModelInitializationStatusType.INITIALIZED &&
+          model.runtimeHelper.isModelReady(model)
       ) {
         Log.d(TAG, "Model '${model.name}' has been initialized. Skipping.")
         return@launch
       }
-
-      // Skip if initialization is in progress.
-      if (model.initializing) {
-        model.cleanUpAfterInit = false
-        Log.d(TAG, "Model '${model.name}' is being initialized. Skipping.")
-        return@launch
+      if (!force && status == ModelInitializationStatusType.INITIALIZED) {
+        Log.w(TAG, "Model '${model.name}' figura como INITIALIZED pero el motor no está listo: se recarga")
       }
 
-      // Clean up.
-      cleanupModel(context = context, task = task, model = model)
+      // BUG-017: comprobar «ya se está cargando» y marcar «cargando» debe ser UN solo paso. Antes, dos
+      // llamadas casi simultáneas (la pantalla y la selección del modelo) pasaban las dos la
+      // comprobación y el modelo se cargaba dos veces a la vez (visto en el log: «[GGUF] cargando»
+      // duplicado con la misma hora). Ahora la segunda llamada espera y ve que ya se está cargando.
+      synchronized(model) {
+        // Skip if initialization is in progress.
+        if (model.initializing) {
+          model.cleanUpAfterInit = false
+          Log.d(TAG, "Model '${model.name}' is being initialized. Skipping.")
+          return@launch
+        }
 
-      // Start initialization.
-      Log.d(TAG, "Initializing model '${model.name}'...")
-      model.initializing = true
-      updateModelInitializationStatus(
-        model = model,
-        status = ModelInitializationStatusType.INITIALIZING,
-      )
+        // Libera cualquier OTRO modelo de la tarea que siga cargado: dos motores grandes a la vez
+        // (el viejo cerrándose mientras el nuevo reserva su caché, p. ej. al subir el contexto de
+        // 2048 a 8192) pueden agotar memoria o chocar dentro del código nativo.
+        for (other in task.models) {
+          if (other.name != model.name && other.instance != null) {
+            Log.d(TAG, "Releasing '${other.name}' before initializing '${model.name}'")
+            cleanupModel(context = context, task = task, model = other)
+          }
+        }
+
+        // Clean up.
+        cleanupModel(context = context, task = task, model = model)
+
+        // Start initialization.
+        Log.d(TAG, "Initializing model '${model.name}'...")
+        model.initializing = true
+        updateModelInitializationStatus(
+          model = model,
+          status = ModelInitializationStatusType.INITIALIZING,
+        )
+      }
 
       val onDoneFn: (error: String) -> Unit = { error ->
         model.initializing = false
@@ -623,10 +649,8 @@ constructor(
       )
     for (task in getTasksByIds(ids = setOfTasks)) {
       // Remove duplicated imported model if existed.
-      val modelIndex = task.models.indexOfFirst { info.fileName == it.name && it.imported }
-      if (modelIndex >= 0) {
+      if (task.models.removeAll { info.fileName == it.name && it.imported }) {
         Log.d(TAG, "duplicated imported model found in task. Removing it first")
-        task.models.removeAt(modelIndex)
       }
       if (
         (task.id == BuiltInTaskId.LLM_ASK_IMAGE && model.llmSupportImage) ||
@@ -666,10 +690,8 @@ constructor(
 
     // Add to data store.
     val importedModels = dataStoreRepository.readImportedModels().toMutableList()
-    val importedModelIndex = importedModels.indexOfFirst { info.fileName == it.fileName }
-    if (importedModelIndex >= 0) {
+    if (importedModels.removeAll { info.fileName == it.fileName }) {
       Log.d(TAG, "duplicated imported model found in data store. Removing it first")
-      importedModels.removeAt(importedModelIndex)
     }
     importedModels.add(info)
     dataStoreRepository.saveImportedModels(importedModels = importedModels)
@@ -1083,8 +1105,30 @@ constructor(
     }
   }
 
+  private var idleUnloadJob: Job? = null
+
+  /**
+   * Ligereza: si la app pasa un rato en segundo plano (sin estar generando), se libera el modelo
+   * para devolver la RAM al sistema. Al volver al chat se recarga solo (ver ChatView).
+   */
   fun setAppInForeground(foreground: Boolean) {
     lifecycleProvider.isAppInForeground = foreground
+    idleUnloadJob?.cancel()
+    idleUnloadJob = null
+    if (foreground) return
+    idleUnloadJob =
+      viewModelScope.launch(Dispatchers.Default) {
+        delay(IDLE_UNLOAD_MS)
+        if (lifecycleProvider.isAppInForeground) return@launch
+        for (task in uiState.value.tasks) {
+          for (model in task.models) {
+            val inst = model.instance ?: continue
+            if (inst is com.google.ai.edge.gallery.engine.LlamaCppEngine && inst.isGenerating) continue
+            Log.d(TAG, "Liberando '${model.name}' por inactividad en segundo plano")
+            cleanupModel(context = context, task = task, model = model)
+          }
+        }
+      }
   }
 
   private fun saveModelAllowlistToDisk(modelAllowlistContent: String) {
@@ -1174,7 +1218,8 @@ constructor(
     }
 
     // Load imported models.
-    for (importedModel in dataStoreRepository.readImportedModels()) {
+    // distinctBy: evita entradas repetidas si el mismo archivo se importó varias veces.
+    for (importedModel in dataStoreRepository.readImportedModels().distinctBy { it.fileName }) {
       Log.d(TAG, "stored imported model: $importedModel")
 
       // Create model.

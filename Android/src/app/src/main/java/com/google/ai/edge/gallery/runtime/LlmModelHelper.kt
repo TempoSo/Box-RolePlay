@@ -80,12 +80,38 @@ interface LlmModelHelper {
   )
 
   /**
+   * Prepara el motor para una inferencia auxiliar de una sola tirada (tareas internas como la
+   * absorción de memoria), dejándola aislada del chat actual. Por defecto delega en
+   * [resetConversation]; cada runtime puede dar una vía más ligera (BUG-002: en llama.cpp
+   * resetConversation cierra y reabre los pesos, que es lento y deja una ventana de carrera).
+   */
+  fun prepareForAuxInference(model: Model) {
+    resetConversation(model = model)
+  }
+
+  /**
+   * BUG-002 (3.ª ronda): límite entre dos tandas consecutivas de absorción. Por defecto usa el
+   * mismo reset de [prepareForAuxInference]; cada runtime puede dar una vía aún más ligera
+   * (en llama.cpp Gemma 4 conserva la KV y solo limpia historial y sampler, para que la tanda
+   * siguiente reutilice el prefijo común del prompt archivista y no lo re-prefillee entero).
+   */
+  fun auxTandaBoundary(model: Model) {
+    prepareForAuxInference(model = model)
+  }
+
+  /**
    * Cleans up resources occupied by the model.
    *
    * @param model the model whose resources should be cleaned up.
    * @param onDone callback invoked when clean up completes.
    */
   fun cleanUp(model: Model, onDone: () -> Unit)
+
+  /**
+   * BUG-016: indica si el motor ya puede atender inferencias. Por defecto basta con que exista la
+   * instancia; llama.cpp comprueba además que su motor esté cargado y que sea el actual.
+   */
+  fun isModelReady(model: Model): Boolean = model.instance != null
 
   /**
    * Runs an inference pass on the specified model.

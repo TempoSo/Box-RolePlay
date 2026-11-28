@@ -66,16 +66,17 @@
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="36">
         <!--
-          android:configChanges="uiMode" tells the system don't destroy and
-          recreate the activity when UI mode changes (e.g. setting dark mode).
-          Instead, just recompose the view.
+          android:configChanges evita que el sistema destruya y recree la Activity con esos
+          cambios de configuración (rotación, tamaño de pantalla y modo de UI): sin esto, girar
+          el móvil recargaba el modelo entero y, si estaba generando, acababa en SIGSEGV
+          nativo (BUG-021). En su lugar la vista solo se recompone.
          -->
         <activity
             android:name="com.box.gallery.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.Gallery"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="uiMode"
+            android:configChanges="uiMode|orientation|screenSize"
             tools:ignore="DiscouragedApi">
             <!-- Security: FLAG_SECURE prevents screenshots/screen recording -->
             <meta-data android:name="android.activity.windowSecure" android:value="true" />

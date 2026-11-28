@@ -15,7 +15,6 @@
  */
 package com.google.ai.edge.gallery.customtasks.mobileactions
 
-import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics

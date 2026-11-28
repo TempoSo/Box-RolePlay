@@ -179,6 +179,10 @@ fun MessageInputText(
   showStopButtonWhenInProgress: Boolean = false,
   onImageLimitExceeded: () -> Unit = {},
   showDocumentPicker: Boolean = false,
+  allowEmptySend: Boolean = false,
+  // App de visión: permite enviar solo una imagen (sin texto). El texto del turno lo pone la
+  // pantalla con la instrucción de imagen configurada.
+  allowImageOnlySend: Boolean = false,
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -724,7 +728,11 @@ fun MessageInputText(
                     enabled =
                       !inProgress &&
                         !isResettingSession &&
-                        (curMessage.isNotEmpty() || pickedAudioClips.isNotEmpty() || pendingDocument != null),
+                        (allowEmptySend ||
+                          (allowImageOnlySend && pickedImages.isNotEmpty()) ||
+                          curMessage.isNotEmpty() ||
+                          pickedAudioClips.isNotEmpty() ||
+                          pendingDocument != null),
                     onClick = {
                       val baseMessage = curMessage.trim()
                       val doc = pendingDocument

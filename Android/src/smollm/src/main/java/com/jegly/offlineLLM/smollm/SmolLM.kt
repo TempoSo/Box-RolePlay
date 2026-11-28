@@ -1,7 +1,6 @@
 package com.jegly.offlineLLM.smollm
 
 import android.os.Build
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -30,12 +29,14 @@ class SmolLM {
 
             if (!isEmulated) {
                 if (supportsArm64V8a()) {
-                    if (isAtLeastArmV84 && hasSve && hasI8mm && hasFp16 && hasDotProd) {
+                    // i8mm/dotprod implican un nucleo moderno aunque /proc/cpuinfo no liste dcpop/uscat
+                    // (pasa en varios Dimensity/Snapdragon); antes caian a una libreria sin i8mm, mas lenta.
+                    if (hasSve && hasI8mm && hasFp16 && hasDotProd) {
                         System.loadLibrary("smollm_v8_4_fp16_dotprod_i8mm_sve")
+                    } else if (hasI8mm && hasFp16 && hasDotProd) {
+                        System.loadLibrary("smollm_v8_4_fp16_dotprod_i8mm")
                     } else if (isAtLeastArmV84 && hasSve && hasFp16 && hasDotProd) {
                         System.loadLibrary("smollm_v8_4_fp16_dotprod_sve")
-                    } else if (isAtLeastArmV84 && hasI8mm && hasFp16 && hasDotProd) {
-                        System.loadLibrary("smollm_v8_4_fp16_dotprod_i8mm")
                     } else if (isAtLeastArmV84 && hasFp16 && hasDotProd) {
                         System.loadLibrary("smollm_v8_4_fp16_dotprod")
                     } else if (isAtLeastArmV82 && hasFp16 && hasDotProd) {
@@ -62,10 +63,24 @@ class SmolLM {
             }
         }
 
+        /** Nucleos rapidos ("big"): los 8 hilos incluian los nucleos pequeños y frenaban todo. */
+        fun performanceCoreCount(): Int {
+            return try {
+                val freqs = (0 until Runtime.getRuntime().availableProcessors()).mapNotNull {
+                    File("/sys/devices/system/cpu/cpu$it/cpufreq/cpuinfo_max_freq")
+                        .takeIf { f -> f.exists() }?.readText()?.trim()?.toLongOrNull()
+                }
+                val max = freqs.maxOrNull() ?: return 4
+                freqs.count { it >= max * 0.8 }.coerceIn(2, 8)
+            } catch (e: Exception) {
+                4
+            }
+        }
+
         private fun supportsArm64V8a(): Boolean = Build.SUPPORTED_ABIS[0] == "arm64-v8a"
     }
 
-    private var nativePtr = 0L
+    @Volatile private var nativePtr = 0L
 
     data class InferenceParams(
         val minP: Float = 0.1f,
@@ -79,7 +94,40 @@ class SmolLM {
         val numThreads: Int = 4,
         val useMmap: Boolean = true,
         val useMlock: Boolean = false,
+        val engine: EngineOptions = EngineOptions(),
+        /** Proyector multimodal (mmproj .gguf) para imágenes; null = solo texto. */
+        val mmprojPath: String? = null,
     )
+
+    /**
+     * Ajustes de rendimiento del motor. Los indices de `kvType` son: 0 f32, 1 f16, 2 bf16, 3 q8_0,
+     * 4 q5_0, 5 q5_1, 6 q4_0, 7 q4_1, 8 iq4_nl. `flashAttn`: 0 auto, 1 apagado, 2 encendido.
+     * El orden de toIntArray debe coincidir con EngineOptions.h.
+     */
+    data class EngineOptions(
+        val nBatch: Int = 512,
+        val nUBatch: Int = 512,
+        val nThreadsBatch: Int = 0,
+        val flashAttn: Int = 0,
+        val kvTypeK: Int = 1,
+        val kvTypeV: Int = 1,
+        val repack: Boolean = true,
+        val maxResponse: Int = -1,
+    ) {
+        fun toIntArray(): IntArray =
+            intArrayOf(nBatch, nUBatch, nThreadsBatch, flashAttn, kvTypeK, kvTypeV, if (repack) 1 else 0, maxResponse)
+    }
+
+    /** Estadisticas del ultimo turno: tokens/segundos de prompt y de generacion. */
+    data class PerfStats(
+        val promptTokens: Int,
+        val promptSeconds: Float,
+        val generatedTokens: Int,
+        val generationSeconds: Float,
+    ) {
+        val promptTokensPerSecond: Float get() = if (promptSeconds > 0f) promptTokens / promptSeconds else 0f
+        val generationTokensPerSecond: Float get() = if (generationSeconds > 0f) generatedTokens / generationSeconds else 0f
+    }
 
     object DefaultParams {
         const val CONTEXT_SIZE: Long = 2048L
@@ -106,8 +154,26 @@ class SmolLM {
                 params.numThreads,
                 params.useMmap,
                 params.useMlock,
+                params.engine.toIntArray(),
             )
+            visionReady = false
+            if (!params.mmprojPath.isNullOrBlank()) {
+                visionReady = loadMmproj(nativePtr, params.mmprojPath, params.numThreads)
+            }
         }
+
+    /** true si se cargó un mmproj válido con soporte de imágenes. */
+    var visionReady: Boolean = false
+        private set
+
+    /** Marcador que el texto del mensaje debe llevar por cada imagen. */
+    fun mediaMarker(): String = mediaMarkerNative()
+
+    /** Encola una imagen RGB (3 bytes por píxel) para el próximo mensaje. */
+    fun addImage(rgb: ByteArray, width: Int, height: Int): Boolean {
+        verifyHandle()
+        return addImage(nativePtr, rgb, width, height)
+    }
 
     /**
      * Generic method to add a message with a specific role.
@@ -130,6 +196,67 @@ class SmolLM {
         addChatMessage("assistant", message)
     }
 
+    /** Borra el historial y el cache del modelo sin recargar los pesos. */
+    fun resetChat() {
+        verifyHandle()
+        resetChat(nativePtr)
+    }
+
+    /**
+     * Activa/desactiva el razonamiento (canal de pensamiento de Gemma 4). Con `true` se escribe
+     * `<|think|>` al inicio del turno de sistema y se deja abierto el canal; con `false` no se
+     * escribe y el canal se cierra vacio (respuesta directa).
+     */
+    fun setThinking(enabled: Boolean) {
+        verifyHandle()
+        setThinkingNative(nativePtr, enabled)
+    }
+
+    /**
+     * Ventana deslizante: cuando el prompt supera `high` (fraccion del contexto) se borran los
+     * mensajes mas viejos hasta bajar a `low`. El sistema, el saludo y el ultimo mensaje se conservan.
+     */
+    fun setContextWindow(high: Float, low: Float) {
+        verifyHandle()
+        setContextWindow(nativePtr, high, low)
+    }
+
+    /**
+     * Cambia los ajustes de muestreo sin recargar el modelo. El arreglo tiene 13 valores
+     * (ver SamplerSettings.toFloatArray en la app); sirve entre turnos.
+     */
+    fun setSampler(values: FloatArray) {
+        verifyHandle()
+        setSampler(nativePtr, values)
+    }
+
+    /** Limite de tokens por respuesta (-1 = sin limite). Se puede cambiar entre turnos. */
+    fun setMaxResponse(maxTokens: Int) {
+        verifyHandle()
+        setMaxResponse(nativePtr, maxTokens)
+    }
+
+    /**
+     * Cache de KV en disco. [sys] guarda/restaura solo el bloque de sistema (ficha del personaje);
+     * [chat] guarda ademas la conversacion (queda en claro en el disco). [dir] vacio = apagada.
+     */
+    fun setKvCache(dir: String, modelKey: String, sys: Boolean, chat: Boolean) {
+        verifyHandle()
+        setKvCache(nativePtr, dir, modelKey, sys, chat)
+    }
+
+    /** Guarda la conversacion actual en disco (solo con [setKvCache] chat=true). No llamar generando. */
+    fun saveKvChat(): Boolean {
+        verifyHandle()
+        return saveKvChat(nativePtr)
+    }
+
+    fun getPerfStats(): PerfStats {
+        verifyHandle()
+        val v = getPerfStats(nativePtr)
+        return PerfStats(v[0].toInt(), v[1], v[2].toInt(), v[3])
+    }
+
     fun getResponseGenerationSpeed(): Float {
         verifyHandle()
         return getResponseGenerationSpeed(nativePtr)
@@ -138,6 +265,16 @@ class SmolLM {
     fun getContextLengthUsed(): Int {
         verifyHandle()
         return getContextSizeUsed(nativePtr)
+    }
+
+    /**
+     * BUG-029: motivo del fin del ultimo turno tal como lo decidio el motor nativo:
+     * `"token"` (el modelo emitio su EOG), `"stop:<texto>"` (lo cerro un stop string propio),
+     * `"max_tokens"` (tope de respuesta) o `""` si sigue generando.
+     */
+    fun getStopReason(): String {
+        verifyHandle()
+        return getStopReason(nativePtr)
     }
 
     fun getResponseAsFlow(query: String): Flow<String> = flow {
@@ -169,10 +306,18 @@ class SmolLM {
         return benchModel(nativePtr, pp, tg, pl, nr)
     }
 
+    /**
+     * Libera el motor nativo. Es atómico (@Synchronized) y idempotente: si dos hilos lo llaman a
+     * la vez (p. ej. unloadModel y resetConversation sobre la misma instancia), solo el primero
+     * cierra; antes ambos leian nativePtr != 0 y llamaban dos veces al close nativo, lo que
+     * acaba en "Scudo ERROR: invalid chunk state" (BUG-030).
+     */
+    @Synchronized
     fun close() {
-        if (nativePtr != 0L) {
-            close(nativePtr)
+        val ptr = nativePtr
+        if (ptr != 0L) {
             nativePtr = 0L
+            close(ptr)
         }
     }
 
@@ -185,7 +330,7 @@ class SmolLM {
     private external fun loadModel(
         modelPath: String, minP: Float, temperature: Float, topP: Float, topK: Int,
         repeatPenalty: Float, storeChats: Boolean, contextSize: Long, chatTemplate: String,
-        nThreads: Int, useMmap: Boolean, useMlock: Boolean
+        nThreads: Int, useMmap: Boolean, useMlock: Boolean, engineOptions: IntArray
     ): Long
 
     private external fun addChatMessage(modelPtr: Long, message: String, role: String)
@@ -195,5 +340,18 @@ class SmolLM {
     private external fun startCompletion(modelPtr: Long, prompt: String)
     private external fun completionLoop(modelPtr: Long): String
     private external fun stopCompletion(modelPtr: Long)
+    private external fun resetChat(modelPtr: Long)
+    private external fun setThinkingNative(modelPtr: Long, enabled: Boolean)
+    private external fun setContextWindow(modelPtr: Long, high: Float, low: Float)
+    private external fun setSampler(modelPtr: Long, values: FloatArray)
+    private external fun setMaxResponse(modelPtr: Long, maxTokens: Int)
+    private external fun setKvCache(modelPtr: Long, dir: String, modelKey: String, sys: Boolean, chat: Boolean)
+    private external fun saveKvChat(modelPtr: Long): Boolean
+    private external fun getPerfStats(modelPtr: Long): FloatArray
+    private external fun getStopReason(modelPtr: Long): String
+    private external fun loadMmproj(modelPtr: Long, path: String, nThreads: Int): Boolean
+    private external fun supportsVision(modelPtr: Long): Boolean
+    private external fun addImage(modelPtr: Long, rgb: ByteArray, width: Int, height: Int): Boolean
+    private external fun mediaMarkerNative(): String
     private external fun benchModel(modelPtr: Long, pp: Int, tg: Int, pl: Int, nr: Int): String
 }

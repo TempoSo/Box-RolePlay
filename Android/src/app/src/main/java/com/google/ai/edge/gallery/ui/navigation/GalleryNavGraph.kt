@@ -29,17 +29,12 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.Scaffold
@@ -60,7 +55,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -72,6 +66,7 @@ import androidx.navigation.navArgument
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskData
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskDataForBuiltinTask
+import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
@@ -81,14 +76,12 @@ import com.google.ai.edge.gallery.ui.benchmark.BenchmarkScreen
 import com.google.ai.edge.gallery.ui.common.ErrorDialog
 import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
-import com.google.ai.edge.gallery.ui.home.HomeScreen
-import com.google.ai.edge.gallery.ui.home.PromoScreenGm4
+import com.google.ai.edge.gallery.ui.home.BoxHomeScreen
 import com.google.ai.edge.gallery.ui.modelmanager.GlobalModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val TAG = "AGGalleryNavGraph"
@@ -98,6 +91,19 @@ private const val ROUTE_MODEL = "route_model"
 private const val ROUTE_BENCHMARK = "benchmark"
 private const val ROUTE_MODEL_MANAGER = "model_manager"
 private const val ROUTE_CHAT_HISTORY = "chat_history"
+private const val ROUTE_ROLEPLAY = "roleplay"
+private const val ROUTE_SCENARIOS = "box_scenarios"
+private const val ROUTE_MEMORY = "box_memory"
+private const val ROUTE_HF = "box_hf"
+private const val ROUTE_SCENARIO_EDIT = "box_scenario_edit"
+private const val ROUTE_ROLEPLAY_EDIT = "roleplay_edit"
+private const val ROUTE_SETTINGS = "box_settings"
+private const val ROUTE_APPS = "box_apps"
+private const val ROUTE_APP_TTS = "box_app_tts"
+private const val ROUTE_APP_STORE = "box_app_store"
+private const val ROUTE_APP_VISION = "box_app_vision"
+private const val ROUTE_APP_BENCH = "box_app_bench"
+private const val ROUTE_INFERENCE = "box_inference"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -184,45 +190,223 @@ fun GalleryNavHost(
 
   NavHost(
     navController = navController,
+    // La app es de Roleplay: abre en la biblioteca de personajes. El menú clásico (chat libre,
+    // modelos, historial) queda a un toque, desde el botón de menú de Roleplay.
     startDestination = ROUTE_HOMESCREEN,
     enterTransition = { EnterTransition.None },
     exitTransition = { ExitTransition.None },
   ) {
     // Home screen.
     composable(route = ROUTE_HOMESCREEN) {
-      Box(modifier = modifier.fillMaxSize()) {
-        HomeScreen(
-          modelManagerViewModel = modelManagerViewModel,
-          tosViewModel = hiltViewModel(),
-          enableAnimation = enableHomeScreenAnimation,
-          navigateToTaskScreen = { task ->
-            pickedTask = task
+      val homeContext = LocalContext.current
+      val homeState by modelManagerViewModel.uiState.collectAsState()
+      val homeStore = remember { com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(homeContext) }
+      val llmTask = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
+      val usable =
+        llmTask?.models
+          ?.filter {
+            homeState.modelDownloadStatus[it.name]?.status ==
+              com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
+          }
+          ?.distinctBy { it.name } ?: emptyList()
+      // El modelo elegido en Configuración de inferencia; si no hay (o ya no existe), el primero.
+      val chosen = usable.firstOrNull { it.name == homeStore.defaultModel() } ?: usable.firstOrNull()
+      val openApp: (String) -> Unit = { id ->
+        fun openTask(taskId: String) {
+          pickedTask = modelManagerViewModel.getTaskById(taskId)
+          enableModelListAnimation = true
+          navController.navigate(ROUTE_MODEL_LIST)
+        }
+        when (id) {
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.ROLEPLAY -> navController.navigate(ROUTE_ROLEPLAY)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.SCENARIOS -> navController.navigate(ROUTE_SCENARIOS)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.CHAT -> {
+            if (chosen != null) {
+              lastNavigatedModelName = ""
+              navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${chosen.name}?autoResume=false")
+            } else navController.navigate(ROUTE_INFERENCE)
+          }
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.TTS -> navController.navigate(ROUTE_APP_TTS)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.STORE -> navController.navigate(ROUTE_APP_STORE)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> navController.navigate(ROUTE_APP_VISION)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.IMAGE_GEN -> openTask(BuiltInTaskId.IMAGE_GEN)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.TRANSCRIBE -> openTask(BuiltInTaskId.WHISPER)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.AUDIO_ASK -> openTask(BuiltInTaskId.LLM_ASK_AUDIO)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.PROMPT_LAB -> openTask(BuiltInTaskId.LLM_PROMPT_LAB)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.BENCHMARK -> navController.navigate(ROUTE_APP_BENCH)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.MODELS -> navController.navigate(ROUTE_MODEL_MANAGER)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.HISTORY -> navController.navigate(ROUTE_CHAT_HISTORY)
+          else -> Unit
+        }
+      }
+      BoxHomeScreen(
+        onApps = { navController.navigate(ROUTE_APPS) },
+        onOpenApp = { openApp(it) },
+        modelLabel = chosen?.let { it.displayName.ifBlank { it.name } },
+        onChat = {
+          if (chosen != null) {
+            lastNavigatedModelName = ""
+            navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${chosen.name}?autoResume=false")
+          } else {
+            navController.navigate(ROUTE_INFERENCE)
+          }
+        },
+        onCharacters = { navController.navigate(ROUTE_ROLEPLAY) },
+        onHistory = { navController.navigate(ROUTE_CHAT_HISTORY) },
+        onSettings = { navController.navigate(ROUTE_SETTINGS) },
+        onMemory = { navController.navigate(ROUTE_MEMORY) },
+        onOpenConversation = { c ->
+          val model = c.modelName.ifBlank { chosen?.name ?: "" }
+          if (model.isBlank()) navController.navigate(ROUTE_INFERENCE)
+          else {
+            lastNavigatedModelName = ""
+            navController.navigate(
+              "$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/$model?conversationId=${c.id}&autoResume=false"
+            )
+          }
+        },
+      )
+    }
+
+    composable(route = ROUTE_HF) {
+      com.google.ai.edge.gallery.ui.modelmanager.HfBrowserScreen(
+        onBack = { navController.navigateUp() },
+        onModelReady = { fileName, size ->
+          // Se registra igual que un modelo importado desde el teléfono.
+          modelManagerViewModel.addImportedLlmModel(
+            com.google.ai.edge.gallery.proto.ImportedModel.newBuilder()
+              .setFileName(fileName)
+              .setFileSize(size)
+              .setLlmConfig(
+                com.google.ai.edge.gallery.proto.LlmConfig.newBuilder()
+                  .addAllCompatibleAccelerators(listOf("CPU", "GPU"))
+                  .setDefaultMaxTokens(4096)
+                  .setDefaultTopk(com.google.ai.edge.gallery.data.DEFAULT_TOPK)
+                  .setDefaultTopp(com.google.ai.edge.gallery.data.DEFAULT_TOPP)
+                  .setDefaultTemperature(com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE)
+                  .setSupportImage(false)
+                  .setSupportAudio(false)
+                  .setSupportMobileActions(false)
+                  .setSupportThinking(false)
+                  .build()
+              )
+              .build()
+          )
+        },
+      )
+    }
+
+    composable(route = ROUTE_MEMORY) {
+      val memCtx = androidx.compose.ui.platform.LocalContext.current
+      val memAbsorber =
+        androidx.compose.runtime.remember {
+          com.google.ai.edge.gallery.ui.memory.MemoryAbsorber(
+            context = memCtx.applicationContext,
+            modelManager = modelManagerViewModel,
+            scope = modelManagerViewModel.viewModelScope,
+          )
+        }
+      com.google.ai.edge.gallery.ui.memory.MemoryScreen(
+        onBack = { navController.navigateUp() },
+        absorber = memAbsorber,
+        preferredModel = com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(memCtx).defaultModel(),
+      )
+    }
+
+    composable(route = ROUTE_APPS) {
+      val appsContext = LocalContext.current
+      com.google.ai.edge.gallery.ui.apps.BoxAppsScreen(
+        onBack = { navController.navigateUp() },
+        onOpenApp = { id ->
+          fun openTask(taskId: String) {
+            pickedTask = modelManagerViewModel.getTaskById(taskId)
             enableModelListAnimation = true
             navController.navigate(ROUTE_MODEL_LIST)
-            firebaseAnalytics?.logEvent(
-              GalleryEvent.CAPABILITY_SELECT.id,
-              Bundle().apply { putString("capability_name", task.id) },
-            )
-          },
-          onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
-          navigateToChatHistory = { navController.navigate(ROUTE_CHAT_HISTORY) },
-          onNewChatClicked = {
-            val llmChatTask = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
-            val firstModel = llmChatTask?.models?.firstOrNull()
-            if (firstModel != null) {
-              lastNavigatedModelName = ""
-              navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${firstModel.name}?autoResume=false")
-            } else {
-              pickedTask = llmChatTask
-              navController.navigate(ROUTE_MODEL_LIST)
-            }
-          },
-          onImportModelClicked = {
-            navController.navigate("$ROUTE_MODEL_MANAGER?startImport=true")
-          },
-          gm4 = true,
-        )
-      }
+          }
+          val appsStore = com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(appsContext)
+          val llmTask = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
+          val chat = llmTask?.models?.firstOrNull { it.name == appsStore.defaultModel() } ?: llmTask?.models?.firstOrNull()
+          when (id) {
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.ROLEPLAY -> navController.navigate(ROUTE_ROLEPLAY)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.SCENARIOS -> navController.navigate(ROUTE_SCENARIOS)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.CHAT ->
+              if (chat != null) {
+                lastNavigatedModelName = ""
+                navController.navigate("$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/${chat.name}?autoResume=false")
+              } else navController.navigate(ROUTE_INFERENCE)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.TTS -> navController.navigate(ROUTE_APP_TTS)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.STORE -> navController.navigate(ROUTE_APP_STORE)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.VISION -> navController.navigate(ROUTE_APP_VISION)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.IMAGE_GEN -> openTask(BuiltInTaskId.IMAGE_GEN)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.TRANSCRIBE -> openTask(BuiltInTaskId.WHISPER)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.AUDIO_ASK -> openTask(BuiltInTaskId.LLM_ASK_AUDIO)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.PROMPT_LAB -> openTask(BuiltInTaskId.LLM_PROMPT_LAB)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.BENCHMARK -> navController.navigate(ROUTE_APP_BENCH)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.MODELS -> navController.navigate(ROUTE_MODEL_MANAGER)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.HISTORY -> navController.navigate(ROUTE_CHAT_HISTORY)
+            else -> Unit
+          }
+        },
+      )
+    }
+
+    composable(route = ROUTE_APP_STORE) {
+      com.google.ai.edge.gallery.ui.apps.CharacterStoreScreen(onBack = { navController.navigateUp() })
+    }
+
+    composable(route = ROUTE_APP_TTS) {
+      com.google.ai.edge.gallery.ui.apps.TtsAppScreen(onBack = { navController.navigateUp() })
+    }
+
+    composable(route = ROUTE_APP_VISION) {
+      com.google.ai.edge.gallery.ui.apps.VisionScreen(
+        modelManagerViewModel = modelManagerViewModel,
+        onBack = { navController.navigateUp() },
+      )
+    }
+
+    composable(route = ROUTE_APP_BENCH) {
+      com.google.ai.edge.gallery.ui.apps.BenchmarkAppScreen(
+        modelManagerViewModel = modelManagerViewModel,
+        onBack = { navController.navigateUp() },
+      )
+    }
+
+    composable(route = ROUTE_SETTINGS) {
+      com.google.ai.edge.gallery.ui.home.BoxSettingsScreen(
+        onBack = { navController.navigateUp() },
+        onOpenInference = { navController.navigate(ROUTE_INFERENCE) },
+      )
+    }
+
+    composable(route = ROUTE_INFERENCE) {
+      val infContext = LocalContext.current
+      val infState by modelManagerViewModel.uiState.collectAsState()
+      val infStore = remember { com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(infContext) }
+      var selected by remember { mutableStateOf(infStore.defaultModel()) }
+      val infModels =
+        modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)?.models
+          ?.filter {
+            infState.modelDownloadStatus[it.name]?.status ==
+              com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
+          }
+          ?.distinctBy { it.name } ?: emptyList()
+      com.google.ai.edge.gallery.ui.home.BoxInferenceScreen(
+        models = infModels,
+        selectedModel = selected ?: infModels.firstOrNull()?.name,
+        onSelectModel = {
+          infStore.setDefaultModel(it)
+          selected = it
+        },
+        onAddModel = { navController.navigate("$ROUTE_MODEL_MANAGER?startImport=true") },
+        onOpenHf = { navController.navigate(ROUTE_HF) },
+        onOpenImageGen = {
+          pickedTask = modelManagerViewModel.getTaskById(BuiltInTaskId.IMAGE_GEN)
+          enableModelListAnimation = true
+          navController.navigate(ROUTE_MODEL_LIST)
+        },
+        onBack = { navController.navigateUp() },
+      )
     }
 
     // Model list.
@@ -249,7 +433,9 @@ fun GalleryNavHost(
           task = it,
           enableAnimation = enableModelListAnimation,
           onModelClicked = { model ->
-            navController.navigate("$ROUTE_MODEL/${it.id}/${model.name}")
+            // "Probar modelo": chat nuevo, sin reanudar la última conversación del modelo
+            // (que podría ser el chat de un personaje de Roleplay).
+            navController.navigate("$ROUTE_MODEL/${it.id}/${model.name}?autoResume=false")
           },
           navigateUp = {
             enableHomeScreenAnimation = false
@@ -393,7 +579,8 @@ fun GalleryNavHost(
           navController.navigateUp()
         },
         onModelSelected = { task, model ->
-          navController.navigate("$ROUTE_MODEL/${task.id}/${model.name}")
+          // "Probar modelo" desde la pantalla de descarga/importación: siempre chat nuevo.
+          navController.navigate("$ROUTE_MODEL/${task.id}/${model.name}?autoResume=false")
         },
         onBenchmarkClicked = { model ->
           firebaseAnalytics?.logEvent(
@@ -403,6 +590,90 @@ fun GalleryNavHost(
           navController.navigate("$ROUTE_BENCHMARK/${model.name}")
         },
         startImport = startImport,
+      )
+    }
+
+    // Roleplay: lista de personajes.
+    composable(route = ROUTE_ROLEPLAY) {
+      val llmChatTask = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
+      val roleplayUiState by modelManagerViewModel.uiState.collectAsState()
+      // Solo los modelos ya descargados o importados se pueden usar para chatear.
+      val downloadedModels =
+        llmChatTask?.models
+          ?.filter {
+            roleplayUiState.modelDownloadStatus[it.name]?.status ==
+              com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
+          }
+          ?.map { it.name }
+          ?.distinct() ?: emptyList()
+      com.google.ai.edge.gallery.ui.roleplay.RoleplayScreen(
+        navigateUp = { navController.navigateUp() },
+        availableModels = downloadedModels,
+        onOpenChat = { modelName, conversationId ->
+          lastNavigatedModelName = ""
+          navController.navigate(
+            "$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/$modelName?conversationId=$conversationId&autoResume=false"
+          )
+        },
+        onEditCharacter = { id -> navController.navigate("$ROUTE_ROLEPLAY_EDIT/$id") },
+      )
+    }
+
+    // Escenarios: lista de escenas multipersonaje.
+    composable(route = ROUTE_SCENARIOS) {
+      val scCtx = androidx.compose.ui.platform.LocalContext.current
+      val scState by modelManagerViewModel.uiState.collectAsState()
+      val scModels =
+        modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)?.models
+          ?.filter {
+            scState.modelDownloadStatus[it.name]?.status ==
+              com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
+          }
+          ?.map { it.name }
+          ?.distinct() ?: emptyList()
+      com.google.ai.edge.gallery.ui.scenarios.ScenariosScreen(
+        onBack = { navController.navigateUp() },
+        availableModels = scModels,
+        defaultModel = com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(scCtx).defaultModel(),
+        onEdit = { id -> navController.navigate("$ROUTE_SCENARIO_EDIT/$id") },
+        onOpenChat = { modelName, conversationId ->
+          lastNavigatedModelName = ""
+          navController.navigate(
+            "$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/$modelName?conversationId=$conversationId&autoResume=false"
+          )
+        },
+        onNeedModel = { navController.navigate("box_inference") },
+      )
+    }
+
+    composable(
+      route = "$ROUTE_SCENARIO_EDIT/{scenarioId}",
+      arguments = listOf(navArgument("scenarioId") { type = NavType.StringType }),
+    ) { backStackEntry ->
+      com.google.ai.edge.gallery.ui.scenarios.ScenarioEditorScreen(
+        scenarioId = backStackEntry.arguments?.getString("scenarioId") ?: "new",
+        onBack = { navController.navigateUp() },
+      )
+    }
+
+    // Roleplay: crear o editar un personaje ("new" = personaje nuevo).
+    composable(
+      route = "$ROUTE_ROLEPLAY_EDIT/{characterId}",
+      arguments = listOf(navArgument("characterId") { type = NavType.StringType }),
+    ) { backStackEntry ->
+      val editorUiState by modelManagerViewModel.uiState.collectAsState()
+      val editorModels =
+        modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)?.models
+          ?.filter {
+            editorUiState.modelDownloadStatus[it.name]?.status ==
+              com.google.ai.edge.gallery.data.ModelDownloadStatusType.SUCCEEDED
+          }
+          ?.map { it.name }
+          ?.distinct() ?: emptyList()
+      com.google.ai.edge.gallery.ui.roleplay.CharacterEditorScreen(
+        characterId = backStackEntry.arguments?.getString("characterId") ?: "new",
+        navigateUp = { navController.navigateUp() },
+        availableModels = editorModels,
       )
     }
 

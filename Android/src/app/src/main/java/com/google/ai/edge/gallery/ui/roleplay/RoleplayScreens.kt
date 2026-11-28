@@ -1,0 +1,698 @@
+package com.google.ai.edge.gallery.ui.roleplay
+
+import android.content.Intent
+import kotlinx.coroutines.launch
+import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.ai.edge.gallery.data.characters.toJsonArrayString
+import com.google.ai.edge.gallery.data.characters.toStringList
+import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
+import com.google.ai.edge.gallery.ui.common.TagChips
+import java.io.File
+
+/** Lista de personajes: importar tarjeta (.json/.png), crear, editar, compartir, borrar y chatear. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RoleplayScreen(
+    navigateUp: () -> Unit,
+    /** Si no es null, la barra muestra un botón de menú (la app abre en Roleplay) en vez de volver. */
+    onMenuClicked: (() -> Unit)? = null,
+    /** Nombres de los modelos descargados que se pueden usar para chatear. */
+    availableModels: List<String>,
+    onOpenChat: (modelName: String, conversationId: String) -> Unit,
+    onEditCharacter: (id: String) -> Unit,
+    viewModel: RoleplayViewModel = hiltViewModel(),
+) {
+    val context = LocalContext.current
+    val characters by viewModel.characters.collectAsState()
+    val message by viewModel.message.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var toDelete by remember { mutableStateOf<RoleplayCharacter?>(null) }
+    var groupsFor by remember { mutableStateOf<RoleplayCharacter?>(null) }
+    val personas by viewModel.personas.collectAsState()
+    // BUG-011: las macros {{user}} de las fichas deben mostrar la persona activa, no "User".
+    val activePersonaName = personas.firstOrNull { it.isActive }?.name
+        ?: com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder.DEFAULT_USER_NAME
+    var showPersonas by remember { mutableStateOf(false) }
+    var showSampler by remember { mutableStateOf(false) }
+    var showEnginePerf by remember { mutableStateOf(false) }
+    var showTts by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var memoryFor by remember { mutableStateOf<RoleplayCharacter?>(null) }
+    var detailFor by remember { mutableStateOf<RoleplayCharacter?>(null) }
+    var detail by remember { mutableStateOf<RoleplayViewModel.CharacterDetail?>(null) }
+    val settingsStore = remember { com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(context) }
+    var defaultModel by remember { mutableStateOf(settingsStore.defaultModel()) }
+    // Modelo con el que se abren los chats: el predeterminado de Roleplay (null = hay que elegir).
+    val modelName = com.google.ai.edge.gallery.data.characters.RoleplayModelResolver.resolve(
+        characterModel = null,
+        defaultModel = defaultModel,
+        available = availableModels,
+    )
+
+    LaunchedEffect(message) {
+        message?.let {
+            snackbar.showSnackbar(it)
+            viewModel.clearMessage()
+        }
+    }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.import(uri)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Personajes") },
+                navigationIcon = {
+                    if (onMenuClicked != null) {
+                        IconButton(onClick = onMenuClicked) {
+                            Icon(Icons.Rounded.Menu, contentDescription = "Menú")
+                        }
+                    } else {
+                        IconButton(onClick = navigateUp) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Volver")
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Rounded.Tune, contentDescription = "Configuración de Roleplay")
+                    }
+                    IconButton(onClick = {
+                        // Las tarjetas suelen ser .json o .png; algunos gestores no reconocen
+                        // el tipo, así que se aceptan todos.
+                        picker.launch(arrayOf("application/json", "image/png", "text/plain", "*/*"))
+                    }) {
+                        Icon(Icons.Rounded.FolderOpen, contentDescription = "Importar tarjeta")
+                    }
+                },
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { onEditCharacter("new") }) {
+                Icon(Icons.Rounded.Add, contentDescription = "Crear personaje")
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+        PersonaBar(activeName = personas.firstOrNull { it.isActive }?.name, onClick = { showPersonas = true })
+        if (characters.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f).padding(32.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Aún no tienes personajes", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Importa una tarjeta de SillyTavern o Layla (.json o .png) con el icono de carpeta, o toca + para crear una.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            CharacterLibrary(
+                characters = characters,
+                userName = activePersonaName,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                onOpen = { c ->
+                    detailFor = c
+                    detail = null
+                    viewModel.loadDetail(c) { detail = it }
+                },
+                onEdit = { c -> onEditCharacter(c.id) },
+                onShare = { c ->
+                    CharacterShare.shareJson(context, c.name, viewModel.exportJson(c))
+                },
+                onDelete = { c -> toDelete = c },
+                onMemories = { c -> memoryFor = c },
+            )
+        }
+        }
+    }
+
+    detailFor?.let { c ->
+        val mems by viewModel.memories(c.id).collectAsState(initial = emptyList())
+        // Prioridad: modelo del personaje, luego el predeterminado de Roleplay.
+        val engineStore = remember { com.google.ai.edge.gallery.data.characters.CharacterEngineStore(context) }
+        val enginePresets = remember(c.id) { com.google.ai.edge.gallery.data.characters.EnginePresetStore(context).all() }
+        var enginePresetId by remember(c.id) { mutableStateOf(engineStore.get(c.id)) }
+        val enginePreset = enginePresets.firstOrNull { it.id == enginePresetId }
+        // Aplica visión, muestreo y persona del motor de este personaje antes de abrir el chat.
+        fun applyEngine() {
+            val pr = enginePreset ?: return
+            com.google.ai.edge.gallery.data.characters.EngineApply.applyBasics(context, pr)
+            viewModel.personas.value.firstOrNull { it.id == pr.personaId }?.let { viewModel.selectPersona(it) }
+        }
+        // Prioridad: motor del personaje, modelo del personaje, predeterminado de Roleplay.
+        val chatModel = com.google.ai.edge.gallery.data.characters.RoleplayModelResolver.resolve(
+            characterModel = enginePreset?.model?.takeIf { it.isNotBlank() } ?: c.modelName,
+            defaultModel = defaultModel,
+            available = availableModels,
+        )
+        CharacterDetailSheet(
+            character = c,
+            detail = detail,
+            userName = activePersonaName,
+            memoriesCount = mems.size,
+            onDismiss = { detailFor = null },
+            onEdit = { detailFor = null; onEditCharacter(c.id) },
+            onShare = {
+                CharacterShare.shareJson(context, c.name, viewModel.exportJson(c))
+            },
+            onDelete = { detailFor = null; toDelete = c },
+            onMemories = { detailFor = null; memoryFor = c },
+            enginePresets = enginePresets,
+            enginePresetId = enginePresetId,
+            onPickEngine = { id -> enginePresetId = id; engineStore.set(c.id, id) },
+            onGroups = { groupsFor = c },
+            onContinue = {
+                applyEngine()
+                val d = detail
+                val convId = d?.latestConversationId
+                val model = d?.latestModel?.takeIf { it in availableModels } ?: chatModel
+                if (convId != null && model != null) {
+                    detailFor = null
+                    onOpenChat(model, convId)
+                } else if (model == null) {
+                    detailFor = null
+                    showSettings = true
+                }
+            },
+            onNewChat = { greeting ->
+                if (chatModel != null) {
+                    applyEngine()
+                    detailFor = null
+                    viewModel.startChat(c, chatModel, greeting) { convId -> onOpenChat(chatModel, convId) }
+                } else {
+                    // Todavía no hay modelo elegido: se abre la configuración para elegir uno.
+                    detailFor = null
+                    showSettings = true
+                }
+            },
+        )
+    }
+
+    groupsFor?.let { c ->
+        CharacterGroupsDialog(characterId = c.id, characterName = c.name, onDismiss = { groupsFor = null })
+    }
+
+    memoryFor?.let { c ->
+        MemoryDialog(character = c, viewModel = viewModel, onDismiss = { memoryFor = null })
+    }
+
+    if (showSettings) {
+        RoleplaySettingsDialog(
+            availableModels = availableModels,
+            selectedModel = modelName,
+            onSelectModel = {
+                settingsStore.setDefaultModel(it)
+                defaultModel = it
+            },
+            onOpenSampler = { showSampler = true },
+            onOpenEnginePerf = { showEnginePerf = true },
+            onOpenTts = { showTts = true },
+            onBackup = {
+                scope.launch {
+                    runCatching {
+                        val zip = viewModel.backupZip()
+                        val dir = java.io.File(context.cacheDir, "backup").apply { mkdirs() }
+                        dir.listFiles()?.forEach { it.delete() }
+                        val f = java.io.File(dir, "box-roleplay-copia.zip").apply { writeBytes(zip) }
+                        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/zip"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(send, "Guardar copia de seguridad"))
+                    }.onFailure { snackbar.showSnackbar("No se pudo crear la copia: ${it.message}") }
+                }
+            },
+            onDismiss = { showSettings = false },
+        )
+    }
+
+    if (showSampler) {
+        SamplerDialog(onDismiss = { showSampler = false })
+    }
+
+    if (showEnginePerf) {
+        EnginePerfDialog(onDismiss = { showEnginePerf = false })
+    }
+
+    if (showTts) {
+        TtsSettingsDialog(onDismiss = { showTts = false })
+    }
+
+    if (showPersonas) {
+        PersonaManagerDialog(
+            personas = personas,
+            onDismiss = { showPersonas = false },
+            onSelect = { viewModel.selectPersona(it) },
+            onSave = { viewModel.savePersona(it) },
+            onDelete = { viewModel.deletePersona(it) },
+        )
+    }
+
+    toDelete?.let { c ->
+        AlertDialog(
+            onDismissRequest = { toDelete = null },
+            title = { Text("¿Borrar a ${c.name}?") },
+            text = { Text("Los chats que ya tengas con este personaje se conservan.") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.delete(c); toDelete = null }) { Text("Borrar") }
+            },
+            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Cancelar") } },
+        )
+    }
+}
+
+/** Franja bajo la barra superior: con qué persona (perfil tuyo) vas a chatear. */
+@Composable
+private fun PersonaBar(activeName: String?, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onClick),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Chateas como", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(activeName ?: "Sin persona (usa «User»)", style = MaterialTheme.typography.titleSmall)
+            }
+            Text("Cambiar", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun CharacterRow(
+    character: RoleplayCharacter,
+    onChat: () -> Unit,
+    onEdit: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+    onMemories: () -> Unit,
+    modelAvailable: Boolean,
+) {
+    val avatar = remember(character.avatarPath) {
+        if (character.avatarPath.isEmpty()) null
+        else try {
+            val f = File(character.avatarPath)
+            if (f.exists()) {
+                // Se reduce al leer para no gastar memoria con PNG enormes.
+                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+    Card(modifier = Modifier.fillMaxWidth().clickable(enabled = modelAvailable, onClick = onChat)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(56.dp).clip(CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (avatar != null) {
+                    Image(avatar, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    Text(character.name.take(1).uppercase(), style = MaterialTheme.typography.titleLarge)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(character.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val sub = character.description.ifBlank { character.personality }.ifBlank { "Sin descripción" }
+                Text(sub, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!modelAvailable) {
+                    Text("Primero agrega un modelo para chatear", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
+            }
+            IconButton(onClick = onMemories) { Icon(Icons.Rounded.Psychology, contentDescription = "Memoria") }
+            IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, contentDescription = "Editar") }
+            IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, contentDescription = "Compartir") }
+            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, contentDescription = "Borrar") }
+        }
+    }
+}
+
+/** "Crear personaje" con pestañas Core Info / Appearance / Avanzado, como en Layla. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CharacterEditorScreen(
+    characterId: String,
+    navigateUp: () -> Unit,
+    /** Modelos descargados, para elegir uno propio del personaje. */
+    availableModels: List<String> = emptyList(),
+    viewModel: RoleplayViewModel = hiltViewModel(),
+) {
+    val context = LocalContext.current
+    val characters by viewModel.characters.collectAsState()
+    val scenarios by viewModel.scenarios.collectAsState()
+    // BUG-006: mismos chips que en el editor de escenas, con las etiquetas ya usadas.
+    val tagSuggestions =
+        remember(characters, scenarios) {
+            TagChips.collect(characters.flatMap { it.tagsJson.toStringList() }, scenarios.flatMap { it.tags })
+        }
+    var loaded by remember { mutableStateOf(characterId == "new") }
+    var original by remember { mutableStateOf<RoleplayCharacter?>(null) }
+
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var personality by remember { mutableStateOf("") }
+    var scenario by remember { mutableStateOf("") }
+    var tags by remember { mutableStateOf("") }
+    var firstMessage by remember { mutableStateOf("") }
+    val greetings = remember { mutableStateListOf<String>() }
+    var exampleMessages by remember { mutableStateOf("") }
+    var systemPrompt by remember { mutableStateOf("") }
+    var postHistory by remember { mutableStateOf("") }
+    var creatorNotes by remember { mutableStateOf("") }
+    var creator by remember { mutableStateOf("") }
+    var nameError by remember { mutableStateOf(false) }
+    var tab by remember { mutableIntStateOf(0) }
+    var modelName by remember { mutableStateOf("") }
+    // Lorebook: entradas editables. Solo se reescribe el character_book si se tocó algo.
+    val lore = remember { mutableStateListOf<com.google.ai.edge.gallery.data.characters.LoreEntry>() }
+    val loreKeyText = remember { mutableStateListOf<String>() }
+    var loreDirty by remember { mutableStateOf(false) }
+
+    LaunchedEffect(characterId) {
+        if (characterId != "new") {
+            val c = viewModel.getById(characterId)
+            if (c != null) {
+                original = c
+                name = c.name
+                description = c.description
+                personality = c.personality
+                scenario = c.scenario
+                tags = c.tagsJson.toStringList().joinToString(", ")
+                firstMessage = c.firstMessage
+                greetings.clear()
+                greetings.addAll(c.alternateGreetingsJson.toStringList())
+                exampleMessages = c.exampleMessages
+                systemPrompt = c.systemPrompt
+                postHistory = c.postHistoryInstructions
+                creatorNotes = c.creatorNotes
+                creator = c.creator
+                modelName = c.modelName
+                lore.clear()
+                loreKeyText.clear()
+                com.google.ai.edge.gallery.data.characters.LorebookMatcher.parse(c.characterBookJson).forEach {
+                    lore.add(it)
+                    loreKeyText.add(com.google.ai.edge.gallery.data.characters.LorebookMatcher.formatKeys(it.keys))
+                }
+            }
+            loaded = true
+        }
+    }
+
+    fun build(): RoleplayCharacter {
+        val base = original ?: RoleplayCharacter(name = name)
+        return base.copy(
+            modelName = modelName,
+            name = name.trim(),
+            description = description,
+            personality = personality,
+            scenario = scenario,
+            tagsJson = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toJsonArrayString(),
+            firstMessage = firstMessage,
+            alternateGreetingsJson = greetings.map { it.trim() }.filter { it.isNotEmpty() }.toJsonArrayString(),
+            exampleMessages = exampleMessages,
+            systemPrompt = systemPrompt,
+            postHistoryInstructions = postHistory,
+            creatorNotes = creatorNotes,
+            creator = creator,
+            characterBookJson =
+                if (loreDirty) com.google.ai.edge.gallery.data.characters.LorebookMatcher.encode(lore.toList(), base.characterBookJson)
+                else base.characterBookJson,
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (characterId == "new") "Crear personaje" else "Editar personaje") },
+                navigationIcon = {
+                    IconButton(onClick = navigateUp) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Volver")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        if (!loaded) return@Scaffold
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            TabRow(selectedTabIndex = tab) {
+                listOf("Core Info", "Appearance", "Lorebook", "Avanzado").forEachIndexed { i, t ->
+                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) })
+                }
+            }
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                when (tab) {
+                    0 -> {
+                        OutlinedTextField(
+                            value = name, onValueChange = { name = it; nameError = false },
+                            label = { Text("Nombre") }, isError = nameError,
+                            supportingText = if (nameError) ({ Text("El nombre es obligatorio") }) else null,
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        )
+                        BigField("Descripción", description, { description = it }, 6)
+                        BigField("Personalidad", personality, { personality = it }, 4)
+                        BigField("Escenario", scenario, { scenario = it }, 4)
+                        TagChips(suggestions = tagSuggestions, value = tags, onValueChange = { tags = it })
+                        OutlinedTextField(
+                            value = tags, onValueChange = { tags = it },
+                            label = { Text("Etiquetas (separadas por coma)") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    1 -> {
+                        Text(
+                            "Saludos. Se usa el primero al empezar un chat; si agregas más, se elige uno al azar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        BigField("Saludo inicial", firstMessage, { firstMessage = it }, 5)
+                        greetings.forEachIndexed { i, g ->
+                            Row(verticalAlignment = Alignment.Top) {
+                                OutlinedTextField(
+                                    value = g, onValueChange = { greetings[i] = it },
+                                    label = { Text("Saludo alternativo ${i + 1}") },
+                                    minLines = 3, modifier = Modifier.weight(1f),
+                                )
+                                IconButton(onClick = { greetings.removeAt(i) }) {
+                                    Icon(Icons.Rounded.Delete, contentDescription = "Quitar saludo")
+                                }
+                            }
+                        }
+                        OutlinedButton(onClick = { greetings.add("") }) {
+                            Icon(Icons.Rounded.Add, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Añadir")
+                        }
+                        Text(
+                            "Puedes usar {{char}} y {{user}} en cualquier campo.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    2 -> {
+                        Text(
+                            "Información del mundo que se añade al prompt solo cuando la charla menciona sus palabras clave. \"Siempre activa\" la añade en todos los turnos.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        lore.forEachIndexed { i, e ->
+                            androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        OutlinedTextField(
+                                            value = e.comment,
+                                            onValueChange = { lore[i] = e.copy(comment = it); loreDirty = true },
+                                            label = { Text("Título (opcional)") },
+                                            singleLine = true, modifier = Modifier.weight(1f),
+                                        )
+                                        IconButton(onClick = {
+                                            lore.removeAt(i); loreKeyText.removeAt(i); loreDirty = true
+                                        }) {
+                                            Icon(Icons.Rounded.Delete, contentDescription = "Quitar entrada")
+                                        }
+                                    }
+                                    OutlinedTextField(
+                                        value = loreKeyText.getOrElse(i) { "" },
+                                        onValueChange = {
+                                            if (i < loreKeyText.size) loreKeyText[i] = it
+                                            lore[i] = e.copy(keys = com.google.ai.edge.gallery.data.characters.LorebookMatcher.parseKeys(it))
+                                            loreDirty = true
+                                        },
+                                        label = { Text("Palabras clave (separadas por coma)") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    BigField("Contenido", e.content, { lore[i] = e.copy(content = it); loreDirty = true }, 3)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        androidx.compose.material3.Switch(
+                                            checked = e.enabled,
+                                            onCheckedChange = { lore[i] = e.copy(enabled = it); loreDirty = true },
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Activa", style = MaterialTheme.typography.bodyMedium)
+                                        Spacer(Modifier.width(16.dp))
+                                        androidx.compose.material3.Switch(
+                                            checked = e.constant,
+                                            onCheckedChange = { lore[i] = e.copy(constant = it); loreDirty = true },
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Siempre activa", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                            }
+                        }
+                        OutlinedButton(onClick = {
+                            lore.add(com.google.ai.edge.gallery.data.characters.LoreEntry(keys = emptyList(), content = "", insertionOrder = lore.size))
+                            loreKeyText.add("")
+                            loreDirty = true
+                        }) {
+                            Icon(Icons.Rounded.Add, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Añadir entrada")
+                        }
+                    }
+                    else -> {
+                        Text("Modelo de este personaje", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Si no eliges uno, usa el modelo predeterminado de Roleplay.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // Un modelo guardado que ya no está descargado se muestra, para poder cambiarlo.
+                        val options = listOf("") + availableModels + listOfNotNull(modelName.takeIf { it.isNotEmpty() && it !in availableModels })
+                        options.forEach { opt ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { modelName = opt },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                androidx.compose.material3.RadioButton(selected = modelName == opt, onClick = { modelName = opt })
+                                Text(
+                                    when {
+                                        opt.isEmpty() -> "Predeterminado de Roleplay"
+                                        opt !in availableModels -> "$opt (no disponible)"
+                                        else -> opt
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                        CharacterVoiceRow(characterId)
+                        BigField("Diálogo de ejemplo (usa <START> para separar)", exampleMessages, { exampleMessages = it }, 6)
+                        BigField("Prompt de sistema (vacío = el predeterminado)", systemPrompt, { systemPrompt = it }, 4)
+                        BigField("Instrucciones posteriores al historial", postHistory, { postHistory = it }, 3)
+                        BigField("Notas del creador", creatorNotes, { creatorNotes = it }, 3)
+                        OutlinedTextField(
+                            value = creator, onValueChange = { creator = it },
+                            label = { Text("Creador") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        if (name.isBlank()) { nameError = true; tab = 0; return@OutlinedButton }
+                        CharacterShare.shareJson(context, name.trim(), viewModel.exportJson(build()))
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Compartir") }
+                Button(
+                    onClick = {
+                        if (name.isBlank()) { nameError = true; tab = 0; return@Button }
+                        viewModel.save(build(), onDone = navigateUp)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Guardar") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BigField(label: String, value: String, onChange: (String) -> Unit, lines: Int) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        minLines = lines,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}

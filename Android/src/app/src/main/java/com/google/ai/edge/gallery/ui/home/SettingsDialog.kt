@@ -506,7 +506,7 @@ fun SettingsDialog(
 }
 
 @Composable
-private fun BiometricEncryptionSection(context: Context) {
+internal fun BiometricEncryptionSection(context: Context) {
     // LocalContext inside a Compose Dialog is a ContextThemeWrapper, not FragmentActivity directly.
     // Unwrap the chain to find the real activity.
     val activity = remember(context) {

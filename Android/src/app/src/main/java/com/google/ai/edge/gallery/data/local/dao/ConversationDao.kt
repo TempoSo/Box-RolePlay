@@ -23,6 +23,15 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE taskType = :taskType ORDER BY updatedAt DESC")
     fun getConversationsByTask(taskType: String): Flow<List<Conversation>>
 
+    @Query("SELECT * FROM conversations WHERE characterId = :characterId ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getLatestForCharacter(characterId: String): Conversation?
+
+    @Query("SELECT COUNT(*) FROM conversations WHERE characterId = :characterId")
+    suspend fun countForCharacter(characterId: String): Int
+
+    @Query("SELECT COALESCE(SUM(messageCount), 0) FROM conversations WHERE characterId = :characterId")
+    suspend fun messagesForCharacter(characterId: String): Int
+
     @Query("SELECT * FROM conversations WHERE modelName = :modelName ORDER BY updatedAt DESC LIMIT 1")
     suspend fun getLatestForModel(modelName: String): Conversation?
 

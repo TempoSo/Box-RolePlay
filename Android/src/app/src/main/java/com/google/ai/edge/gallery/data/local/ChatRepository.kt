@@ -1,6 +1,17 @@
 package com.google.ai.edge.gallery.data.local
 
+import com.google.ai.edge.gallery.data.characters.Swipes
+import com.google.ai.edge.gallery.data.local.dao.CharacterDao
+import android.content.Context
+import com.google.ai.edge.gallery.data.characters.AutoMemory
+import com.google.ai.edge.gallery.data.characters.RawMemory
+import com.google.ai.edge.gallery.data.characters.RawMemoryStore
+import com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore
+import com.google.ai.edge.gallery.data.characters.Scenario
+import com.google.ai.edge.gallery.data.characters.ScenarioStore
 import com.google.ai.edge.gallery.data.local.dao.ConversationDao
+import com.google.ai.edge.gallery.data.local.dao.PersonaDao
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.ai.edge.gallery.data.local.dao.MessageDao
 import com.google.ai.edge.gallery.data.local.entities.Conversation
 import com.google.ai.edge.gallery.data.local.entities.Message
@@ -16,7 +27,52 @@ import javax.inject.Singleton
 class ChatRepository @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
+    private val characterDao: CharacterDao,
+    private val personaDao: PersonaDao,
+    private val scenarioStore: ScenarioStore,
+    @ApplicationContext private val context: Context,
 ) {
+    /** Nombres de los personajes de una escena ("scene:<id>"), o lista vacía si no es una escena. */
+    suspend fun sceneMemberNames(conversationId: String): List<String> {
+        val cid = conversationDao.getConversationById(conversationId)?.characterId ?: return emptyList()
+        if (!cid.startsWith("scene:")) return emptyList()
+        val scenario = scenarioStore.get(cid.removePrefix("scene:")) ?: return emptyList()
+        return scenario.participantIds.mapNotNull { characterDao.getById(it)?.name }
+    }
+
+    /** Opciones de la escena de la conversación (null si no es una escena). */
+    suspend fun sceneOptions(conversationId: String): Scenario? {
+        val cid = conversationDao.getConversationById(conversationId)?.characterId ?: return null
+        if (!cid.startsWith("scene:")) return null
+        return scenarioStore.get(cid.removePrefix("scene:"))
+    }
+
+    /**
+     * Memoria automática tras cada respuesta: guarda las frases clave del último intercambio.
+     * Empieza con el 2.º mensaje del usuario, no usa el modelo y no inventa texto.
+     */
+    suspend fun captureAutoMemory(conversationId: String) {
+        val conv = conversationDao.getConversationById(conversationId) ?: return
+        val charId = conv.characterId
+        if (charId.isBlank() || charId.startsWith("scene:")) return
+        val settings = RoleplaySettingsStore(context)
+        if (!settings.memoryEnabled(charId) || !settings.autoMemory(charId)) return
+        val msgs = messageDao.getMessagesForConversationSync(conversationId)
+        if (msgs.count { it.role == "user" } < 2) return
+        val reply = msgs.lastOrNull { it.role == "assistant" } ?: return
+        val user = msgs.lastOrNull { it.role == "user" } ?: return
+        val charName = characterDao.getById(charId)?.name ?: return
+        val userName = personaDao.getActive()?.name ?: "User"
+        val text = AutoMemory.fromExchange(userName, charName, user.content, reply.content) ?: return
+        val raw = RawMemoryStore(context)
+        if (AutoMemory.isDuplicate(text, raw.forCharacter(charId).take(5).map { it.text })) return
+        raw.add(RawMemory(characterId = charId, text = text))
+    }
+
+    /** Roleplay: JSON del lorebook (character_book) del personaje, o "" si no tiene. */
+    suspend fun getCharacterBookJson(characterId: String): String =
+        characterDao.getById(characterId)?.characterBookJson ?: ""
+
     // --- Conversations ---
 
     fun getAllConversations(): Flow<List<Conversation>> = conversationDao.getAllConversations()
@@ -34,12 +90,16 @@ class ChatRepository @Inject constructor(
         taskType: String = "",
         modelName: String = "",
         systemPrompt: String = "",
+        characterId: String = "",
+        personaId: String = "",
     ): Conversation {
         val conversation = Conversation(
             title = title,
             taskType = taskType,
             modelName = modelName,
             systemPrompt = systemPrompt,
+            characterId = characterId,
+            personaId = personaId,
         )
         conversationDao.insert(conversation)
         return conversation
@@ -48,10 +108,26 @@ class ChatRepository @Inject constructor(
     suspend fun updateConversation(conversation: Conversation) =
         conversationDao.update(conversation)
 
-    suspend fun deleteConversation(conversation: Conversation) =
+    suspend fun deleteConversation(conversation: Conversation) {
         conversationDao.delete(conversation)
+        // La caché de KV del chat va indexada por la ficha, no por la conversación: al borrar un
+        // chat se borran las cachés de chat (se rehacen solas) para no dejar su contenido en disco.
+        com.google.ai.edge.gallery.data.characters.KvCacheFiles.clearChats(context)
+    }
 
-    suspend fun deleteAllConversations() = conversationDao.deleteAll()
+    suspend fun latestConversationForCharacter(characterId: String): Conversation? =
+        conversationDao.getLatestForCharacter(characterId)
+
+    suspend fun countConversationsForCharacter(characterId: String): Int =
+        conversationDao.countForCharacter(characterId)
+
+    suspend fun countMessagesForCharacter(characterId: String): Int =
+        conversationDao.messagesForCharacter(characterId)
+
+    suspend fun deleteAllConversations() {
+        conversationDao.deleteAll()
+        com.google.ai.edge.gallery.data.characters.KvCacheFiles.clearChats(context)
+    }
 
     suspend fun getLatestConversationForModel(modelName: String): Conversation? =
         conversationDao.getLatestForModel(modelName)
@@ -101,4 +177,50 @@ class ChatRepository @Inject constructor(
 
     suspend fun deleteMessagesForConversation(conversationId: String) =
         messageDao.deleteAllForConversation(conversationId)
+
+    // --- Swipes y edición (roleplay) ---
+
+    /** Guarda una respuesta nueva como otra versión de la última respuesta del asistente. */
+    suspend fun addSwipe(conversationId: String, text: String, latencyMs: Long = 0): Message? {
+        val last = messageDao.getLastAssistant(conversationId) ?: return null
+        val state = Swipes.withNew(Swipes.decode(last.alternatives, last.content, last.activeIndex), text)
+        val updated = last.copy(
+            content = text,
+            alternatives = Swipes.encode(state.texts),
+            activeIndex = state.index,
+            latencyMs = latencyMs,
+        )
+        messageDao.update(updated)
+        return updated
+    }
+
+    /** (versión activa, total) de la última respuesta del asistente. */
+    suspend fun swipeInfo(conversationId: String): Pair<Int, Int>? {
+        val last = messageDao.getLastAssistant(conversationId) ?: return null
+        val state = Swipes.decode(last.alternatives, last.content, last.activeIndex)
+        return state.index to state.count
+    }
+
+    /** Cambia a la versión anterior (-1) o siguiente (+1). Devuelve el mensaje ya actualizado. */
+    suspend fun moveSwipe(conversationId: String, delta: Int): Message? {
+        val last = messageDao.getLastAssistant(conversationId) ?: return null
+        val state = Swipes.move(Swipes.decode(last.alternatives, last.content, last.activeIndex), delta)
+        val updated = last.copy(content = state.active, activeIndex = state.index)
+        messageDao.update(updated)
+        return updated
+    }
+
+    /**
+     * Edita el texto del mensaje número [position] (contando solo mensajes de usuario y asistente,
+     * en orden). Si el rol no coincide con [expectedRole] no toca nada.
+     */
+    suspend fun editMessageAt(conversationId: String, position: Int, expectedRole: String, newText: String): Boolean {
+        val chat = messageDao.getMessagesForConversationSync(conversationId)
+            .filter { it.role == "user" || it.role == "assistant" }
+        val target = chat.getOrNull(position) ?: return false
+        if (target.role != expectedRole) return false
+        val state = Swipes.replaceActive(Swipes.decode(target.alternatives, target.content, target.activeIndex), newText)
+        messageDao.update(target.copy(content = newText, alternatives = Swipes.encode(state.texts)))
+        return true
+    }
 }

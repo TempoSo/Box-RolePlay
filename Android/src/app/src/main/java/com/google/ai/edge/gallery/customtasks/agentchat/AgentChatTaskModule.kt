@@ -25,6 +25,7 @@ import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.gallery.ui.llmchat.LlmChatModelHelper
 import com.google.ai.edge.litertlm.tool
 import dagger.Module
@@ -102,7 +103,10 @@ class AgentChatTask @Inject constructor() : CustomTask {
     model: Model,
     onDone: () -> Unit,
   ) {
-    LlmChatModelHelper.cleanUp(model = model, onDone = onDone)
+    // BUG: limpiar siempre con el helper del runtime del modelo. Antes era fijo a LiteRT
+    // (LlmChatModelHelper) y con un modelo GGUF cargado (instancia LlamaCppEngine) la limpieza
+    // al pasar la app a primer plano crasheaba: ClassCastException en LlmChatModelHelper.cleanUp.
+    model.runtimeHelper.cleanUp(model = model, onDone = onDone)
   }
 
   @Composable

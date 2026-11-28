@@ -1,0 +1,127 @@
+package com.google.ai.edge.gallery.data.characters
+
+/** Qué parte de un mensaje de roleplay se lee en voz alta. */
+enum class SpeechScope {
+    /** Todo el texto, sin los símbolos de formato. */
+    ALL,
+
+    /** Solo lo dicho entre comillas ("..." “...” «...»); las acciones (*...*) se omiten. */
+    DIALOGUE_ONLY,
+
+    /** Diálogo y narración, sin los asteriscos (igual que ALL, pero separa por bloques). */
+    NARRATION_AND_DIALOGUE,
+}
+
+/**
+ * Prepara un mensaje de roleplay para un motor de voz (TTS): elige qué se lee, quita el formato
+ * markdown y lo parte en frases cortas para empezar a hablar mientras se sigue generando. Lógica
+ * pura: no depende de Android ni de ningún motor concreto.
+ */
+object SpeechText {
+    private val quoted = Regex("\"([^\"]+)\"|“([^”]+)”|«([^»]+)»")
+
+    /** Texto que se debe leer según el alcance elegido (puede ser vacío). */
+    fun extract(message: String, scope: SpeechScope): String {
+        val text = message.replace("\r\n", "\n")
+        val picked =
+            when (scope) {
+                SpeechScope.DIALOGUE_ONLY ->
+                    quoted.findAll(text).joinToString(" ") { m ->
+                        m.groupValues.drop(1).first { it.isNotEmpty() }
+                    }
+                SpeechScope.ALL, SpeechScope.NARRATION_AND_DIALOGUE -> text
+            }
+        return stripFormatting(picked)
+    }
+
+    /** Quita *, _, #, `, [], <...> y espacios repetidos. */
+    fun stripFormatting(s: String): String =
+        stripEmoji(s)
+            .replace(Regex("<[^>]{1,40}>"), " ") // <|channel>, <channel|>, etiquetas
+            .replace(Regex("[*_`#~]+"), "")
+            .replace(Regex("([!?])\\1{1,}"), "$1") // !!! -> !
+            .replace(Regex("\\.{4,}"), "...") // ...... -> ...
+            .replace(Regex("\\s*[-–—]{2,}\\s*"), ", ") // -- -> pausa
+            .replace(Regex("\\[([^\\]]*)]\\([^)]*\\)"), "$1") // [texto](url) -> texto
+            .let { normalizeChars(it) }
+            .replace(Regex("[ \\t]+"), " ")
+            .replace(Regex("\\n{3,}"), "\n\n")
+            .trim()
+
+    /**
+     * Deja solo caracteres que los motores de voz entienden: espacios raros -> espacio, invisibles fuera,
+     * comillas tipográficas -> ' o nada, paréntesis/corchetes/barras -> pausa o espacio, viñetas fuera.
+     */
+    fun normalizeChars(s: String): String =
+        s.replace(Regex("[\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000\\t]"), " ")
+            .replace(Regex("[\\u200B-\\u200F\\u2060\\uFEFF\\u00AD\\u202A-\\u202E]"), "")
+            .replace(Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]"), "")
+            .replace(Regex("[’‘´ʼ]"), "'")
+            .replace(Regex("[\"“”„‟«»]"), "")
+            .replace(Regex("(?m)^\\s*[-•·▪●○◦►▶>]+\\s+"), "") // viñetas y citas al inicio de línea
+            .replace(Regex("[()\\[\\]{}]"), ", ")
+            .replace(Regex("[|\\\\^=+/<>@]+"), " ")
+            .replace("&", " y ")
+            .replace(Regex("\\s*,(\\s*,)+"), ",") // ", ," -> ","
+            .replace(Regex("\\s+([,.;:!?])"), "$1") // "hola ," -> "hola,"
+            .replace(Regex("^[,\\s]+"), "")
+
+    /** Quita emojis y símbolos gráficos: el motor de voz los lee mal o se atasca con ellos. */
+    fun stripEmoji(s: String): String {
+        val sb = StringBuilder(s.length)
+        var i = 0
+        while (i < s.length) {
+            val cp = s.codePointAt(i)
+            i += Character.charCount(cp)
+            val emoji =
+                cp in 0x1F000..0x1FAFF || cp in 0x2600..0x27BF || cp in 0x2B00..0x2BFF ||
+                    cp == 0xFE0F || cp == 0x200D || cp in 0x1F1E6..0x1F1FF
+            if (!emoji) sb.appendCodePoint(cp)
+        }
+        return sb.toString()
+    }
+
+    /** Une frases muy cortas con la siguiente (menos cortes y menos arranques del motor de voz). */
+    fun mergeShort(chunks: List<String>, maxLen: Int = 220, minLen: Int = 60): List<String> {
+        val out = mutableListOf<String>()
+        for (c in chunks) {
+            val last = out.lastOrNull()
+            if (last != null && last.length < minLen && last.length + 1 + c.length <= maxLen) {
+                out[out.lastIndex] = "$last $c"
+            } else out.add(c)
+        }
+        return out
+    }
+
+    /**
+     * Parte el texto en frases de a lo sumo [maxLen] caracteres, cortando en . ! ? … o salto de
+     * línea; si una frase es demasiado larga se corta en la coma o el espacio más cercano.
+     */
+    fun chunks(text: String, maxLen: Int = 220): List<String> {
+        val limit = maxLen.coerceAtLeast(20)
+        val out = mutableListOf<String>()
+        val sentence = StringBuilder()
+        fun flush() {
+            val s = sentence.toString().trim()
+            sentence.clear()
+            if (s.isEmpty()) return
+            var rest = s
+            while (rest.length > limit) {
+                var cut = rest.lastIndexOfAny(charArrayOf(',', ';', ':'), limit - 1)
+                if (cut < limit / 3) cut = rest.lastIndexOf(' ', limit - 1)
+                if (cut <= 0) cut = limit - 1
+                out.add(rest.substring(0, cut + 1).trim())
+                rest = rest.substring(cut + 1).trim()
+            }
+            if (rest.isNotEmpty()) out.add(rest)
+        }
+        for ((i, ch) in text.withIndex()) {
+            sentence.append(ch)
+            // Un punto pegado a una letra o cifra (3.5, p.ej., www.x) no termina la frase; tampoco los de "...".
+            val glued = ch == '.' && i + 1 < text.length && (text[i + 1].isLetterOrDigit() || text[i + 1] == '.')
+            if (!glued && (ch == '.' || ch == '!' || ch == '?' || ch == '…' || ch == '\n')) flush()
+        }
+        flush()
+        return mergeShort(out.filter { s -> s.any { it.isLetterOrDigit() } }, limit)
+    }
+}

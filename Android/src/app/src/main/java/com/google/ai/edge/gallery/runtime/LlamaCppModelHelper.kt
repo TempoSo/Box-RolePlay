@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.google.ai.edge.gallery.data.ConfigKeys
+import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE
 import com.google.ai.edge.gallery.data.DEFAULT_TOPK
 import com.google.ai.edge.gallery.data.DEFAULT_TOPP
@@ -16,6 +17,9 @@ import kotlinx.coroutines.CoroutineScope
 
 private const val TAG = "BoxLlamaCppModelHelper"
 
+// BUG-016: tiempo máximo que se espera a que el motor recién seleccionado termine de cargar.
+private const val ESPERA_CARGA_MS = 60_000L
+
 /**
  * Box: LlmModelHelper implementation backed by llama.cpp for GGUF models.
  * Routes through the smollm JNI bridge.
@@ -24,6 +28,10 @@ object LlamaCppModelHelper : LlmModelHelper {
 
     // Indexed by model name
     private val engines: MutableMap<String, LlamaCppEngine> = mutableMapOf()
+    private var appContext: Context? = null
+
+    /** Solo el benchmark lo fija: ajustes del motor propios de la prueba, sin tocar los de los chats. */
+    @Volatile var perfOverride: com.google.ai.edge.gallery.data.characters.EnginePerfSettings? = null
 
     override fun initialize(
         context: Context,
@@ -46,14 +54,56 @@ object LlamaCppModelHelper : LlmModelHelper {
         Log.d(TAG, "Initializing llama.cpp engine for: $modelPath")
 
         val engine = LlamaCppEngine()
+        // BUG-015: si el modelo es Gemma 4 (por nombre), el prompt se construye en Kotlin con la
+        // plantilla de turnos canonica; el nativo la tokeniza tal cual.
+        engine.setGemma4Template(com.google.ai.edge.gallery.engine.GgufChatTemplate.isGemma4(model.name))
         engines[model.name] = engine
+        appContext = context.applicationContext
+
+        // Ajustes de rendimiento del motor (pantalla "Rendimiento"): se leen en cada carga.
+        val perf = perfOverride ?: com.google.ai.edge.gallery.data.characters.EnginePerfStore(context).load()
+
+        // El tamaño del contexto es el "Max tokens" del modelo, salvo que se haya fijado otro en
+        // los ajustes de rendimiento. Antes se usaba el máximo del modelo, que en Gemma es enorme.
+        val contextSize =
+            (if (perf.contextLength > 0) perf.contextLength
+             else model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN))
+                .coerceAtLeast(256)
+                .toLong()
+
+        val threads = if (perf.threads > 0) perf.threads else SmolLM.performanceCoreCount()
+        Log.d(TAG, "llama.cpp threads=$threads ctx=$contextSize perf=$perf")
 
         val params = SmolLM.InferenceParams(
             temperature = temperature,
             topP = topP,
             topK = topK,
-            numThreads = Runtime.getRuntime().availableProcessors().coerceAtMost(8),
+            contextSize = contextSize,
+            numThreads = threads,
+            useMmap = !perf.noMmap,
+            engine = perf.toEngineOptions(),
+            mmprojPath =
+                if (supportImage && perf.mmproj.isNotBlank())
+                    java.io.File(com.google.ai.edge.gallery.data.characters.MmprojFiles.dir(context), perf.mmproj)
+                        .takeIf { it.exists() }?.absolutePath
+                else null,
         )
+
+        // Cache de KV en disco (no en el benchmark, que usa ajustes aislados). La clave del modelo
+        // incluye ruta, tamano, contexto y tipo de KV: si cambia algo, el archivo no se reutiliza.
+        engine.kvCache =
+            if (perfOverride == null && (perf.kvCacheSystem || perf.kvCacheChat)) {
+                val f = java.io.File(modelPath)
+                val key = java.lang.Long.toHexString(
+                    "${f.absolutePath}|${f.length()}|$contextSize|${perf.kvType}|${perf.flashAttn}".hashCode().toLong() and 0xffffffffL
+                )
+                LlamaCppEngine.KvCacheConfig(
+                    dir = com.google.ai.edge.gallery.data.characters.KvCacheFiles.dir(context).absolutePath,
+                    modelKey = key,
+                    sys = perf.kvCacheSystem,
+                    chat = perf.kvCacheChat,
+                )
+            } else null
 
         engine.loadModel(
             modelPath = modelPath,
@@ -68,6 +118,75 @@ object LlamaCppModelHelper : LlmModelHelper {
                 onDone(e.message ?: "Failed to load GGUF model")
             }
         )
+    }
+
+    /**
+     * Chat normal de Box: vuelve a los ajustes del propio modelo (los que usa Box sin Roleplay),
+     * por si este mismo modelo cargado venía de un chat de personaje.
+     */
+    fun resetSampler(model: Model) {
+        val topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK)
+        val topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP)
+        val temperature = model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE)
+        engines[model.name]?.applySampler(
+            com.google.ai.edge.gallery.data.characters.SamplerSettings(
+                temperature = temperature,
+                dynTempRange = 0f,
+                topK = topK,
+                topP = topP,
+                minP = 0.1f,
+                repeatPenalty = 1.1f,
+                repeatLastN = 256,
+                dryMultiplier = 0f,
+            )
+        )
+    }
+
+    /** Roleplay: vuelve a leer el modo de muestreo guardado y lo aplica al modelo cargado. */
+    fun refreshSampler(model: Model) {
+        val ctx = appContext ?: return
+        engines[model.name]?.applySampler(
+            com.google.ai.edge.gallery.data.characters.SamplerSettingsStore(ctx).current()
+        )
+    }
+
+    /** Prueba de velocidad del primer modelo GGUF cargado (null si no hay o está ocupado). */
+    fun benchmarkLoaded(): String? {
+        val e = engines.values.firstOrNull { it.isModelLoaded.get() } ?: return null
+        val ctx = e.lastLoadParams?.contextSize?.toInt() ?: 2048
+        val pp = (ctx / 2).coerceIn(32, 256)
+        return e.benchModel(pp = pp, tg = 48)
+    }
+
+    /** Nombre del primer modelo GGUF cargado en esta sesión (null si no hay ninguno). */
+    fun loadedGgufModelName(): String? =
+        engines.entries.firstOrNull { it.value.isModelLoaded.get() }?.key
+
+    /** Tamaño de contexto con el que se cargó el modelo (tokens), si está cargado. */
+    fun contextSizeOf(model: Model): Int? = engines[model.name]?.lastLoadParams?.contextSize?.toInt()
+
+    /** Roleplay: ver LlamaCppEngine.seedConversation. */
+    fun seedConversation(model: Model, systemPrompt: String, history: List<Pair<String, String>>) {
+        engines[model.name]?.seedConversation(systemPrompt, history)
+    }
+
+    /**
+     * BUG-002: inferencia auxiliar (absorción de memoria) sin cerrar ni recargar el modelo.
+     * resetConversation en llama.cpp hace close+reload (segundos, asíncrono) y la tanda siguiente
+     * podía arrancar contra un motor a medio cerrar (use-after-free, SIGSEGV en el tokenizador).
+     * Aquí basta un resetChat nativo: borra historial y KV sin tocar los pesos, y es síncrono.
+     */
+    override fun prepareForAuxInference(model: Model) {
+        engines[model.name]?.seedConversation("", emptyList())
+    }
+
+    /**
+     * BUG-002 (3.ª ronda): entre tandas de absorción. Gemma 4 (ruta de marcadores) usa el reset
+     * ligero que conserva la KV (prepareForAuxTanda); el resto de modelos GGUF mantiene el
+     * comportamiento anterior (resetChat completo, cada tanda independiente).
+     */
+    override fun auxTandaBoundary(model: Model) {
+        engines[model.name]?.prepareForAuxTanda()
     }
 
     override fun resetConversation(
@@ -100,10 +219,22 @@ object LlamaCppModelHelper : LlmModelHelper {
 
     override fun cleanUp(model: Model, onDone: () -> Unit) {
         val engine = engines.remove(model.name)
+        // Si el interruptor "Caché del chat completo" está activo, se guarda la conversación antes
+        // de cerrar (no hace nada si el modelo está generando).
+        engine?.saveKvChat()
         engine?.unloadModel()
         model.instance = null
         onDone()
         Log.d(TAG, "Clean up done for ${model.name}")
+    }
+
+    /**
+     * BUG-016: `model.instance` puede seguir apuntando al motor anterior mientras se libera y se
+     * carga el nuevo; hay que comprobar también el motor real del mapa y que esté cargado.
+     */
+    override fun isModelReady(model: Model): Boolean {
+        val engine = engines[model.name] ?: return false
+        return model.instance === engine && engine.isModelLoaded.get()
     }
 
     override fun stopResponse(model: Model) {
@@ -122,30 +253,87 @@ object LlamaCppModelHelper : LlmModelHelper {
         coroutineScope: CoroutineScope?,
         extraContext: Map<String, String>?,
     ) {
-        val engine = engines[model.name]
+        // BUG-016 (vía B): esperar la inicialización con un límite en vez de fallar al primer
+        // intento. Se vuelve a leer el mapa por si el motor se sustituye mientras se espera.
+        var engine = engines[model.name]
+        val esperaInicio = System.currentTimeMillis()
+        while ((engine == null || !engine.isModelLoaded.get()) &&
+            System.currentTimeMillis() - esperaInicio < ESPERA_CARGA_MS
+        ) {
+            Thread.sleep(50)
+            engine = engines[model.name]
+        }
         if (engine == null || !engine.isModelLoaded.get()) {
-            onError("llama.cpp engine not initialized for ${model.name}")
+            onError("El modelo sigue cargando (${model.name}). Vuelve a enviar el mensaje en unos segundos.")
+            return
+        }
+        // BUG-001: no mandar cadenas vacias al tokenizador nativo (con imágenes el texto puede
+        // ir vacío y solo van los marcadores).
+        if (input.isBlank() && images.isEmpty()) {
+            onError("No hay mensaje que enviar.")
             return
         }
 
-        // Note: llama.cpp text-only — images/audio not supported in this path
+        // Imágenes: solo si se cargó un mmproj (Rendimiento > Visión); si no, se ignoran.
+        var query = input
         if (images.isNotEmpty()) {
-            Log.w(TAG, "Image input not supported with llama.cpp engine, ignoring ${images.size} images")
+            if (engine.visionReady) {
+                val maxSide =
+                    appContext?.let { com.google.ai.edge.gallery.data.characters.EnginePerfStore(it).load().imageMaxSide } ?: 512
+                query = engine.queueImages(images, maxSide) + input
+                Log.i(TAG, "GGUF vision: ${images.size} imagen(es), lado máx $maxSide")
+            } else {
+                Log.w(TAG, "Sin mmproj cargado: se ignoran ${images.size} imágenes (impórtalo en Rendimiento > Visión)")
+            }
+        }
+
+        // Thinking: en LiteRT el flag viaja en extraContext; en llama.cpp hay que aplicarlo al
+        // formatear el prompt (llama.cpp no recibe kwargs de plantilla en esta versión).
+        val enableThinking = extraContext?.get("enable_thinking")?.toBoolean() == true
+        engine.setThinking(enableThinking)
+        Log.i(TAG, "GGUF thinking=${enableThinking} (model=${model.name})")
+
+        // BUG-002 (4.ª ronda): las inferencias auxiliares (absorción) viajan con un tope de
+        // tokens generados (extraContext "max_response_tokens") para acotar su duración: sin
+        // tope, un resumen desbocado sin EOS consume el watchdog entero. Se restaura al tope
+        // del chat en cuanto la generación termina, se cancela o falla.
+        val maxResponse = extraContext?.get("max_response_tokens")?.toIntOrNull()?.coerceAtLeast(1)
+        if (maxResponse != null) {
+            engine.setMaxResponse(maxResponse)
+            Log.i(TAG, "GGUF maxResponse auxiliar=${maxResponse} tok (model=${model.name})")
+        }
+
+        // Gemma 4: separa el razonamiento en voz alta de la respuesta (ver ThinkingSplitter).
+        val splitter =
+            if (com.google.ai.edge.gallery.data.characters.ThinkingSplitter.appliesTo(model.name))
+                com.google.ai.edge.gallery.data.characters.ThinkingSplitter()
+            else null
+        fun emit(out: com.google.ai.edge.gallery.data.characters.ThinkingSplitter.Out) {
+            // Con thinking desactivado no se muestra el razonamiento aunque el modelo lo escriba:
+            // se descarta y solo se entrega la respuesta.
+            if (enableThinking) out.thought?.let { resultListener("", false, it) }
+            if (out.answer.isNotEmpty()) resultListener(out.answer, false, null)
         }
 
         engine.generateResponse(
-            query = input,
+            query = query,
             onToken = { partialResponse ->
-                resultListener(partialResponse, false, null)
+                if (splitter == null) resultListener(partialResponse, false, null)
+                else emit(splitter.feed(partialResponse))
             },
             onComplete = { result ->
+                if (maxResponse != null) engine.restoreMaxResponse()
+                splitter?.let { emit(it.finish()) }
                 // Send the final delta (empty string) with done=true
                 resultListener("", true, null)
             },
             onCancelled = {
+                if (maxResponse != null) engine.restoreMaxResponse()
+                splitter?.let { emit(it.finish()) }
                 resultListener("", true, null)
             },
             onError = { e ->
+                if (maxResponse != null) engine.restoreMaxResponse()
                 Log.e(TAG, "Inference error", e)
                 onError(e.message ?: "Inference error")
             }

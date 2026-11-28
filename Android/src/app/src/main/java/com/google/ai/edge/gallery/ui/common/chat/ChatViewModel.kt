@@ -25,6 +25,7 @@ import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.local.ChatRepository
 import com.google.ai.edge.gallery.ui.common.chat.ChatSide
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
@@ -50,12 +51,29 @@ data class ChatUiState(
 )
 
 /** ViewModel responsible for managing the chat UI state and handling chat-related operations. */
+/** Versión activa (desde 0) y total de versiones de la última respuesta del personaje. */
+data class SwipeState(val index: Int = 0, val count: Int = 1)
+
 abstract class ChatViewModel : ViewModel() {
   protected val _uiState = MutableStateFlow(createUiState())
   val uiState = _uiState.asStateFlow()
   
   // Subclasses should override this to provide the repository
   protected abstract val chatRepository: ChatRepository
+
+  // Roleplay: herramientas de mensajes (regenerar, swipes, editar). Solo el chat LLM las activa;
+  // los demás ViewModels heredan estos valores que no hacen nada.
+  open val supportsMessageTools: Boolean = false
+  open val swipeState: StateFlow<SwipeState> = MutableStateFlow(SwipeState()).asStateFlow()
+
+  open fun refreshMessageTools() {}
+
+  open fun regenerateLast(model: Model, onError: (String) -> Unit) {}
+
+  /** delta -1 = versión anterior; +1 = siguiente (si no hay, genera una nueva). */
+  open fun swipeLast(model: Model, delta: Int, onError: (String) -> Unit) {}
+
+  open fun editMessage(model: Model, message: ChatMessageText, newText: String) {}
 
   fun addMessage(model: Model, message: ChatMessage) {
     val newMessagesByModel = _uiState.value.messagesByModel.toMutableMap()
@@ -166,6 +184,34 @@ abstract class ChatViewModel : ViewModel() {
         val newLastMessage =
           ChatMessageText(
             content = newContent,
+            side = lastMessage.side,
+            latencyMs = latencyMs,
+            accelerator = lastMessage.accelerator,
+            hideSenderLabel = lastMessage.hideSenderLabel,
+          )
+        newMessages.removeAt(newMessages.size - 1)
+        newMessages.add(newLastMessage)
+      }
+    }
+    newMessagesByModel[model.name] = newMessages
+    val newUiState = _uiState.value.copy(messagesByModel = newMessagesByModel)
+    _uiState.update { newUiState }
+  }
+
+  /**
+   * Reemplaza el contenido del último mensaje de texto (no lo concatena). Lo usa el filtro de
+   * escenas (BUG-004): al descartar un bloque de otro hablante el texto visible puede encogerse,
+   * y con el acumulador incremental se quedaría pegado lo ya pintado.
+   */
+  fun setLastTextMessageContent(model: Model, content: String, latencyMs: Float) {
+    val newMessagesByModel = _uiState.value.messagesByModel.toMutableMap()
+    val newMessages = newMessagesByModel[model.name]?.toMutableList() ?: mutableListOf()
+    if (newMessages.isNotEmpty()) {
+      val lastMessage = newMessages.last()
+      if (lastMessage is ChatMessageText) {
+        val newLastMessage =
+          ChatMessageText(
+            content = processLlmResponse(response = content),
             side = lastMessage.side,
             latencyMs = latencyMs,
             accelerator = lastMessage.accelerator,

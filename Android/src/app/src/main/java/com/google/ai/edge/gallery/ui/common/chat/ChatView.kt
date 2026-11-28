@@ -76,7 +76,16 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AGChatView"
 
-data class SendMessageTrigger(val model: Model, val messages: List<ChatMessage>)
+/**
+ * Un disparo de envío programático. [promptSuffix] y [restriction] viajan solo al motor (BUG-003):
+ * no se crean mensajes visibles ni se persisten.
+ */
+data class SendMessageTrigger(
+  val model: Model,
+  val messages: List<ChatMessage>,
+  val promptSuffix: String? = null,
+  val restriction: com.google.ai.edge.gallery.data.characters.ScenePromptBuilder.TurnRestriction? = null,
+)
 
 /**
  * A composable that displays a chat interface, allowing users to interact with different models
@@ -105,6 +114,8 @@ fun ChatView(
   composableBelowMessageList: @Composable (Model) -> Unit = {},
   showImagePicker: Boolean = false,
   showAudioPicker: Boolean = false,
+  allowEmptySend: Boolean = false,
+  allowImageOnlySend: Boolean = false,
   emptyStateComposable: @Composable (Model) -> Unit = {},
   aboveInputComposable: @Composable (Model) -> Unit = {},
   allowEditingSystemPrompt: Boolean = false,
@@ -128,13 +139,24 @@ fun ChatView(
     val existingMessages = llmViewModel.uiState.value.messagesByModel[selectedModel.name]
     if (!existingMessages.isNullOrEmpty()) return@LaunchedEffect  // already loaded for this model
 
-    val convId = if (conversationId != null) {
-      conversationId
-    } else if (autoResumeConversation) {
-      llmViewModel.getLatestConversationForModel(selectedModel.name)?.id
-    } else {
-      null
-    }
+    val convId =
+      if (conversationId != null) {
+        conversationId
+      } else if (autoResumeConversation) {
+        // Box: no reanudar por accidente un chat de Roleplay al abrir un modelo desde la lista de
+        // modelos ("Probar modelo" / "Open"). Un chat de personaje solo se abre desde Roleplay,
+        // que pasa conversationId de forma explícita; así "Probar modelo" empieza limpio en vez
+        // de volver al personaje que estaba activo.
+        val latest = llmViewModel.getLatestConversationForModel(selectedModel.name)
+        if (latest?.characterId?.isNotBlank() == true) {
+          Log.d(TAG, "Auto-resume skipped: ${latest.id} belongs to roleplay")
+          null
+        } else {
+          latest?.id
+        }
+      } else {
+        null
+      }
 
     if (convId != null) {
       Log.d(TAG, "Loading conversation history for: $convId (model=${selectedModel.name})")
@@ -156,7 +178,15 @@ fun ChatView(
       if (conv?.systemPrompt?.isNotEmpty() == true) {
         llmViewModel.setCurrentSystemPrompt(conv.systemPrompt)
       }
+      com.google.ai.edge.gallery.tts.TtsManager.appContext = context.applicationContext
+      llmViewModel.setRoleplayChat(
+        value = conv?.characterId?.isNotBlank() == true,
+        characterId = conv?.characterId ?: "",
+        loreMaxEntries =
+          com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(context).loreMaxEntries(),
+      )
     } else {
+      llmViewModel.setRoleplayChat(false)
       Log.d(TAG, "No existing conversation for model ${selectedModel.name}, starting fresh")
     }
   }
@@ -189,6 +219,18 @@ fun ChatView(
         Log.d(TAG, "Initializing model '${selectedModel.name}' from ChatView launched effect")
         modelManagerViewModel.initializeModel(context, task = task, model = selectedModel)
       }
+    }
+  }
+
+  // Si el modelo se liberó por inactividad en segundo plano, se recarga al volver al chat.
+  val initStatus = modelManagerUiState.modelInitializationStatus[selectedModel.name]?.status
+  LaunchedEffect(initStatus) {
+    if (
+      !navigatingUp &&
+        initStatus == ModelInitializationStatusType.NOT_INITIALIZED &&
+        curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
+    ) {
+      modelManagerViewModel.initializeModel(context, task = task, model = selectedModel)
     }
   }
 
@@ -295,6 +337,8 @@ fun ChatView(
                 showStopButtonInInputWhenInProgress = showStopButtonInInputWhenInProgress,
                 showImagePicker = showImagePicker,
                 showAudioPicker = showAudioPicker,
+                allowEmptySend = allowEmptySend,
+                allowImageOnlySend = allowImageOnlySend,
                 emptyStateComposable = emptyStateComposable,
                 aboveInputComposable = aboveInputComposable,
               )
