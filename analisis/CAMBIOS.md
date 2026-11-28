@@ -46,7 +46,8 @@
 - **Qué**: se consolidan las ramas. Se conservan solo `main` (estable) y `desarrollo` (única rama de trabajo). `fase2-store-preview` se renombra a `desarrollo` y conserva el commit `cdfc8cd` de la ficha previa de la tienda; se borran localmente y en `origin` `fase1-tts`, `fase1-rendimiento`, `fase2-voice-studio` y `Prueba1`, que ya estaban dentro de `main` o no tenían commits propios. Se actualizan las referencias de ramas en `AGENTS.md` y en el contexto de `analisis/CAMBIOS.md`.
 - **Por qué**: el usuario pidió dejar una sola rama de pruebas para no perder el hilo y trabajar todo ahí; lo validado se fusiona en `main` y lo pendiente se queda en `desarrollo`. La ficha previa de la tienda sigue en `desarrollo` porque aún no está probada en móvil.
 - **Archivos**: `AGENTS.md`, `analisis/CAMBIOS.md`. Sin cambios de código; el commit de la tienda (`cdfc8cd`) sigue intacto bajo el nombre `desarrollo`.
-- **Verificado**: `git branch -a` muestra solo `main` y `desarrollo` (más sus referencias remotas); `main` sigue en `03003c9` y `desarrollo` en `cdfc8cd`.
+- **Verificado**: `git branch -a` muestra solo `main` y `desarrollo` (más sus referencias remotas); la ficha previa de la tienda sigue sin fusionar en `main`.
+- **Nota**: el comando de clonado de `AGENTS.md` también apuntaba a `fase1-rendimiento`; ahora usa `-b main`.
 
 ### 2026-11-27 — Tienda: ficha previa antes de importar un personaje
 

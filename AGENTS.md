@@ -23,7 +23,7 @@ Proyecto: **Box RolePlay** — fork de [Box](https://github.com/jegly/Box) (base
 ## Compilación
 
 ```bash
-git clone --recurse-submodules -b fase1-rendimiento https://github.com/TempoSo/Box-RolePlay.git
+git clone --recurse-submodules -b main https://github.com/TempoSo/Box-RolePlay.git
 cd Box-RolePlay/Android && ./gradlew :app:assembleDebug
 ```
 
