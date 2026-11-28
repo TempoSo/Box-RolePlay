@@ -32,6 +32,10 @@ interface MessageDao {
     @Delete
     suspend fun delete(message: Message)
 
+    /** Borra un conjunto de mensajes (al eliminar un turno y todo lo que vino después). */
+    @Delete
+    suspend fun deleteMessages(messages: List<Message>)
+
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     suspend fun deleteAllForConversation(conversationId: String)
 }

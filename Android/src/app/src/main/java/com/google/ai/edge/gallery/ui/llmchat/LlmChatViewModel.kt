@@ -288,6 +288,33 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     }
   }
 
+  /**
+   * Borra un mensaje y todo lo que vino después (incluida la respuesta del modelo), para poder
+   * reeditar el turno desde ahí. Se quita primero de pantalla y luego de la conversación guardada.
+   */
+  override fun deleteMessage(model: Model, message: ChatMessageText, onError: (String) -> Unit) {
+    if (uiState.value.inProgress) return
+    val messages = uiState.value.messagesByModel[model.name] ?: return
+    val index = messages.indexOf(message)
+    if (index < 0) return
+    val position =
+      messages.subList(0, index).count { it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM }
+    while ((uiState.value.messagesByModel[model.name]?.size ?: 0) > index) removeLastMessage(model)
+    // El motor debe reconstruir el historial desde el punto en que se borró el turno.
+    liteRtWindows.remove(model.name)
+    refreshMessageTools()
+    val convId = currentConversationId ?: return
+    val repo = chatRepository ?: return
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        conversationMutex.withLock { repo.deleteMessagesFrom(convId, position) }
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to delete messages", e)
+        onError("No se pudo borrar el mensaje: ${e.message ?: e.javaClass.simpleName}")
+      }
+    }
+  }
+
   // true si el chat abierto es de un personaje de Roleplay.
   private var isRoleplayChat = false
 

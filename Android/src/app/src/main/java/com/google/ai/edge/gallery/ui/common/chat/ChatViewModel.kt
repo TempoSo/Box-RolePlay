@@ -78,6 +78,9 @@ abstract class ChatViewModel : ViewModel() {
 
   open fun editMessage(model: Model, message: ChatMessageText, newText: String) {}
 
+  /** Borra un mensaje y todo lo que vino después, para poder reescribir el turno desde ahí. */
+  open fun deleteMessage(model: Model, message: ChatMessageText, onError: (String) -> Unit) {}
+
   fun addMessage(model: Model, message: ChatMessage) {
     val newMessagesByModel = _uiState.value.messagesByModel.toMutableMap()
     val newMessages = newMessagesByModel[model.name]?.toMutableList() ?: mutableListOf()

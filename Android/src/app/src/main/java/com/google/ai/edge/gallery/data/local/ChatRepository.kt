@@ -260,4 +260,18 @@ class ChatRepository @Inject constructor(
         messageDao.update(target.copy(content = newText, alternatives = Swipes.encode(state.texts)))
         return true
     }
+
+    /**
+     * Borra el mensaje número [position] y todos los posteriores (solo se cuentan los mensajes de
+     * usuario/asistente, en orden). Devuelve cuántos se borraron. Así se puede reeditar un turno
+     * sin dejar respuestas huérfanas colgando.
+     */
+    suspend fun deleteMessagesFrom(conversationId: String, position: Int): Int {
+        if (position < 0) return 0
+        val chat = messageDao.getMessagesForConversationSync(conversationId)
+            .filter { it.role == "user" || it.role == "assistant" }
+        val doomed = if (position < chat.size) chat.drop(position) else return 0
+        messageDao.deleteMessages(doomed)
+        return doomed.size
+    }
 }

@@ -55,6 +55,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -151,6 +152,7 @@ fun ChatPanel(
   val swipeState by viewModel.swipeState.collectAsState()
   var editTarget by remember { mutableStateOf<ChatMessageText?>(null) }
   var editText by remember { mutableStateOf("") }
+  var deleteTarget by remember { mutableStateOf<ChatMessageText?>(null) }
   LaunchedEffect(messages.size, uiState.inProgress) {
     if (!uiState.inProgress) viewModel.refreshMessageTools()
   }
@@ -581,6 +583,11 @@ fun ChatPanel(
                                 }
                               },
                             ),
+                            MessageAction(
+                              etiqueta = "Eliminar",
+                              icono = Icons.Rounded.Delete,
+                              onClick = { deleteTarget = message },
+                            ),
                           ),
                       )
                     }
@@ -655,6 +662,11 @@ fun ChatPanel(
                                 editTarget = message
                                 showCopyButton = false
                               },
+                            ),
+                            MessageAction(
+                              etiqueta = "Eliminar",
+                              icono = Icons.Rounded.Delete,
+                              onClick = { deleteTarget = message },
                             ),
                           ),
                       )
@@ -800,6 +812,29 @@ fun ChatPanel(
         }
       },
       dismissButton = { TextButton(onClick = { editTarget = null }) { Text("Cancelar") } },
+    )
+  }
+
+  deleteTarget?.let { target ->
+    AlertDialog(
+      onDismissRequest = { deleteTarget = null },
+      title = { Text("¿Eliminar mensaje?") },
+      text = {
+        Text(
+          "Se borrará este mensaje y todo lo que vino después. Podrás editar tu último mensaje y volver a generar la respuesta.",
+        )
+      },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            viewModel.deleteMessage(selectedModel, target) { error ->
+              scope.launch { snackbarHostState.showSnackbar(error) }
+            }
+            deleteTarget = null
+          },
+        ) { Text("Eliminar") }
+      },
+      dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancelar") } },
     )
   }
 

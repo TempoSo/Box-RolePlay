@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-28 — Chat: eliminar un mensaje y reescribir el turno
+
+- **Qué**: «Eliminar» entra en el menú de tres puntos de las acciones del chat de roleplay, tanto en mensajes del usuario como del modelo. Borra el mensaje elegido y todo lo que vino después (respuesta incluida), tanto en pantalla como en la conversación guardada, con diálogo de confirmación. Después se puede volver a escribir el turno y regenerar desde ahí. No aparece en chats que no sean de roleplay (`supportsMessageTools`).
+- **Por qué**: el usuario pidió poder corregir un turno escrito mal sin arrastrar una respuesta del modelo que ya no aplica: borrar la respuesta y reeditar el mensaje propio deja el historial limpio para regenerar.
+- **Archivos**: `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatPanel.kt` (acción, diálogo), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatViewModel.kt` y `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatViewModel.kt` (`deleteMessage`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/local/ChatRepository.kt` (`deleteMessagesFrom`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/local/dao/MessageDao.kt` (`deleteMessages`), `analisis/CAMBIOS.md`.
+- **Verificado**: `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon` → BUILD SUCCESSFUL, 286 tests, 0 fallos. Sin verificar en móvil: que el menú sigue sin cortarse con la nueva entrada y que al borrar se regenere limpio. Sin migración nueva (solo se añade un método al DAO). Todo en `desarrollo`, sin fusionar en `main`.
+- **Nota**: el log enviado por el usuario (2026-11-27 23:55) solo contiene los crashes antiguos de Room de las 22:32–22:34, ya corregidos en `cb4c49b`; tras la reinstalación de las 23:48 no hay nuevas excepciones, solo carga de modelos y un cierre forzado del sistema por memoria.
+
 ### 2026-11-27 — Fase 2 de memoria: grafo en el scoring y vista 2D; botones del chat compactos
 
 - **Qué (memoria)**: el grafo ya no solo se guarda: `MemoryGraphScorer` calcula un refuerzo determinista por recuerdo según coincidencia de entidades (personas/conceptos/emociones) con la consulta, y entra en `MemoryRetriever` con peso 0,10 (se rebalancean similitud 0,40 y recencia 0,25; importancia 0,10 y uso 0,10 se mantienen). Se añade «Ver grafo» en la pantalla de memoria: vista 2D con `Canvas` + cajas, filtros Todo/T0/T1/Temporal, sin dependencias nuevas. Al editar o borrar un recuerdo se limpian sus nodos/aristas y se regeneran; la edición manual usa el mismo camino estructurado que el chat.
