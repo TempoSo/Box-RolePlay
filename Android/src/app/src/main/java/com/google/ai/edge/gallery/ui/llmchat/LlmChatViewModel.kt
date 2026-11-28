@@ -50,6 +50,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -152,6 +153,65 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     )
   }
 
+  /**
+   * «Continuar»: recorta el final de la última respuesta del modelo y le pide que siga desde ahí.
+   * El recorte se guarda en la conversación y la continuación entra como mensaje nuevo del modelo;
+   * la instrucción para seguir no se muestra ni se persiste (persistInput = false).
+   */
+  override fun continueLast(model: Model, onError: (String) -> Unit) {
+    if (uiState.value.inProgress) return
+    val messages = uiState.value.messagesByModel[model.name] ?: return
+    val index = messages.indexOfLast { it.type == ChatMessageType.TEXT && it.side == ChatSide.AGENT }
+    val last = messages.getOrNull(index) as? ChatMessageText ?: return
+    val truncated =
+      com.google.ai.edge.gallery.data.characters.Continuation.cutForContinuation(last.content)
+    if (truncated == null) {
+      onError("La respuesta es demasiado corta para continuar")
+      return
+    }
+    replaceMessage(
+      model = model,
+      index = index,
+      message =
+        ChatMessageText(
+          content = truncated,
+          side = last.side,
+          latencyMs = last.latencyMs,
+          isMarkdown = last.isMarkdown,
+          llmBenchmarkResult = last.llmBenchmarkResult,
+          accelerator = last.accelerator,
+          hideSenderLabel = last.hideSenderLabel,
+          data = last.data,
+        ),
+    )
+    // Que al reabrir el chat no reaparezca el texto completo que acabamos de recortar.
+    val convId = currentConversationId
+    val repo = chatRepository
+    if (convId != null && repo != null) {
+      val position =
+        messages.subList(0, index).count {
+          it.type == ChatMessageType.TEXT && it.side != ChatSide.SYSTEM
+        }
+      viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+          conversationMutex.withLock { repo.editMessageAt(convId, position, "assistant", truncated) }
+        }
+      }
+    }
+    // GGUF rearma el historial desde pantalla; LiteRT necesita invalidar su ventana.
+    liteRtWindows.remove(model.name)
+    generateResponse(
+      model = model,
+      input = "Continúa exactamente donde se cortó el mensaje anterior, sin repetir lo ya escrito.",
+      onError = onError,
+      allowThinking = lastAllowThinking,
+      persistInput = false,
+      regenerate = false,
+      promptSuffix = lastTurnRestriction?.instruction,
+      sceneRestriction = lastTurnRestriction,
+    )
+  }
+
   override fun swipeLast(model: Model, delta: Int, onError: (String) -> Unit) {
     if (uiState.value.inProgress) return
     val state = _swipeState.value
@@ -235,11 +295,36 @@ open class LlmChatViewModelBase() : ChatViewModel() {
   @Volatile private var loreEntries: List<com.google.ai.edge.gallery.data.characters.LoreEntry> = emptyList()
   private var loreMaxEntries = 3
 
-  fun setRoleplayChat(value: Boolean, characterId: String = "", loreMaxEntries: Int = 3) {
+  // Memoria a largo plazo: se recupera por turno, igual que el lorebook. El bloque se conserva
+  // mientras no cambie su firma para no invalidar la caché de prefijo de llama.cpp.
+  var memoryRepository: com.google.ai.edge.gallery.data.characters.MemoryRepository? = null
+  @Volatile private var memoryCharacterId = ""
+  @Volatile private var memoryCharacterName = ""
+  @Volatile private var memoryConversationId = ""
+  @Volatile private var memorySettings = com.google.ai.edge.gallery.data.characters.MemoryInjectionSettings()
+  @Volatile private var memoryBlock = ""
+  @Volatile private var memorySignature = ""
+  @Volatile var lastMemoryTrace: String = ""
+    private set
+
+  fun setRoleplayChat(
+    value: Boolean,
+    characterId: String = "",
+    loreMaxEntries: Int = 3,
+    characterName: String = "",
+    memorySettings: com.google.ai.edge.gallery.data.characters.MemoryInjectionSettings =
+      com.google.ai.edge.gallery.data.characters.MemoryInjectionSettings(),
+  ) {
     isRoleplayChat = value
     com.google.ai.edge.gallery.tts.TtsManager.currentCharacterId = if (value) characterId else ""
     this.loreMaxEntries = loreMaxEntries
     loreEntries = emptyList()
+    memoryCharacterId = if (value) characterId else ""
+    memoryCharacterName = if (value) characterName else ""
+    this.memorySettings = memorySettings
+    memoryBlock = ""
+    memorySignature = ""
+    lastMemoryTrace = ""
     if (value && characterId.isNotBlank()) {
       viewModelScope.launch(Dispatchers.IO) {
         try {
@@ -374,22 +459,60 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     persistUserMessage(model, content)
   }
 
-  private fun applySystemPromptIfNeeded(model: Model, input: String, contextTail: Int = 0) {
+  private suspend fun applySystemPromptIfNeeded(model: Model, input: String, contextTail: Int = 0) {
     val helper = model.runtimeHelper
-    val basePrompt = _currentSystemPrompt.value
+    // Los chats antiguos tenían los recuerdos congelados en el system prompt; se quitan para no
+    // duplicarlos ahora que se inyectan por turno.
+    val basePrompt =
+      com.google.ai.edge.gallery.data.characters.MemoryRetriever.quitaBloqueAntiguo(_currentSystemPrompt.value)
     try {
       val previous = previousTexts(model, contextTail)
-      // Lorebook: las entradas cuyas palabras clave aparecen en las últimas charlas o en el
-      // mensaje nuevo se añaden al prompt de este turno (solo en chats de personaje).
+      val retriever = com.google.ai.edge.gallery.data.characters.MemoryRetriever
+      val repo = memoryRepository
+      val bloqueMemoria =
+        if (isRoleplayChat && memorySettings.enabled && memoryCharacterId.isNotBlank() && repo != null) {
+          try {
+            val memorias = withContext(Dispatchers.IO) { repo.getForRetrieval(memoryCharacterId) }
+            val consulta = (previous.takeLast(2).map { it.content } + input).joinToString("\n")
+            val resultado =
+              retriever.seleccionar(
+                memorias = memorias,
+                nombrePersonaje = memoryCharacterName,
+                textoConsulta = consulta,
+                now = System.currentTimeMillis(),
+                conversacionActual = memoryConversationId,
+                ajustes = memorySettings,
+              )
+            // Solo se reescribe el bloque si cambian los recuerdos elegidos o el día.
+            if (resultado.firma != memorySignature) {
+              memoryBlock = resultado.bloque
+              memorySignature = resultado.firma
+            }
+            lastMemoryTrace = resultado.traza
+            Log.d(TAG, resultado.traza)
+            if (resultado.ids.isNotEmpty()) {
+              withContext(Dispatchers.IO) { repo.bumpAccess(resultado.ids, System.currentTimeMillis()) }
+            }
+            memoryBlock
+          } catch (e: Exception) {
+            Log.e(TAG, "Fallo al recuperar memoria de largo plazo", e)
+            ""
+          }
+        } else ""
+
+      val promptConMemoria =
+        if (bloqueMemoria.isBlank()) basePrompt
+        else retriever.injectIntoPrompt(basePrompt, bloqueMemoria)
+      // Lorebook: canon del autor, por encima de la memoria aprendida y también por turno.
       val prompt =
         if (isRoleplayChat && loreEntries.isNotEmpty()) {
           com.google.ai.edge.gallery.data.characters.LorebookMatcher.applyToPrompt(
-            prompt = basePrompt,
+            prompt = promptConMemoria,
             entries = loreEntries,
             scanTexts = previous.takeLast(3).map { it.content } + input,
             maxEntries = loreMaxEntries,
           )
-        } else basePrompt
+        } else promptConMemoria
 
       // GGUF (llama.cpp): el historial nativo se deja igual al de la pantalla; la ventana
       // deslizante y la caché de prefijo trabajan dentro del motor nativo.
@@ -514,6 +637,8 @@ open class LlmChatViewModelBase() : ChatViewModel() {
    */
   fun setCurrentConversationId(conversationId: String) {
     currentConversationId = conversationId
+    // Se usa para no recuperar como "recuerdo" lo que acaba de pasar en este mismo chat.
+    memoryConversationId = conversationId
   }
 
   /**
@@ -1154,9 +1279,13 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 }
 
 @HiltViewModel class LlmChatViewModel @Inject constructor(
-  repo: ChatRepository
+  repo: ChatRepository,
+  memoryRepo: com.google.ai.edge.gallery.data.characters.MemoryRepository,
 ) : LlmChatViewModelBase() {
-  init { chatRepository = repo }
+  init {
+    chatRepository = repo
+    memoryRepository = memoryRepo
+  }
 }
 
 @HiltViewModel class LlmAskImageViewModel @Inject constructor(

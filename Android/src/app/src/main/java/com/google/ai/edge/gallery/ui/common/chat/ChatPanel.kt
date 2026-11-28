@@ -27,12 +27,14 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -55,6 +57,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -113,7 +116,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Composable function for the main chat panel, displaying messages and handling user input. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatPanel(
   modelManagerViewModel: ModelManagerViewModel,
@@ -142,6 +145,10 @@ fun ChatPanel(
   val uiState by viewModel.uiState.collectAsState()
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
   val messages = uiState.messagesByModel[selectedModel.name] ?: listOf()
+  // En roleplay los botones del último intercambio están siempre visibles; en los mensajes
+  // anteriores se muestran al mantener pulsado (para no llenar la pantalla de botones).
+  val lastUserText = messages.lastOrNull { it.type == ChatMessageType.TEXT && it.side == ChatSide.USER }
+  val lastAgentText = messages.lastOrNull { it.type == ChatMessageType.TEXT && it.side == ChatSide.AGENT }
   // Roleplay: editar mensajes y swipes (solo el chat LLM los activa).
   val swipeState by viewModel.swipeState.collectAsState()
   var editTarget by remember { mutableStateOf<ChatMessageText?>(null) }
@@ -154,6 +161,7 @@ fun ChatPanel(
   val scope = rememberCoroutineScope()
   val clipboardManager = LocalClipboardManager.current
   val haptic = LocalHapticFeedback.current
+  val ttsSpeaking by com.google.ai.edge.gallery.tts.TtsManager.speaking.collectAsState()
   val imageCountToLastConfigChange =
     remember(messages) {
       var imageCount = 0
@@ -518,23 +526,31 @@ fun ChatPanel(
                             )
                           }
                         }
-                        if (showCopyButton) {
-                          MessageActionButton(
-                            label = "Edit",
-                            icon = Icons.Outlined.Edit,
-                            onClick = {
-                              editText = message.content
-                              editTarget = message
-                              showCopyButton = false
-                            },
-                          )
-                        }
                       }
-                      if (message is ChatMessageText && message.content.isNotEmpty() && !uiState.inProgress && showCopyButton) {
-                        val ttsContext = androidx.compose.ui.platform.LocalContext.current
-                        val ttsSpeaking by com.google.ai.edge.gallery.tts.TtsManager.speaking.collectAsState()
+                    }
+                    val toolsVisible =
+                      viewModel.supportsMessageTools &&
+                        message is ChatMessageText &&
+                        message.content.isNotEmpty() &&
+                        !uiState.inProgress &&
+                        (showCopyButton || message === lastAgentText)
+                    if (toolsVisible) {
+                      FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                      ) {
                         MessageActionButton(
-                          label = if (ttsSpeaking) "Stop" else "Voz",
+                          label = "Editar",
+                          icon = Icons.Outlined.Edit,
+                          onClick = {
+                            editText = message.content
+                            editTarget = message
+                            showCopyButton = false
+                          },
+                        )
+                        val ttsContext = androidx.compose.ui.platform.LocalContext.current
+                        MessageActionButton(
+                          label = if (ttsSpeaking) "Parar" else "Hablar",
                           icon = if (ttsSpeaking) Icons.Outlined.Stop else Icons.Outlined.VolumeUp,
                           onClick = {
                             if (ttsSpeaking) com.google.ai.edge.gallery.tts.TtsManager.stop()
@@ -542,12 +558,30 @@ fun ChatPanel(
                           },
                         )
                         MessageActionButton(
-                          label = "Copy",
+                          label = "Copiar",
                           icon = Icons.Outlined.ContentCopy,
                           onClick = {
                             clipboardManager.setText(AnnotatedString(message.content))
                             showCopyButton = false
-                            scope.launch { snackbarHostState.showSnackbar("Copied") }
+                            scope.launch { snackbarHostState.showSnackbar("Copiado") }
+                          },
+                        )
+                        MessageActionButton(
+                          label = "Regenerar",
+                          icon = Icons.Rounded.Refresh,
+                          onClick = {
+                            viewModel.regenerateLast(selectedModel) { error ->
+                              scope.launch { snackbarHostState.showSnackbar(error) }
+                            }
+                          },
+                        )
+                        MessageActionButton(
+                          label = "Continuar",
+                          icon = Icons.Rounded.PlayArrow,
+                          onClick = {
+                            viewModel.continueLast(selectedModel) { error ->
+                              scope.launch { snackbarHostState.showSnackbar(error) }
+                            }
                           },
                         )
                       }
@@ -557,24 +591,8 @@ fun ChatPanel(
                       verticalAlignment = Alignment.CenterVertically,
                       horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                      if (
-                        viewModel.supportsMessageTools &&
-                          message is ChatMessageText &&
-                          !uiState.inProgress &&
-                          showCopyButton
-                      ) {
-                        MessageActionButton(
-                          label = "Edit",
-                          icon = Icons.Outlined.Edit,
-                          onClick = {
-                            editText = message.content
-                            editTarget = message
-                            showCopyButton = false
-                          },
-                        )
-                      }
-                      // Run again button.
-                      if (selectedModel.showRunAgainButton) {
+                      // Run again button (modelos no LLM, que no usan las herramientas de roleplay).
+                      if (selectedModel.showRunAgainButton && !viewModel.supportsMessageTools) {
                         MessageActionButton(
                           label = stringResource(R.string.run_again),
                           icon = Icons.Rounded.Refresh,
@@ -593,6 +611,53 @@ fun ChatPanel(
                             benchmarkMessage.value = message
                           },
                           enabled = !uiState.inProgress,
+                        )
+                      }
+                    }
+                    val toolsVisible =
+                      viewModel.supportsMessageTools &&
+                        message is ChatMessageText &&
+                        message.content.isNotEmpty() &&
+                        !uiState.inProgress &&
+                        (showCopyButton || message === lastUserText)
+                    if (toolsVisible) {
+                      FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                      ) {
+                        MessageActionButton(
+                          label = "Editar",
+                          icon = Icons.Outlined.Edit,
+                          onClick = {
+                            editText = message.content
+                            editTarget = message
+                            showCopyButton = false
+                          },
+                        )
+                        val ttsContext = androidx.compose.ui.platform.LocalContext.current
+                        MessageActionButton(
+                          label = if (ttsSpeaking) "Parar" else "Hablar",
+                          icon = if (ttsSpeaking) Icons.Outlined.Stop else Icons.Outlined.VolumeUp,
+                          onClick = {
+                            if (ttsSpeaking) com.google.ai.edge.gallery.tts.TtsManager.stop()
+                            else com.google.ai.edge.gallery.tts.TtsManager.speak(ttsContext, message.content)
+                          },
+                        )
+                        MessageActionButton(
+                          label = "Copiar",
+                          icon = Icons.Outlined.ContentCopy,
+                          onClick = {
+                            clipboardManager.setText(AnnotatedString(message.content))
+                            showCopyButton = false
+                            scope.launch { snackbarHostState.showSnackbar("Copiado") }
+                          },
+                        )
+                        // Equivale a regenerar la respuesta a partir de este mensaje. Continuar
+                        // no se ofrece aquí: no tiene sentido sobre un mensaje del usuario.
+                        MessageActionButton(
+                          label = "Regenerar",
+                          icon = Icons.Rounded.Refresh,
+                          onClick = { onRunAgainClicked(selectedModel, message) },
                         )
                       }
                     }

@@ -179,11 +179,13 @@ fun ChatView(
         llmViewModel.setCurrentSystemPrompt(conv.systemPrompt)
       }
       com.google.ai.edge.gallery.tts.TtsManager.appContext = context.applicationContext
+      val roleplaySettings = com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(context)
       llmViewModel.setRoleplayChat(
         value = conv?.characterId?.isNotBlank() == true,
         characterId = conv?.characterId ?: "",
-        loreMaxEntries =
-          com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore(context).loreMaxEntries(),
+        loreMaxEntries = roleplaySettings.loreMaxEntries(),
+        characterName = conv?.title ?: "",
+        memorySettings = roleplaySettings.memoryInjectionSettings(conv?.characterId ?: ""),
       )
     } else {
       llmViewModel.setRoleplayChat(false)

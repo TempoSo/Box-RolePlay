@@ -140,21 +140,13 @@ class CharacterRepository @Inject constructor(
         /** Saludo elegido por el usuario; null = uno al azar entre los de la tarjeta. */
         greetingOverride: String? = null,
     ): Conversation = withContext(Dispatchers.IO) {
-        // Memoria a largo plazo: los recuerdos más recientes entran en el prompt del chat nuevo.
-        val settings = RoleplaySettingsStore(context)
-        val memoryText = if (settings.memoryEnabled(character.id)) {
-            MemoryPromptBuilder.build(
-                charName = character.name.trim().ifEmpty { "Character" },
-                memories = memoryRepository.getAll(character.id).map { MemoryEntry(it.content, it.createdAt) },
-                max = settings.memoryMaxInjections(),
-                now = System.currentTimeMillis(),
-            )
-        } else ""
+        // La memoria ya no se congela aquí: LlmChatViewModel la recupera en cada turno con umbral
+        // y límite, igual que el lorebook. Así los recuerdos absorbidos después surten efecto
+        // también en un chat abierto.
         val built = CharacterPromptBuilder.build(
             card = character.toCard(),
             userName = persona?.name ?: CharacterPromptBuilder.DEFAULT_USER_NAME,
             userDescription = persona?.description ?: "",
-            memory = memoryText,
         )
         val greeting = greetingOverride ?: CharacterPromptBuilder.pickGreeting(built.greetings, random)
         val conversation = chatRepository.createConversation(

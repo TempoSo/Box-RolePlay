@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -69,6 +70,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -97,6 +99,8 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
   val characters by viewModel.characters.collectAsState()
   var link by remember { mutableStateOf("") }
   var confirmNsfw by remember { mutableStateOf(false) }
+  var showJump by remember { mutableStateOf(false) }
+  var jumpInput by remember { mutableStateOf("") }
 
   LaunchedEffect(message) {
     message?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show(); viewModel.clearMessage() }
@@ -167,6 +171,43 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
     )
   }
 
+  if (showJump) {
+    AlertDialog(
+      onDismissRequest = { showJump = false },
+      title = { Text("Ir a una página") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Text(
+            if (totalPages != null) "Hay $totalPages páginas. Escribe a cuál quieres ir."
+            else "Escribe el número de página. El total se descubre al cargarla.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          OutlinedTextField(
+            value = jumpInput,
+            onValueChange = { jumpInput = it.filter { ch -> ch.isDigit() } },
+            label = { Text("Página") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = {
+              val n = jumpInput.toIntOrNull()
+              if (n != null && n >= 1) { viewModel.goTo(n); showJump = false }
+            }),
+            modifier = Modifier.fillMaxWidth(),
+          )
+        }
+      },
+      confirmButton = {
+        TextButton(enabled = (jumpInput.toIntOrNull() ?: 0) >= 1, onClick = {
+          val n = jumpInput.toIntOrNull()
+          if (n != null && n >= 1) viewModel.goTo(n)
+          showJump = false
+        }) { Text("Ir") }
+      },
+      dismissButton = { TextButton(onClick = { showJump = false }) { Text("Cancelar") } },
+    )
+  }
+
   BoxScaffold(title = "Tienda de personajes", subtitle = "Tarjetas de Chub y otras fuentes", onBack = onBack) {
     Column(Modifier.fillMaxSize()) {
       Row(
@@ -184,7 +225,13 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
           keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
           modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = { viewModel.random() }, enabled = !loading) { Icon(Icons.Rounded.Shuffle, "Aleatorio") }
+        IconButton(onClick = { viewModel.random() }, enabled = !loading) { Icon(Icons.Rounded.Shuffle, "Página aleatoria") }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          IconButton(onClick = { viewModel.randomCharacter() }, enabled = !loading && busyId == null) {
+            Icon(Icons.Rounded.Casino, "¿No encuentras lo que quieres? Trae un personaje aleatorio")
+          }
+          Text("Sorpréndeme", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        }
         IconButton(onClick = { showLink = true }) { Icon(Icons.Rounded.Link, "Importar por enlace") }
       }
       LazyRow(
@@ -218,7 +265,13 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
             when {
               loading -> CircularProgressIndicator()
               results.isEmpty() -> Text("Sin resultados.", style = MaterialTheme.typography.bodyMedium)
-              else -> PageBar(page, totalPages, hasMore, onGo = { viewModel.goTo(it) })
+              else -> PageBar(
+                page,
+                totalPages,
+                hasMore,
+                onGo = { viewModel.goTo(it) },
+                onEdit = { jumpInput = page.toString(); showJump = true },
+              )
             }
           }
         }
@@ -229,7 +282,13 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PageBar(page: Int, totalPages: Int?, hasMore: Boolean, onGo: (Int) -> Unit) {
+private fun PageBar(
+  page: Int,
+  totalPages: Int?,
+  hasMore: Boolean,
+  onGo: (Int) -> Unit,
+  onEdit: () -> Unit,
+) {
   val items = StorePager.items(page, totalPages, hasMore)
   val canNext = if (totalPages != null) page < totalPages else hasMore
   FlowRow(
@@ -246,7 +305,8 @@ private fun PageBar(page: Int, totalPages: Int?, hasMore: Boolean, onGo: (Int) -
         Box(
           Modifier.size(36.dp).clip(RoundedCornerShape(12.dp))
             .background(if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(enabled = !sel) { onGo(p) },
+            // Tocar la página actual abre el editor; las demás van directas.
+            .clickable { if (sel) onEdit() else onGo(p) },
           contentAlignment = Alignment.Center,
         ) {
           Text(
