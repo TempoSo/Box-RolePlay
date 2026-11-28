@@ -18,7 +18,7 @@
 
 ## ¿Qué es Box RolePlay?
 
-**Box RolePlay** es un fork de [Box](https://github.com/jegly/Box) (que a su vez deriva de [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery)) reorientado por completo a una idea: **conversar con personajes de IA en tu teléfono, sin que nada salga de él**.
+**Box RolePlay** es un fork de [Box](https://github.com/jegly/Box) (que a su vez deriva de [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery)) reorientado por completo a una idea: **conversar con personajes de IA en tu teléfono, sin que nada salga de él**. La app se instala con el nombre **Nexo** (paquete `com.temposo.nexo`) para distinguirla de Box; el repositorio conserva su nombre histórico.
 
 > [!NOTE]
 > **Base del fork: Box [`1.0.12`](https://github.com/jegly/Box/tree/8d6503a8a393ace3d50cfd5084827a0614028c67)** (commit `8d6503a8`). Este proyecto se desarrolla sobre el código abierto de Box en ese punto de su historia. Las versiones posteriores del README de upstream corresponden a APK distribuidos; aquí la referencia es siempre el código de este repositorio.

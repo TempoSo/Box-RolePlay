@@ -164,7 +164,7 @@ object BiometricEncryptionManager {
             }
         }
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Box")
+            .setTitle("Nexo")
             .setSubtitle(subtitle)
             .setNegativeButtonText("Cancel")
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)

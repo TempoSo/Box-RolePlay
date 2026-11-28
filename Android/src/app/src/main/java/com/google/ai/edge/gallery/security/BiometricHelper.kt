@@ -111,7 +111,7 @@ class BiometricHelper(private val activity: FragmentActivity) {
         }
 
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Box")
+            .setTitle("Nexo")
             .setSubtitle("Authenticate to access your chats")
             .setNegativeButtonText("Cancel")
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
@@ -160,7 +160,7 @@ class BiometricHelper(private val activity: FragmentActivity) {
         }
 
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Box")
+            .setTitle("Nexo")
             .setSubtitle("Authenticate to access your chats")
             .setNegativeButtonText("Cancel")
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)

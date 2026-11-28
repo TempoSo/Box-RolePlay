@@ -260,7 +260,7 @@ private fun DbLockedScreen(activity: FragmentActivity) {
         tint = MaterialTheme.colorScheme.primary,
       )
       Spacer(modifier = Modifier.height(4.dp))
-      Text("Box", style = MaterialTheme.typography.headlineMedium)
+      Text("Nexo", style = MaterialTheme.typography.headlineMedium)
       Text(
         "Authenticate to decrypt your chats",
         style = MaterialTheme.typography.bodyMedium,

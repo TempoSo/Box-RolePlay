@@ -18,7 +18,7 @@
 - **Qué es:** fork de [Box](https://github.com/jegly/Box) de jegly (que deriva de Google AI Edge Gallery) reorientado a **roleplay con IA 100 % local** (personajes, escenas multipersonaje, memoria a largo plazo, TTS por personaje).
 - **Base del fork: Box 1.0.1.** El README upstream que venía en el repo era el de la 3.5.7: sus funciones posteriores (Box Assist, Nano Hub, upscale, música, Bonsai/FLUX, MCP…) **NO están en este código**.
 - **Ramas:** solo `main` (estable) y `desarrollo` (única rama de pruebas; ahí se pulsa todo lo pendiente antes de fusionarlo a `main`). No crear ramas nuevas por fase.
-- **Nombre de la app:** "Box RolePlay" (`Android/src/app/src/main/res/values/strings.xml` → `app_name`; paquete raíz `com.box.gallery` con código bajo `com.google.ai.edge.gallery`).
+- **Nombre de la app:** "Nexo" (antes "Box RolePlay"); se instala con el paquete `com.temposo.nexo`. El código Java sigue bajo `com.box.gallery` / `com.google.ai.edge.gallery` (no se renombran paquetes fuente), pero la identidad visible y el `applicationId` son propios.
 - **Convenciones:** commits y documentación en **español**, sin tildes en muchos commits históricos. Los submódulos (`llama.cpp`, `stable-diffusion.cpp`, `whisper.cpp`) son obligatorios al clonar.
 - **Historia previa:** el trabajo roleplay empezó con parches "roleplay fase 2→8" (personas, contexto, muestreo, motor, memoria, lorebook, biblioteca, voz base, especulativa) y continuó con la estructura actual de fases 1–6 y A–E2 (ver git log).
 
@@ -40,6 +40,14 @@
 ---
 
 ## 📝 Registro
+
+### 2026-11-28 — Identidad propia: la app se instala como «Nexo»
+
+- **Qué**: la app deja de mostrarse como «Box» y de instalarse sobre Box. El `applicationId` pasa a `com.temposo.nexo`, `versionCode` a 100 y `versionName` a `1.1.0`; el `AndroidManifest.xml` toma la etiqueta de `@string/app_name` (antes tenía `android:label="Box"` fijo) y el esquema de enlace profundo pasa a `com.temposo.nexo`. Se renombran los textos visibles: «Nexo» en `app_name`, «Nexo / IA» en el título animado de inicio, «Welcome to Nexo» en los términos, «Nexo» en los diálogos biométricos y en la pantalla de inicio, y «Nexo download notification» en el canal de descargas. El icono se mantiene (decisión del usuario). El repositorio sigue llamándose Box RolePlay.
+- **Por qué**: el usuario confirmó que los APK funcionaban en móvil pero que el sistema seguía reconociendo la instalación como una versión anterior de Box; pidió darle otra identidad. Eligió el nombre «Nexo» entre las opciones propuestas y pidió conservar el icono actual.
+- **Archivos**: `Android/src/app/build.gradle.kts`, `Android/src/app/src/main/AndroidManifest.xml`, `Android/src/app/src/main/res/values/strings.xml`, `Android/src/app/src/main/java/com/box/gallery/MainActivity.kt`, `Android/src/app/src/main/java/com/google/ai/edge/gallery/security/BiometricHelper.kt`, `Android/src/app/src/main/java/com/google/ai/edge/gallery/security/BiometricEncryptionManager.kt`, `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/DownloadRepository.kt`, `AGENTS.md`, `README.md`, `analisis/CAMBIOS.md`.
+- **Verificado**: `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon` → BUILD SUCCESSFUL, 301 tests, 0 fallos. Se lanza de nuevo el Workflow de `desarrollo` para descargar el APK ya identificado como Nexo. No se renombran paquetes Java: `Class.forName("com.box.gallery.MainActivity")` y el `android:name` del manifest siguen siendo válidos con el nuevo `applicationId`. Sin verificar en móvil la instalación como app nueva.
+- **Nota**: al cambiar el paquete se instala como app distinta y no sobrescribe la de Box; los datos locales de la instalación anterior no se migran automáticamente.
 
 ### 2026-11-28 — Fusión de `voz-manos-libres` en `desarrollo` y validación en móvil
 

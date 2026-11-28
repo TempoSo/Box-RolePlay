@@ -33,11 +33,12 @@ android {
   compileSdk = 37
 
   defaultConfig {
-    applicationId = "com.box.gallery"
+    applicationId = "com.temposo.nexo"
     minSdk = 35
     targetSdk = 37
-    versionCode = 26
-    versionName = "1.0.12"
+    // Identidad propia: deja de instalarse como una versión de Box (paquete nuevo y versión alta).
+    versionCode = 100
+    versionName = "1.1.0"
 
     // Needed for HuggingFace auth workflows.
     // Use the scheme of the "Redirect URLs" in HuggingFace app.
