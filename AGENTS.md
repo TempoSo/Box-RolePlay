@@ -1,6 +1,6 @@
 # AGENTS.md — Instrucciones para agentes IA (OpenCode, Claude, otros)
 
-Proyecto: **Box RolePlay** — fork de [Box](https://github.com/jegly/Box) (base **1.0.12**, commit `8d6503a8`) reorientado a roleplay con IA 100 % local en Android. Rama principal: `main` (tienda, chat, memoria por turno y Kokoro es integrados). Rama de pruebas de voz: `fase2-voice-studio`.
+Proyecto: **Box RolePlay** — fork de [Box](https://github.com/jegly/Box) (base **1.0.12**, commit `8d6503a8`) reorientado a roleplay con IA 100 % local en Android. Rama principal: `main` (tienda, chat, memoria por turno y Kokoro es integrados). **Única rama de trabajo/pruebas: `desarrollo`**; ahí va todo lo que aún está por pulir y solo se fusiona en `main` lo validado. No crear ramas nuevas por fase.
 
 ## Reglas obligatorias
 
