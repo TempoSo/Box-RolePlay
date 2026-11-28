@@ -399,6 +399,8 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     val prompt: String,
     val dropped: Int,
     val previousSize: Int,
+    /** Mensajes que añadió el último turno: 2 con mensaje de usuario, 1 sin él (escenas). */
+    val expectedDelta: Int,
   )
 
   private val liteRtWindows = mutableMapOf<String, LiteRtWindowState>()
@@ -418,6 +420,12 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     return if (st != null && st.generatedTokens > 0) {
       "⚡ gen %.1f t/s · prompt %.0f t/s (%d tok) · %d tok · %.1f s"
         .format(st.generationTokensPerSecond, st.promptTokensPerSecond, st.promptTokens, st.generatedTokens, totalMs / 1000f)
+    } else if (!isGguf && com.google.ai.edge.gallery.data.characters.LiteRtPerf.kvTokens > 0) {
+      // Métrica del propio motor LiteRT: no comparable con GGUF (BUG-019), pero dice si el
+      // historial se releyó (prefilling alto) o si se reutilizó la caché KV de la conversación.
+      val perf = com.google.ai.edge.gallery.data.characters.LiteRtPerf
+      "⚡ LiteRT · prefill ${perf.prefillTokens} tok · KV ${perf.kvTokens} tok · 1er token %.2f s"
+        .format(perf.timeToFirstTokenSeconds)
     } else if (chunks > 0 && genMs > 0) {
       "⚡ ~%.1f frag/s · 1er token %.1f s · %.1f s".format(chunks * 1000f / genMs, ttftMs / 1000f, totalMs / 1000f)
     } else ""
@@ -486,7 +494,13 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     persistUserMessage(model, content)
   }
 
-  private suspend fun applySystemPromptIfNeeded(model: Model, input: String, contextTail: Int = 0) {
+  private suspend fun applySystemPromptIfNeeded(
+    model: Model,
+    input: String,
+    contextTail: Int = 0,
+    /** Mensajes que el turno añadirá al historial; evita resetear turnos sin mensaje de usuario. */
+    expectedDelta: Int = 2,
+  ) {
     val helper = model.runtimeHelper
     // Los chats antiguos tenían los recuerdos congelados en el system prompt; se quitan para no
     // duplicarlos ahora que se inyectan por turno.
@@ -599,12 +613,32 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
 
       val previousState = liteRtWindows[model.name]
-      // Está sincronizado si es el mismo motor y prompt y el motor vio justo el turno anterior.
-      val inSync =
-        previousState != null &&
-          previousState.instance === instance &&
-          previousState.prompt == prompt &&
-          previous.size == previousState.previousSize + 2
+      val sync = LiteRtSessionSync
+      // I-6: si el turno anterior se detuvo a mano, la conversación de LiteRT quedó inservible
+      // (devolvía vacíos en ~0 ms). Se consume aquí, una sola vez, antes de decidir el reset.
+      val cancelled = helper.consumeCancelled(model)
+      // Primera pasada sin el recorte de ventana: sabemos cuánto se descartó sólo si el motor
+      // seguía en sincronía con la pantalla.
+      val baseReason =
+        sync.reason(
+          previous =
+            previousState?.let {
+              LiteRtSessionSync.State(
+                instance = it.instance,
+                prompt = it.prompt,
+                previousSize = it.previousSize,
+                expectedDelta = it.expectedDelta,
+                dropped = it.dropped,
+              )
+            },
+          instance = instance,
+          prompt = prompt,
+          previousSize = previous.size,
+          cancelled = cancelled,
+          extraDrop = 0,
+          hasPromptOrHistory = prompt.isNotBlank() || previous.isNotEmpty(),
+        )
+      val inSync = baseReason == LiteRtSessionSync.Reason.NONE
       val alreadyDropped = if (inSync) previousState!!.dropped else 0
 
       // El saludo del personaje (primer mensaje del asistente) nunca se borra.
@@ -623,16 +657,19 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       val dropped = alreadyDropped + extraDrop
       val summary = buildSummary(previous, keep, dropped, maxTokens)
       lastMemorySummary = summary
-      // I-6: si el turno anterior se detuvo a mano, la conversación de LiteRT quedó inservible
-      // (devolvía vacíos en ~0 ms). Se recrea siempre, aunque parezca "en sincronía" con el motor.
-      val cancelled = helper.consumeCancelled(model)
-      if (cancelled) {
-        Log.i(TAG, "Conversación de '${model.name}' cancelada: se recrea con el historial")
+      val reason =
+        if (extraDrop > 0) LiteRtSessionSync.Reason.WINDOW_DROP else baseReason
+      com.google.ai.edge.gallery.data.characters.LiteRtPerf.lastResetReason =
+        if (reason == LiteRtSessionSync.Reason.NONE) "" else reason.name
+      if (reason != LiteRtSessionSync.Reason.NONE) {
+        Log.i(
+          TAG,
+          "LiteRT '${model.name}': se recrea la conversación (motivo=$reason, " +
+            "historial=${previous.size}, prompt=${prompt.length} chars, descartes=$dropped)",
+        )
       }
-      val needsReset =
-        cancelled || extraDrop > 0 || (!inSync && (prompt.isNotBlank() || previous.isNotEmpty()))
 
-      if (needsReset) {
+      if (reason != LiteRtSessionSync.Reason.NONE) {
         val window = previous.take(keep) + previous.drop(keep + dropped)
         helper.resetConversationWithHistory(
           model = model,
@@ -653,6 +690,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
           prompt = prompt,
           dropped = dropped,
           previousSize = previous.size,
+          expectedDelta = expectedDelta.coerceAtLeast(0),
         )
     } catch (e: Exception) {
       Log.e(TAG, "Failed to prepare the conversation", e)
@@ -1167,7 +1205,10 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         // "⏳ cargando modelo…" durante toda la generación (no se actualiza hasta el `done`).
         _perfLine.value = "⏳ procesando…"
         delay(500)
-        applySystemPromptIfNeeded(model, engineInput, contextTail.size)
+        // Un turno con mensaje nuevo suma usuario + asistente; sin él (escenas, continuation)
+        // sólo suma la burbuja del asistente. Saberlo evita reseteos falsos por desincronización.
+        val delta = if (persistInput && engineInput.isNotBlank()) 2 else 1
+        applySystemPromptIfNeeded(model, engineInput, contextTail.size, delta)
 
         model.runtimeHelper.runInference(
           model = model,

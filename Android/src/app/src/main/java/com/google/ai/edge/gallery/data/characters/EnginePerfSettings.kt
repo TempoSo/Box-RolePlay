@@ -161,6 +161,25 @@ object LastEnginePerf {
   @Volatile var loadSeconds: Float = 0f
 }
 
+/**
+ * Métricas reales del último turno de LiteRT-LM. Se cuentan tokens de prefilling del motor, no
+ * trozos de texto, y **no son comparables** con las de GGUF (BUG-019): sirven para ver si el
+ * historial se está releyendo o si se reutiliza la caché KV de la conversación.
+ */
+object LiteRtPerf {
+  @Volatile var prefillTokens: Int = 0
+  @Volatile var kvTokens: Int = 0
+  @Volatile var timeToFirstTokenSeconds: Double = 0.0
+  @Volatile var lastResetReason: String = ""
+
+  fun clear() {
+    prefillTokens = 0
+    kvTokens = 0
+    timeToFirstTokenSeconds = 0.0
+    lastResetReason = ""
+  }
+}
+
 /** Carpeta y borrado de las caches de KV guardadas en disco. */
 object KvCacheFiles {
   fun dir(context: Context): java.io.File = java.io.File(context.applicationContext.cacheDir, "kv").apply { mkdirs() }

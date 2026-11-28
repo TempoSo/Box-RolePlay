@@ -180,6 +180,13 @@ object LogExporter {
                     "gen ${it.generatedTokens} tok ${"%.2f".format(it.generationTokensPerSecond)} t/s · carga ${"%.1f".format(LastEnginePerf.loadSeconds)} s"
             )
         }
+        if (LiteRtPerf.kvTokens > 0) {
+            sb.appendLine(
+                "Último turno LiteRT: prefilling ${LiteRtPerf.prefillTokens} tok · " +
+                    "KV ${LiteRtPerf.kvTokens} tok · 1er token ${"%.2f".format(LiteRtPerf.timeToFirstTokenSeconds)} s · " +
+                    "reset=${LiteRtPerf.lastResetReason}"
+            )
+        }
         sb.appendLine()
         val crash = File(context.filesDir, CRASH_FILE)
         if (crash.exists()) {

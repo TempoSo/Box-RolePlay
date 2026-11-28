@@ -23,6 +23,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.google.ai.edge.gallery.common.cleanUpMediapipeTaskErrorMessage
 import com.google.ai.edge.gallery.data.Accelerator
+import com.google.ai.edge.gallery.data.characters.LiteRtPerf
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE
@@ -65,6 +66,34 @@ private const val AWAIT_GENERATION_MS = 10_000L
 private const val EMPTY_RESPONSE_MS = 750L
 
 data class LlmModelInstance(val engine: Engine, var conversation: Conversation)
+
+/**
+ * Lee las métricas reales del turno. `prefillTokens` alto en todos los turnos significa que se está
+ * releyendo el historial; bajo y constante significa que se reutiliza la caché KV de la conversación.
+ * Se registran con `AGLlmPerf` para poder filtrarlas desde logcat / «Exportar logs».
+ */
+@OptIn(ExperimentalApi::class)
+private fun readLiteRtPerf(conversation: Conversation, modelName: String) {
+  try {
+    val info = conversation.getBenchmarkInfo()
+    val kv = conversation.getTokenCount()
+    LiteRtPerf.prefillTokens = info.lastPrefillTokenCount
+    LiteRtPerf.kvTokens = kv
+    LiteRtPerf.timeToFirstTokenSeconds = info.timeToFirstTokenInSecond
+    Log.i(
+      "AGLlmPerf",
+      "LiteRT '$modelName': prefilling=${info.lastPrefillTokenCount} tok, KV=$kv tok, " +
+        "1er token=%.3f s, prefill=%.1f tok/s, decode=%.1f tok/s"
+          .format(
+            info.timeToFirstTokenInSecond,
+            info.lastPrefillTokensPerSecond,
+            info.lastDecodeTokensPerSecond,
+          ),
+    )
+  } catch (e: Exception) {
+    Log.d(TAG, "Métricas LiteRT no disponibles para '$modelName': ${e.message}")
+  }
+}
 
 object LlmChatModelHelper : LlmModelHelper {
   // Indexed by model name.
@@ -182,6 +211,11 @@ object LlmChatModelHelper : LlmModelHelper {
           else null,
       )
 
+    // Renderización de métricas: sin esta marca el nativo no rellena BenchmarkInfo y no podemos
+    // saber cuántos tokens se prefillaron en cada turno (clave para medir la caché KV).
+    val benchmarkBefore = ExperimentalFlags.enableBenchmark
+    ExperimentalFlags.enableBenchmark = true
+
     // Create an instance of LiteRT LM engine and conversation.
     try {
       // Si el motor no puede cargar la visión o el audio del modelo (p. ej. "The Vision Encoder
@@ -290,9 +324,11 @@ object LlmChatModelHelper : LlmModelHelper {
       ExperimentalFlags.enableConversationConstrainedDecoding = false
       model.instance = LlmModelInstance(engine = engine, conversation = conversation)
     } catch (e: Exception) {
+      ExperimentalFlags.enableBenchmark = benchmarkBefore
       onDone(cleanUpMediapipeTaskErrorMessage(e.message ?: "Unknown error"))
       return
     }
+    ExperimentalFlags.enableBenchmark = benchmarkBefore
     onDone("")
   }
 
@@ -602,6 +638,7 @@ object LlmChatModelHelper : LlmModelHelper {
           "Turno LiteRT '${model.name}': ${deliveredChars.get()} caracteres en $elapsed ms " +
             "(throwable=${throwable?.javaClass?.simpleName ?: "ninguno"}, stop=${stopFlag.get()})",
         )
+        readLiteRtPerf(conversation, model.name)
         when {
           throwable is CancellationException -> {
             Log.i(TAG, "The inference is cancelled.")
