@@ -70,6 +70,7 @@ object BoxAppIds {
     const val SCENARIOS = "scenarios"
     const val CHAT = "chat"
     const val TTS = "tts"
+    const val VOICE_STUDIO = "voice_studio"
     const val STORE = "store"
     const val VISION = "vision"
     const val IMAGE_GEN = "image_gen"
@@ -89,6 +90,7 @@ object BoxAppRegistry {
         BoxApp(BoxAppIds.STORE, "Tienda de personajes", "Descarga tarjetas de Chub y otras fuentes (NSFW opcional)", Icons.Rounded.Storefront, Color(0xFFF59E0B), Color(0xFF92400E)),
         BoxApp(BoxAppIds.CHAT, "Chat libre", "Conversa directo con el modelo", Icons.Rounded.Chat, Color(0xFF3B82F6), Color(0xFF1E3A8A)),
         BoxApp(BoxAppIds.TTS, "Texto a voz", "Pocket TTS y Kokoro por separado: escribe y escucha", Icons.Rounded.RecordVoiceOver, Color(0xFF2DD4BF), Color(0xFF0F766E)),
+        BoxApp(BoxAppIds.VOICE_STUDIO, "Voice Studio", "Prepara voces limpias para clonar: A/B, ruido y calidad", Icons.Rounded.Mic, Color(0xFFA78BFA), Color(0xFF5B21B6)),
         BoxApp(BoxAppIds.VISION, "Visión", "Describe y pregunta sobre imágenes", Icons.Rounded.RemoveRedEye, Color(0xFFF97316), Color(0xFF9A3412)),
         BoxApp(BoxAppIds.IMAGE_GEN, "Generador de imágenes", "Crea imágenes en tu teléfono", Icons.Rounded.Image, Color(0xFFEC4899), Color(0xFF9D174D)),
         BoxApp(BoxAppIds.TRANSCRIBE, "Transcripción", "Voz a texto sin conexión (Whisper)", Icons.Rounded.Subtitles, Color(0xFF8B5CF6), Color(0xFF4C1D95)),

@@ -50,12 +50,7 @@ class VoiceStore(private val context: Context) {
             val r = VoiceCleaner.clean(pcm.samples, pcm.sampleRate)
             lastNotes = r.report.notes
             File(dir, "$id.src").writeBytes(bytes)
-            val pcm16 = ByteArray(r.samples.size * 2)
-            r.samples.forEachIndexed { i, f ->
-                val v = (f * 32767f).toInt().coerceIn(-32768, 32767)
-                pcm16[2 * i] = (v and 0xFF).toByte(); pcm16[2 * i + 1] = ((v shr 8) and 0xFF).toByte()
-            }
-            val wav = WavWriter.pcm16Mono(pcm16, r.sampleRate)
+            val wav = WavWriter.pcm16Mono(r.samples, r.sampleRate)
             File(pathOf(id)).writeBytes(wav)
             pcm = WavReader.parse(wav) ?: return null
         } else File(pathOf(id)).writeBytes(bytes)

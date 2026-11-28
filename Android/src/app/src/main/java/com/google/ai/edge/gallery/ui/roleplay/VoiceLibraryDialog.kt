@@ -1,12 +1,8 @@
 package com.google.ai.edge.gallery.ui.roleplay
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
 import android.media.MediaPlayer
-import android.media.MediaRecorder
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
@@ -54,9 +50,8 @@ import com.google.ai.edge.gallery.tts.SherpaPocketEngine
 import com.google.ai.edge.gallery.tts.TtsManager
 import com.google.ai.edge.gallery.tts.Voice
 import com.google.ai.edge.gallery.tts.VoiceLibrary
+import com.google.ai.edge.gallery.tts.VoiceRecorder
 import com.google.ai.edge.gallery.tts.VoiceStore
-import com.google.ai.edge.gallery.tts.WavWriter
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
@@ -327,30 +322,5 @@ private class PreviewPlayer {
 }
 
 /** Graba del micrófono a 24 kHz mono hasta [stop] o 30 s; devuelve un WAV, o null si no se pudo. */
-@SuppressLint("MissingPermission")
-private fun recordWav(stop: AtomicBoolean, onSecond: (Int) -> Unit): ByteArray? {
-    val rate = 24000
-    val min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-    if (min <= 0) return null
-    val rec = runCatching {
-        AudioRecord(MediaRecorder.AudioSource.MIC, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, rate))
-    }.getOrNull() ?: return null
-    if (rec.state != AudioRecord.STATE_INITIALIZED) { rec.release(); return null }
-    val out = ByteArrayOutputStream()
-    val buf = ByteArray(4096)
-    val maxBytes = rate * 2 * 30
-    var lastSecond = 0
-    try {
-        rec.startRecording()
-        while (!stop.get() && out.size() < maxBytes) {
-            val n = rec.read(buf, 0, buf.size)
-            if (n > 0) out.write(buf, 0, n) else if (n < 0) return null
-            val sec = out.size() / (rate * 2)
-            if (sec != lastSecond) { lastSecond = sec; onSecond(sec) }
-        }
-    } finally {
-        runCatching { rec.stop() }
-        rec.release()
-    }
-    return if (out.size() < rate / 2) null else WavWriter.pcm16Mono(out.toByteArray(), rate)
-}
+private fun recordWav(stop: AtomicBoolean, onSecond: (Int) -> Unit): ByteArray? =
+    VoiceRecorder.recordWav(stop, onSecond)

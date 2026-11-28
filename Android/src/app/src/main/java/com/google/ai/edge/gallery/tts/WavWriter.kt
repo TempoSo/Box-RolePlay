@@ -14,4 +14,15 @@ object WavWriter {
         System.arraycopy(pcm, 0, out, 44, pcm.size)
         return out
     }
+
+    /** Convierte muestras float normalizadas a PCM16 y escribe el WAV resultante. */
+    fun pcm16Mono(samples: FloatArray, sampleRate: Int): ByteArray {
+        val pcm = ByteArray(samples.size * 2)
+        samples.forEachIndexed { i, f ->
+            val v = (f * 32767f).toInt().coerceIn(-32768, 32767)
+            pcm[2 * i] = (v and 0xFF).toByte()
+            pcm[2 * i + 1] = ((v shr 8) and 0xFF).toByte()
+        }
+        return pcm16Mono(pcm, sampleRate)
+    }
 }

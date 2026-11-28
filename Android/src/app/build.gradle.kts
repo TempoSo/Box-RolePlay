@@ -104,6 +104,9 @@ dependencies {
   } else if (project.hasProperty("sherpaVersion")) {
     implementation("com.k2fsa.sherpa.onnx:sherpa-onnx-android:${project.property("sherpaVersion")}")
   }
+  // Voice Studio: reducción de ruido opcional para muestras de Pocket TTS. Es una librería nativa
+  // pequeña (frames de 10 ms a 48 kHz) y solo se usa al preparar una voz, no en la generación.
+  implementation("cn.enaium.rnnoise:rnnoise-kmp:1.0.2-fixed.0.2.0")
   implementation(libs.commonmark)
   implementation(libs.richtext)
   implementation(libs.tflite)
