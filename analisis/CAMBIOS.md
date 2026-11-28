@@ -41,6 +41,13 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — main: fusión de las ramas de trabajo y README en dos idiomas
+
+- **Qué**: `fase1-tts` (Kokoro es con fonemización IPA propia) y `fase1-rendimiento` (tienda, chat y memoria por turno) se fusionan en `main`, conservando los commits de workflows que había en `origin/main`. El conflicto de `CAMBIOS.md` se resolvió conservando las dos entradas nuevas. Se reescribe `README.md` con el estado real (memoria por turno, Kokoro validado en móvil, botones del chat, Voice Studio en el roadmap) y se crea `README_EN.md` como traducción, con enlaces cruzados. `AGENTS.md` deja de apuntar a `fase1-rendimiento` como rama activa.
+- **Por qué**: el usuario confirmó que Kokoro ya suena en español en dispositivo y pidió juntar lo que funciona en `main`, dejar una rama de pruebas de voz y documentar el proyecto en inglés y español.
+- **Archivos**: `README.md`, `README_EN.md` (nuevo), `AGENTS.md`, `analisis/CAMBIOS.md`. Los merges aportan además todo el árbol de `fase1-tts` y `fase1-rendimiento` (ver commits `323418c` y `3349668`).
+- **Verificado**: `.\\gradlew.bat :app:testDebugUnitTest --no-daemon` sobre el árbol ya fusionado → **BUILD SUCCESSFUL**. Sin verificar en móvil: la migración Room 7→8 con datos reales y la persistencia de la caché de prefijo; Kokoro es sí quedó validado por el usuario en dispositivo.
+
 ### 2026-11-27 — Kokoro en español: fonemas propios para que suenen las voces
 
 - **Qué**: añadido `KokoroPhonemizer`, que convierte el texto en símbolos IPA y se los pasa a sherpa-onnx con `GenerationConfig.phonemeCodepoints` (en vez de depender de `kokoro-lang`/espeak-ng). Incluye un diccionario compacto de 6089 palabras con IPA exacto y reglas G2P para palabras fuera de él (nombres propios, etc.). También convierte dígitos a palabras y limpia `¿ ¡ ' … —` porque el modelo no tiene esos tokens.
