@@ -49,10 +49,10 @@ object DownloadLinkCatalog {
       ),
       DownloadLink(
         id = "catalog-gemma4-e4b-mmproj",
-        label = "Visión Gemma 4 E4B (mmproj BF16)",
-        url = "https://huggingface.co/$UNSLOTH_E4B/resolve/main/mmproj-BF16.gguf?download=true",
-        fileName = "mmproj-gemma-4-E4B-it-BF16.gguf",
-        sizeBytes = 991_552_320L,
+        label = "Visión Gemma 4 E4B (mmproj F16)",
+        url = "https://huggingface.co/$UNSLOTH_E4B/resolve/main/mmproj-F16.gguf?download=true",
+        fileName = "mmproj-gemma-4-E4B-it-F16.gguf",
+        sizeBytes = 990_372_672L,
         kind = LinkKind.MMPROJ,
         target = LinkTarget.MMPROJ,
         pinned = true,
@@ -71,10 +71,10 @@ object DownloadLinkCatalog {
       ),
       DownloadLink(
         id = "catalog-gemma4-e2b-mmproj",
-        label = "Visión Gemma 4 E2B (mmproj BF16)",
-        url = "https://huggingface.co/$UNSLOTH_E2B/resolve/main/mmproj-BF16.gguf?download=true",
-        fileName = "mmproj-gemma-4-E2B-it-BF16.gguf",
-        sizeBytes = 986_833_728L,
+        label = "Visión Gemma 4 E2B (mmproj F16)",
+        url = "https://huggingface.co/$UNSLOTH_E2B/resolve/main/mmproj-F16.gguf?download=true",
+        fileName = "mmproj-gemma-4-E2B-it-F16.gguf",
+        sizeBytes = 985_654_080L,
         kind = LinkKind.MMPROJ,
         target = LinkTarget.MMPROJ,
         pinned = true,
@@ -123,19 +123,34 @@ data class DeviceProfile(val ramBytes: Long, val soc: String) {
       }
 
   /** Aviso visible en la tarjeta; null cuando el modelo entra holgado. */
-  fun warningFor(link: DownloadLink): String? {
-    if (link.kind == LinkKind.MMPROJ || sizeExceedsRecommendation(link)) return heavyWarning(link)
-    return when (HfApi.fit(link.sizeBytes, ramBytes)) {
+  /**
+   * Aviso de la tarjeta. [totalBytes] debe incluir el proyector cuando el modelo tiene Visión: así
+   * el enlazado deja claro el coste real y no solo el peso del `.gguf`.
+   */
+  fun warningFor(link: DownloadLink, totalBytes: Long = link.sizeBytes): String? {
+    // El proyector no se usa solo: avisar de que "supera lo recomendado" por su propio tamaño sería
+    // falso en un teléfono grande. El aviso se calcula sobre el grupo modelo + proyector.
+    if (link.kind == LinkKind.MMPROJ) return null
+    if (recommendedMaxBytes > 0 && totalBytes > recommendedMaxBytes) return heavyWarning(totalBytes)
+    return when (HfApi.fit(totalBytes, ramBytes)) {
       HfFit.TIGHT -> "Justo para $soc con ${ramBytes / GB} GB de RAM: puede ir lento."
       HfFit.TOO_BIG -> "Pesado para $soc con ${ramBytes / GB} GB de RAM: mejor usa un modelo más pequeño."
       else -> null
     }
   }
 
+  /** Suma del modelo y su proyector cuando comparten [DownloadLink.groupId]. */
+  fun groupBytes(link: DownloadLink, links: List<DownloadLink>): Long =
+    if (link.groupId.isBlank()) {
+      link.sizeBytes
+    } else {
+      links.filter { it.groupId == link.groupId }.sumOf { it.sizeBytes }
+    }
+
   fun sizeExceedsRecommendation(link: DownloadLink): Boolean =
     recommendedMaxBytes > 0 && link.sizeBytes > recommendedMaxBytes
 
-  private fun heavyWarning(link: DownloadLink): String =
-    "${DownloadLinkFormat.mb(link.sizeBytes)} superan los ${DownloadLinkFormat.mb(recommendedMaxBytes)} " +
+  private fun heavyWarning(bytes: Long): String =
+    "${DownloadLinkFormat.mb(bytes)} superan los ${DownloadLinkFormat.mb(recommendedMaxBytes)} " +
       "recomendados para $soc con ${ramBytes / GB} GB de RAM."
 }

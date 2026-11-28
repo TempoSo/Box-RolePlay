@@ -85,9 +85,11 @@ fun DownloadsScreen(
         }
       }
       items(links, key = { it.id }) { link ->
+        val totalBytes = device.groupBytes(link, links)
         DownloadLinkCard(
           link = link,
-          warning = device.warningFor(link),
+          groupBytes = totalBytes,
+          warning = device.warningFor(link, totalBytes),
           onDownload = { viewModel.download(link) },
           onPause = { viewModel.pause(link) },
           onCancel = { viewModel.cancel(link) },
@@ -108,6 +110,7 @@ fun DownloadsScreen(
 @Composable
 private fun DownloadLinkCard(
   link: DownloadLink,
+  groupBytes: Long,
   warning: String?,
   onDownload: () -> Unit,
   onPause: () -> Unit,
@@ -129,6 +132,7 @@ private fun DownloadLinkCard(
         listOfNotNull(
           DownloadLinkFormat.mb(link.sizeBytes),
           if (link.vision) "visión" else null,
+          if (groupBytes > link.sizeBytes) "total ${DownloadLinkFormat.mb(groupBytes)} con visión" else null,
           if (link.kind == com.google.ai.edge.gallery.data.downloads.LinkKind.MMPROJ) "proyector" else null,
           stateLabel(link.state),
         ).joinToString(" · "),

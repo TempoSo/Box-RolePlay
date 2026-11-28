@@ -52,6 +52,21 @@ class DownloadLinkTest {
     )
     assertTrue(base.all { it.url.startsWith("https://huggingface.co/") })
     assertEquals(2, base.count { it.kind == LinkKind.MMPROJ && it.target == LinkTarget.MMPROJ })
+    assertTrue(base.filter { it.kind == LinkKind.MMPROJ }.all { it.fileName.contains("-F16.gguf") })
+  }
+
+  @Test
+  fun `el aviso del modelo multimodal suma el proyector y el proyector solo no avisa`() {
+    val gb = 1024L * 1024L * 1024L
+    val phone = DeviceProfile(ramBytes = 6 * gb, soc = "sm7750")
+    val base = DownloadLinkCatalog.base
+    val model = base.first { it.id == "catalog-gemma4-e2b" }
+    val mmproj = base.first { it.id == "catalog-gemma4-e2b-mmproj" }
+
+    assertNull(phone.warningFor(mmproj))
+    val total = phone.groupBytes(model, base)
+    assertEquals(model.sizeBytes + mmproj.sizeBytes, total)
+    assertTrue(phone.warningFor(model, total)!!.contains("superan"))
   }
 
   @Test
