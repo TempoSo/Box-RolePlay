@@ -50,6 +50,8 @@ import com.google.ai.edge.gallery.tts.PocketModelFiles
 import com.google.ai.edge.gallery.tts.TtsModelType
 import com.google.ai.edge.gallery.tts.TtsVoiceRef
 import com.google.ai.edge.gallery.tts.SherpaPocketEngine
+import com.google.ai.edge.gallery.tts.SupertonicModelFiles
+import com.google.ai.edge.gallery.tts.SupertonicVoices
 import com.google.ai.edge.gallery.tts.TtsFiles
 import com.google.ai.edge.gallery.tts.TtsManager
 import com.google.ai.edge.gallery.tts.TtsModels
@@ -68,7 +70,7 @@ fun TtsSettingsDialog(onDismiss: () -> Unit) {
 }
 
 /**
- * Voz: modelos instalados (varios; Pocket TTS y Kokoro), voz, qué se lee, velocidad y lectura automática.
+ * Voz: modelos instalados (Pocket TTS, Kokoro y Supertonic), voz, qué se lee, velocidad y lectura automática.
  * Es una sola interfaz: la usa el diálogo de ajustes y la app «Texto a voz» ([textArea] pone ahí el texto).
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -93,10 +95,16 @@ fun TtsSettingsPanel(textArea: (@Composable () -> Unit)? = null) {
                 Toast.makeText(
                     context,
                     // BUG-014: el error lista los archivos esperados (y avisa si la carpeta es del formato v2).
-                    if (copied.isEmpty()) PocketModelFiles.noPartsMessage(listFolderNames(context, uri))
-                    else if (PocketModelFiles.missing(model.dir).isNotEmpty())
-                        "Copiados ${copied.size} archivos, pero faltan: ${PocketModelFiles.missing(model.dir).joinToString(", ")}"
-                    else "Modelo importado (${copied.size} archivos).",
+                    if (copied.isEmpty()) PocketModelFiles.noPartsMessage(listFolderNames(context, uri)) +
+                        " También vale Supertonic: ${SupertonicModelFiles.EXPECTED_NAMES.joinToString(", ")}."
+                    else {
+                        val faltan =
+                            if (TtsModels.typeOf(model.dir) == TtsModelType.SUPERTONIC)
+                                SupertonicModelFiles.missing(model.dir)
+                            else PocketModelFiles.missing(model.dir)
+                        if (faltan.isNotEmpty()) "Copiados ${copied.size} archivos, pero faltan: ${faltan.joinToString(", ")}"
+                        else "Modelo importado (${copied.size} archivos)."
+                    },
                     Toast.LENGTH_LONG,
                 ).show()
                 if (copied.isNotEmpty()) TtsModels.setActive(context, model.id)
@@ -131,9 +139,15 @@ fun TtsSettingsPanel(textArea: (@Composable () -> Unit)? = null) {
     val libOk = remember { SherpaPocketEngine.isLibraryAvailable() }
     val active = models.firstOrNull { it.id == activeId }
     val isKokoro = active?.type == TtsModelType.KOKORO
+    val isSupertonic = active?.type == TtsModelType.SUPERTONIC
     var kokoroSid by remember(refresh) { mutableStateOf(store.kokoroDefaultSid()) }
+    var supertonicSid by remember(refresh) { mutableStateOf(store.supertonicDefaultSid()) }
+    var supertonicLang by remember(refresh) { mutableStateOf(store.supertonicLang()) }
     var voiceFilter by remember { mutableStateOf("") }
-    val voice = remember(refresh, showVoices) { store.defaultVoicePath()?.takeIf { !TtsVoiceRef.isKokoro(it) && File(it).exists() } }
+    val voice =
+      remember(refresh, showVoices) {
+        store.defaultVoicePath()?.takeIf { TtsVoiceRef.typeOf(it) == TtsModelType.POCKET }
+      }
     val voiceName = remember(refresh, showVoices) {
         voice?.let { p -> VoiceStore(context).all().firstOrNull { VoiceStore(context).pathOf(it.id) == p }?.name }
     }
@@ -170,10 +184,11 @@ fun TtsSettingsPanel(textArea: (@Composable () -> Unit)? = null) {
                     }
                 }
                 OutlinedButton(onClick = { showDownload = true }) { Text("Descargar de Hugging Face") }
-                OutlinedButton(onClick = { pickModel.launch(null) }) { Text("Importar carpeta de Pocket TTS") }
+                OutlinedButton(onClick = { pickModel.launch(null) }) { Text("Importar carpeta de modelo") }
                 Text(
-                    "Importar solo vale para Pocket TTS: elige la carpeta con lm_flow, lm_main, encoder, decoder, text_conditioner, " +
-                        "vocab.json y token_scores.json (por ejemplo la de pockettts de Layla). Kokoro se descarga con el botón de arriba.",
+                    "Importar vale para Pocket TTS (lm_flow, lm_main, encoder, decoder, text_conditioner, vocab.json y " +
+                        "token_scores.json) y Supertonic (cuatro .onnx, tts.json, unicode_indexer.bin y voice.bin). " +
+                        "Kokoro se descarga con el botón de arriba.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -194,6 +209,27 @@ fun TtsSettingsPanel(textArea: (@Composable () -> Unit)? = null) {
                         onPreview = { v ->
                             TtsManager.currentCharacterId = ""
                             TtsManager.speakAs(context, "\"" + KokoroVoices.sample(v.langCode) + "\"", TtsVoiceRef.kokoro(v.sid))
+                        },
+                    )
+                } else if (isSupertonic && active != null) {
+                    Text("Voz", style = MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SupertonicVoices.languages.forEach { (code, name) ->
+                            FilterChip(
+                                selected = supertonicLang == code,
+                                onClick = { supertonicLang = code; store.setSupertonicLang(code) },
+                                label = { Text(name) },
+                            )
+                        }
+                    }
+                    SupertonicVoiceList(
+                        count = SupertonicVoices.COUNT,
+                        selectedSid = supertonicSid,
+                        onSelect = { store.setSupertonicDefaultSid(it); supertonicSid = it },
+                        onPreview = { sid ->
+                            TtsManager.currentCharacterId = ""
+                            val lang = supertonicLang
+                            TtsManager.speakAs(context, "\"" + SupertonicVoices.sample(lang) + "\"", TtsVoiceRef.supertonic(sid, lang))
                         },
                     )
                 } else {
@@ -231,7 +267,7 @@ fun TtsSettingsPanel(textArea: (@Composable () -> Unit)? = null) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (!isKokoro) OutlinedTextField(
+                if (!isKokoro && !isSupertonic) OutlinedTextField(
                     value = steps,
                     onValueChange = { t ->
                         steps = t
@@ -274,7 +310,7 @@ fun TtsSettingsPanel(textArea: (@Composable () -> Unit)? = null) {
                         TtsManager.currentCharacterId = ""
                         TtsManager.speak(context, "\"Hola, esta es mi voz. ¿Qué te parece cómo suena?\"")
                     },
-                    enabled = libOk && active?.complete == true && (isKokoro || voice != null),
+                    enabled = libOk && active?.complete == true && (isKokoro || isSupertonic || voice != null),
                 ) { Text("Probar voz") }
             }
 }
@@ -312,7 +348,25 @@ fun KokoroVoiceList(
     }
 }
 
-/** Fila del editor de personaje: voz propia (muestra de Pocket o voz de Kokoro); si no, se usa la predeterminada. */
+/** Lista sencilla de voces de Supertonic (sid + escucha rápida); el idioma se elige aparte. */
+@Composable
+fun SupertonicVoiceList(
+  count: Int,
+  selectedSid: Int,
+  onSelect: (Int) -> Unit,
+  onPreview: (Int) -> Unit,
+) {
+  (0 until count).forEach { sid ->
+    Row(Modifier.fillMaxWidth().clickable { onSelect(sid) }, verticalAlignment = Alignment.CenterVertically) {
+      RadioButton(selected = sid == selectedSid, onClick = { onSelect(sid) })
+      Text("Voz $sid", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+      IconButton(onClick = { onPreview(sid) }) { Icon(Icons.Rounded.PlayArrow, "Escuchar voz $sid") }
+    }
+  }
+}
+
+/** Fila del editor de personaje: voz propia (Pocket, Kokoro o Supertonic); si no, se usa la predeterminada. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CharacterVoiceRow(characterId: String) {
     val context = LocalContext.current
@@ -320,6 +374,7 @@ fun CharacterVoiceRow(characterId: String) {
     var refresh by remember { mutableIntStateOf(0) }
     val current = remember(refresh) { store.characterVoicePath(characterId)?.takeIf { TtsVoiceRef.usable(it) } }
     val activeModel = remember(refresh) { TtsModels.active(context) }
+    var supLang by remember { mutableStateOf(store.supertonicLang()) }
     var showVoices by remember { mutableStateOf(false) }
     if (showVoices) {
         if (activeModel?.type == TtsModelType.KOKORO) {
@@ -345,10 +400,42 @@ fun CharacterVoiceRow(characterId: String) {
                 },
                 confirmButton = { TextButton(onClick = { showVoices = false; refresh++ }) { Text("Listo") } },
             )
+        } else if (activeModel?.type == TtsModelType.SUPERTONIC) {
+            AlertDialog(
+                onDismissRequest = { showVoices = false; refresh++ },
+                title = { Text("Voz del personaje") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SupertonicVoices.languages.forEach { (code, name) ->
+                                FilterChip(
+                                    selected = supLang == code,
+                                    onClick = { supLang = code; store.setSupertonicLang(code) },
+                                    label = { Text(name) },
+                                )
+                            }
+                        }
+                        SupertonicVoiceList(
+                            count = SupertonicVoices.COUNT,
+                            selectedSid = TtsVoiceRef.supertonicSid(current) ?: -1,
+                            onSelect = { store.setCharacterVoicePath(characterId, TtsVoiceRef.supertonic(it, supLang)); refresh++ },
+                            onPreview = { sid ->
+                                TtsManager.currentCharacterId = ""
+                                TtsManager.speakAs(
+                                    context,
+                                    "\"" + SupertonicVoices.sample(supLang) + "\"",
+                                    TtsVoiceRef.supertonic(sid, supLang),
+                                )
+                            },
+                        )
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showVoices = false; refresh++ }) { Text("Listo") } },
+            )
         } else {
             VoiceLibraryDialog(
                 onDismiss = { showVoices = false; refresh++ },
-                currentPath = current?.takeIf { !TtsVoiceRef.isKokoro(it) },
+                currentPath = current?.takeIf { TtsVoiceRef.typeOf(it) == TtsModelType.POCKET },
                 onPick = { _, path -> store.setCharacterVoicePath(characterId, path); refresh++ },
             )
         }
@@ -364,8 +451,11 @@ fun CharacterVoiceRow(characterId: String) {
             return@Column
         }
         val kokoroSid = TtsVoiceRef.kokoroSid(current)
+        val supertonicSid = TtsVoiceRef.supertonicSid(current)
         Text(
             when {
+                supertonicSid != null -> "Voz propia: Supertonic #$supertonicSid" +
+                    (TtsVoiceRef.supertonicLang(current)?.let { " · $it" } ?: "")
                 kokoroSid != null -> "Voz propia: " + (KokoroVoices.byIndex(kokoroSid)?.let { "${it.displayName} (${it.subtitle})" } ?: "Kokoro #$kokoroSid")
                 current != null -> "Voz propia: " + (VoiceStore(context).all().firstOrNull { VoiceStore(context).pathOf(it.id) == current }?.name ?: File(current).name)
                 else -> "Usa la voz predeterminada de Roleplay."
@@ -373,9 +463,11 @@ fun CharacterVoiceRow(characterId: String) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (kokoroSid != null && activeModel?.type != TtsModelType.KOKORO) {
+        val refType = TtsVoiceRef.typeOf(current)
+        if (refType != null && activeModel != null && refType != activeModel.type) {
             Text(
-                "Esta voz es de Kokoro y el modelo activo es otro: se usará la predeterminada hasta que actives Kokoro.",
+                "Esta voz es de ${refType.label} y el modelo activo es ${activeModel.type.label}: " +
+                    "se usará la predeterminada hasta que actives ${refType.label}.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )

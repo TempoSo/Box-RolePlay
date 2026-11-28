@@ -24,7 +24,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Lee en voz alta los mensajes de roleplay con Pocket TTS. Un solo hilo de trabajo: genera frase
+ * Lee en voz alta los mensajes de roleplay con el modelo de voz activo (Pocket, Kokoro o Supertonic).
+ * Un solo hilo de trabajo: genera frase
  * a frase y reproduce el audio mientras se sigue generando. Un nuevo mensaje corta el anterior.
  */
 object TtsManager {
@@ -50,6 +51,7 @@ object TtsManager {
 
   @Volatile private var engine: SherpaPocketEngine? = null
   @Volatile private var kokoroEngine: SherpaKokoroEngine? = null
+  @Volatile private var supertonicEngine: SherpaSupertonicEngine? = null
   @Volatile private var engineKey: String = ""
   @Volatile private var track: AudioTrack? = null
 
@@ -109,6 +111,8 @@ object TtsManager {
       engine = null
       kokoroEngine?.release()
       kokoroEngine = null
+      supertonicEngine?.release()
+      supertonicEngine = null
       engineKey = ""
     }
   }
@@ -121,16 +125,18 @@ object TtsManager {
 
   private class Inputs(
     val type: TtsModelType,
-    /** Muestra .wav (Pocket) o referencia «kokoro:N»; null en Kokoro = voz automática. */
+    /** Muestra .wav (Pocket), «kokoro:N» o «supertonic:N»; null = voz automática del modelo. */
     val voiceRef: String?,
     val pocketFiles: PocketModelFiles?,
     val kokoroFiles: KokoroModelFiles?,
+    val supertonicFiles: SupertonicModelFiles? = null,
+    val lang: String = "en",
   )
 
   /** Voz concreta para una prueba (biblioteca de voces); solo vale durante la llamada a [speakAs]. */
   @Volatile private var voiceOverride: String? = null
 
-  /** Lee [message] con la voz [voiceRef] (muestra .wav o «kokoro:N») en vez de la del personaje o la predeterminada. */
+  /** Lee [message] con la voz [voiceRef] en vez de la del personaje o la predeterminada. */
   fun speakAs(context: Context, message: String, voiceRef: String) {
     voiceOverride = voiceRef
     try {
@@ -148,28 +154,43 @@ object TtsManager {
       return null
     }
     val candidates = listOf(voiceOverride, settings.characterVoicePath(currentCharacterId), settings.defaultVoicePath())
-    if (active.type == TtsModelType.KOKORO) {
-      val files = KokoroModelFiles.resolve(active.dir)
-      if (files == null) {
-        toast(app, "El modelo Kokoro está incompleto.")
-        return null
+    when (active.type) {
+      TtsModelType.SUPERTONIC -> {
+        val files = SupertonicModelFiles.resolve(active.dir)
+        if (files == null) {
+          toast(app, "El modelo Supertonic está incompleto.")
+          return null
+        }
+        val ref = candidates.firstOrNull { TtsVoiceRef.isSupertonic(it) }
+        val sid = TtsVoiceRef.supertonicSid(ref) ?: settings.supertonicDefaultSid()
+        val lang = TtsVoiceRef.supertonicLang(ref) ?: settings.supertonicLang()
+        return Inputs(TtsModelType.SUPERTONIC, TtsVoiceRef.supertonic(sid, lang), null, null, files, lang)
       }
-      val ref =
-        candidates.firstOrNull { TtsVoiceRef.isKokoro(it) }
-          ?: settings.kokoroDefaultSid().takeIf { it >= 0 }?.let { TtsVoiceRef.kokoro(it) }
-      return Inputs(TtsModelType.KOKORO, ref, null, files)
+      TtsModelType.KOKORO -> {
+        val files = KokoroModelFiles.resolve(active.dir)
+        if (files == null) {
+          toast(app, "El modelo Kokoro está incompleto.")
+          return null
+        }
+        val ref =
+          candidates.firstOrNull { TtsVoiceRef.isKokoro(it) }
+            ?: settings.kokoroDefaultSid().takeIf { it >= 0 }?.let { TtsVoiceRef.kokoro(it) }
+        return Inputs(TtsModelType.KOKORO, ref, null, files)
+      }
+      else -> {
+        val voicePath = candidates.firstOrNull { TtsVoiceRef.typeOf(it) == TtsModelType.POCKET }
+        if (voicePath == null) {
+          toast(app, "Elige una muestra de voz (.wav) en «Ajustes de voz», o en el personaje.")
+          return null
+        }
+        val files = PocketModelFiles.resolve(active.dir)
+        if (files == null) {
+          toast(app, "El modelo Pocket TTS está incompleto.")
+          return null
+        }
+        return Inputs(TtsModelType.POCKET, voicePath, files, null)
+      }
     }
-    val voicePath = candidates.firstOrNull { it != null && !TtsVoiceRef.isKokoro(it) && File(it).exists() }
-    if (voicePath == null) {
-      toast(app, "Elige una muestra de voz (.wav) en «Ajustes de voz», o en el personaje.")
-      return null
-    }
-    val files = PocketModelFiles.resolve(active.dir)
-    if (files == null) {
-      toast(app, "El modelo Pocket TTS está incompleto.")
-      return null
-    }
-    return Inputs(TtsModelType.POCKET, voicePath, files, null)
   }
 
   /** Fin de la cola de frases. */
@@ -266,6 +287,7 @@ object TtsManager {
             if (existing != null && engineKey == key) existing
             else {
               engine?.release(); engine = null
+              supertonicEngine?.release(); supertonicEngine = null
               existing?.release()
               SherpaKokoroEngine(kf, SmolLM.performanceCoreCount(), lang, KokoroVoices.byIndex(sid)?.langCode == "zh").also {
                 val t0 = System.currentTimeMillis()
@@ -277,6 +299,30 @@ object TtsManager {
             }
           sr = eng.sampleRate
           genChunk = { chunk, cb -> eng.generate(chunk, sid, speed, cb) }
+        } else if (inputs.type == TtsModelType.SUPERTONIC) {
+          val sf = inputs.supertonicFiles!!
+          val sid = TtsVoiceRef.supertonicSid(inputs.voiceRef) ?: 0
+          val lang = inputs.lang
+          val key = "supertonic|${sf.ttsJson.absolutePath}|$lang"
+          val existing = supertonicEngine
+          val eng: SherpaSupertonicEngine =
+            if (existing != null && engineKey == key) existing
+            else {
+              // Solo un motor en memoria: cambiar de familia libera los otros dos.
+              engine?.release(); engine = null
+              kokoroEngine?.release(); kokoroEngine = null
+              existing?.release()
+              SherpaSupertonicEngine(sf, SmolLM.performanceCoreCount()).also {
+                val t0 = System.currentTimeMillis()
+                it.load()
+                Log.i(TAG, "Supertonic cargado en ${System.currentTimeMillis() - t0} ms")
+                supertonicEngine = it
+                engineKey = key
+              }
+            }
+          sr = eng.sampleRate
+          // 8 pasos es el valor de referencia de sherpa-onnx para Supertonic; no usa los pasos de Pocket.
+          genChunk = { chunk, cb -> eng.generate(chunk, sid, speed, 8, lang, cb) }
         } else {
           val pf = inputs.pocketFiles!!
           val wav = WavReader.parse(File(inputs.voiceRef!!).readBytes()) ?: error("La muestra de voz no es un WAV válido")
@@ -286,6 +332,7 @@ object TtsManager {
             if (existing != null && engineKey == key) existing
             else {
               kokoroEngine?.release(); kokoroEngine = null
+              supertonicEngine?.release(); supertonicEngine = null
               existing?.release()
               SherpaPocketEngine(pf, SmolLM.performanceCoreCount()).also {
                 val t0 = System.currentTimeMillis()

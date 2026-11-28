@@ -33,13 +33,21 @@
 | Navegación (rutas `box_apps`, `box_app_bench`…) | `ui/navigation/GalleryNavGraph.kt` |
 | Motor GGUF (llama.cpp) | `engine/LlamaCppEngine.kt` |
 | Puente modelos GGUF (singleton `object`) | `runtime/LlamaCppModelHelper.kt` |
-| TTS Pocket (sherpa-onnx) | `tts/` |
+| TTS Pocket / Kokoro / Supertonic (sherpa-onnx) | `tts/` |
 | Benchmark LiteRT (upstream) | `ui/benchmark/` |
 | Escritura nativa | `Android/src/llama.cpp/` (submódulo) |
 
 ---
 
 ## 📝 Registro
+
+### 2026-11-28 — TTS multi-motor: Supertonic y voces de personaje por motor
+
+- **Qué**: el TTS ya no asume que el modelo activo es Pocket o Kokoro. Se añade **Supertonic TTS** como tercer motor, con descarga desde Hugging Face (`csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11`), importación de carpeta, 10 voces (`sid`) y selector de idioma (es/en/fr/pt/ko). Las referencias de voz por personaje admiten `kokoro:N`, `supertonic:N` (o `supertonic:N@es`) y las muestras `.wav` de Pocket; el diálogo avisa cuando la voz elegida es de otro motor.
+- **Por qué**: el usuario pidió que las voces ligadas a personaje funcionen con todos los motores implementados, con Supertonic incluido; SenseVoice queda reservado para STT y no se mezcla con TTS. Supertonic no clona muestras: sus voces viven en `voice.bin`, por eso hacía falta un prefijo de referencia nuevo.
+- **Archivos**: `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/SupertonicModelFiles.kt` (nuevo), `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/SupertonicHfSelect.kt` (nuevo), `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/SherpaSupertonicEngine.kt` (nuevo, por reflexión como los otros dos; callback JNI de instancia por BUG-026), `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/TtsVoiceRef.kt` (prefijos por motor y `typeOf`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/TtsModels.kt` (`SUPERTONIC`, detección y ficheros faltantes), `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/TtsFiles.kt` (importación), `Android/src/app/src/main/java/com/google/ai/edge/gallery/tts/TtsManager.kt` (tercer motor, caché por modelo/idioma, 8 pasos), `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/characters/TtsSettingsStore.kt` (`supertonic_sid`, `supertonic_lang`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/TtsSettingsDialog.kt`, `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/TtsModelDownloadDialog.kt`, `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/TtsAppScreen.kt`, `Android/src/app/src/test/java/com/google/ai/edge/gallery/tts/SupertonicTtsTest.kt` (nuevo), `analisis/CAMBIOS.md`.
+- **Verificado**: `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon` → BUILD SUCCESSFUL, 297 tests, 0 fallos. Sin verificar en móvil: falta descargar el modelo y escuchar las voces. El AAR `Android/src/app/libs/sherpa-onnx.aar` ya trae `OfflineTtsSupertonicModelConfig`, `GenerationConfig.extra` y `OfflineSenseVoiceModelConfig`; no hace falta cambiarlo.
+- **Nota**: el idioma por defecto se toma del dispositivo si está en es/en/fr/pt/ko; si no, `en`. Supertonic usa siempre 8 pasos (valor de referencia de sherpa-onnx), sin alterar el ajuste de pasos de Pocket. No se ha tocado el modo manos libres, que sigue aislado en `voz-manos-libres`.
 
 ### 2026-11-28 — Fase 3 (corrección): «Absorber» → «Consolidar» con limpieza de notas puente
 

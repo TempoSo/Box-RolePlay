@@ -34,6 +34,8 @@ import com.google.ai.edge.gallery.tts.PocketHfSelect
 import com.google.ai.edge.gallery.tts.PocketModelFiles
 import com.google.ai.edge.gallery.tts.PocketVariant
 import com.google.ai.edge.gallery.tts.SentencePieceModel
+import com.google.ai.edge.gallery.tts.SupertonicHfSelect
+import com.google.ai.edge.gallery.tts.SupertonicVariant
 import com.google.ai.edge.gallery.tts.TtsFiles
 import com.google.ai.edge.gallery.tts.TtsManager
 import com.google.ai.edge.gallery.tts.TtsModelType
@@ -50,8 +52,18 @@ private const val DEFAULT_REPO = "haex-space/pocket-tts-sherpa-onnx"
 // Repo de Kokoro multilingüe preparado para sherpa-onnx (54 voces, entre ellas 3 en español).
 private const val KOKORO_REPO = "csukuangfj/kokoro-multi-lang-v1_0"
 
-/** Una opción descargable: un modelo Pocket o uno Kokoro. */
-private class Choice(val type: TtsModelType, val label: String, val bytes: Long, val pocket: PocketVariant?, val kokoro: KokoroVariant?)
+// Supertonic 3: 31 idiomas y 10 voces incluidas en voice.bin (24 kHz, archivos int8 en la raíz).
+private const val SUPERTONIC_REPO = "csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11"
+
+/** Una opción descargable: un modelo Pocket, Kokoro o Supertonic. */
+private class Choice(
+  val type: TtsModelType,
+  val label: String,
+  val bytes: Long,
+  val pocket: PocketVariant?,
+  val kokoro: KokoroVariant?,
+  val supertonic: SupertonicVariant? = null,
+)
 
 /**
  * Descarga el modelo Pocket TTS directo de Hugging Face. Se escribe el repo (o un enlace), se leen sus
@@ -80,14 +92,15 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
           runCatching {
             val tree = HfClient.treeFiles(repo)
             PocketHfSelect.variants(tree).map { Choice(TtsModelType.POCKET, it.label, it.totalBytes, it, null) } +
-              KokoroHfSelect.variants(tree).map { Choice(TtsModelType.KOKORO, it.label, it.totalBytes, null, it) }
+              KokoroHfSelect.variants(tree).map { Choice(TtsModelType.KOKORO, it.label, it.totalBytes, null, it) } +
+              SupertonicHfSelect.variants(tree).map { Choice(TtsModelType.SUPERTONIC, it.label, it.totalBytes, null, null, it) }
           }
         }
       busy = false
       res.onSuccess {
         variants = it
         picked = it.firstOrNull { v -> v.pocket?.folder?.let { f -> f.isNotEmpty() && repoInput.contains("/$f") } == true } ?: it.firstOrNull()
-        status = if (it.isEmpty()) "No encontré ningún modelo de voz compatible (Pocket TTS o Kokoro) en ese repositorio."
+        status = if (it.isEmpty()) "No encontré ningún modelo de voz compatible (Pocket TTS, Kokoro o Supertonic) en ese repositorio."
         else "${it.size} modelo(s) compatible(s) encontrado(s). Elige uno:"
       }.onFailure { status = "No se pudo leer el repo: ${it.message}" }
     }
@@ -105,8 +118,11 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
         runCatching {
           // Lista común: archivo remoto → ruta local (Kokoro trae subcarpetas: espeak-ng-data/…).
           val jobs: List<Triple<com.google.ai.edge.gallery.data.characters.HfFile, String, String>> =
-            v.pocket?.files?.map { Triple(it.file, it.localName, it.localName) }
-              ?: v.kokoro!!.files.map { Triple(it.file, it.localPath, it.localPath) }
+            when {
+              v.pocket != null -> v.pocket.files.map { Triple(it.file, it.localName, it.localName) }
+              v.kokoro != null -> v.kokoro.files.map { Triple(it.file, it.localPath, it.localPath) }
+              else -> v.supertonic!!.files.map { Triple(it.file, it.localPath, it.localPath) }
+            }
           for ((i, j) in jobs.withIndex()) {
             status = if (jobs.size > 12) "Descargando ${v.label}… (${i + 1}/${jobs.size})" else "Descargando ${j.first.name}…"
             HfClient.download(
@@ -166,12 +182,13 @@ fun TtsModelDownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
           label = { Text("Repositorio de Hugging Face") }, modifier = Modifier.fillMaxWidth(),
         )
         Text(
-          "«Pocket»: clona la voz de una muestra tuya (varios idiomas). «Kokoro»: trae decenas de voces ya hechas (incluye español); pesa ~330 MB y bajan unos cientos de archivos pequeños. Para otro repo, pega su nombre o enlace y pulsa Buscar.",
+          "«Pocket»: clona la voz de una muestra tuya. «Kokoro»: decenas de voces ya hechas (~330 MB). «Supertonic»: 10 voces y 31 idiomas con voice.bin incluido, más ligero. Para otro repo, pega su nombre o enlace y pulsa Buscar.",
           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           OutlinedButton(onClick = { repoInput = DEFAULT_REPO; search() }, enabled = !busy) { Text("Pocket") }
           OutlinedButton(onClick = { repoInput = KOKORO_REPO; search() }, enabled = !busy) { Text("Kokoro") }
+          OutlinedButton(onClick = { repoInput = SUPERTONIC_REPO; search() }, enabled = !busy) { Text("Supertonic") }
           OutlinedButton(onClick = { search() }, enabled = !busy) { Text("Buscar") }
         }
         variants.forEach { v ->

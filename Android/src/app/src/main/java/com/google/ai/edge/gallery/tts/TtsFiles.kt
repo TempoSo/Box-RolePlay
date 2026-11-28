@@ -16,8 +16,8 @@ object TtsFiles {
   fun voicesDir(context: Context): File = File(context.filesDir, "tts/voices").apply { mkdirs() }
 
   /**
-   * Copia a la app las piezas del modelo Pocket TTS que haya en la carpeta elegida. Devuelve los
-   * nombres copiados.
+   * Copia a la app las piezas del modelo Pocket TTS o Supertonic que haya en la carpeta elegida.
+   * Devuelve los nombres copiados.
    */
   fun folderName(context: Context, tree: Uri): String? =
     runCatching {
@@ -44,7 +44,7 @@ object TtsFiles {
         while (c.moveToNext()) {
           val id = c.getString(0)
           val name = c.getString(1)
-          if (!PocketModelFiles.isPart(name)) continue
+          if (!PocketModelFiles.isPart(name) && !SupertonicModelFiles.isPart(name)) continue
           val doc = DocumentsContract.buildDocumentUriUsingTree(tree, id)
           resolver.openInputStream(doc)?.use { input ->
             File(target, name).outputStream().use { input.copyTo(it) }

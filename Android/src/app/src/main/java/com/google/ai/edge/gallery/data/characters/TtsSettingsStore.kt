@@ -45,4 +45,24 @@ class TtsSettingsStore(context: Context) {
   fun kokoroDefaultSid(): Int = prefs.getInt("kokoro_sid", -1)
 
   fun setKokoroDefaultSid(sid: Int) = prefs.edit().putInt("kokoro_sid", sid).apply()
+
+  /** Voz de Supertonic por defecto (sid dentro de voice.bin). */
+  fun supertonicDefaultSid(): Int = prefs.getInt("supertonic_sid", 0).coerceAtLeast(0)
+
+  fun setSupertonicDefaultSid(sid: Int) = prefs.edit().putInt("supertonic_sid", sid.coerceAtLeast(0)).apply()
+
+  /** Idioma de Supertonic. Se toma del dispositivo si es uno de los que trae el modelo. */
+  fun supertonicLang(): String {
+    val saved = prefs.getString("supertonic_lang", null)?.lowercase().orEmpty()
+    if (saved.isNotBlank()) return saved
+    val device = java.util.Locale.getDefault().language.lowercase()
+    return if (device in SUPERTONIC_LANGS) device else "en"
+  }
+
+  fun setSupertonicLang(lang: String) = prefs.edit().putString("supertonic_lang", lang.lowercase()).apply()
+
+  companion object {
+    /** Idiomas confirmados en el modelo Supertonic de 5 idiomas; otros modelos pueden aceptar más. */
+    val SUPERTONIC_LANGS = setOf("es", "en", "fr", "pt", "ko")
+  }
 }

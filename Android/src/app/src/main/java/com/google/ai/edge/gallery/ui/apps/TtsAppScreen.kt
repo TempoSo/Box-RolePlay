@@ -33,7 +33,7 @@ import com.google.ai.edge.gallery.ui.roleplay.TtsSettingsPanel
 
 /**
  * App independiente de voz, en una sola pantalla: modelo, texto, voz y ajustes. Escribe un texto y escúchalo con
- * el modelo de voz activo (Pocket TTS o Kokoro), sin cargar ningún modelo de lenguaje.
+ * el modelo de voz activo (Pocket TTS, Kokoro o Supertonic), sin cargar ningún modelo de lenguaje.
  */
 @Composable
 fun TtsAppScreen(onBack: () -> Unit) {
@@ -42,7 +42,7 @@ fun TtsAppScreen(onBack: () -> Unit) {
     val speaking by TtsManager.speaking.collectAsState()
     androidx.compose.runtime.LaunchedEffect(Unit) { TtsManager.currentCharacterId = "" }
 
-    BoxScaffold(title = "Texto a voz", subtitle = "Pocket TTS y Kokoro · sin cargar ningún modelo de lenguaje", onBack = onBack) {
+    BoxScaffold(title = "Texto a voz", subtitle = "Pocket, Kokoro y Supertonic · sin modelo de lenguaje", onBack = onBack) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

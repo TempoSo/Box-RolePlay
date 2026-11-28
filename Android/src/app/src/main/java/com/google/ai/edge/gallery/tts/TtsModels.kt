@@ -3,8 +3,12 @@ package com.google.ai.edge.gallery.tts
 import android.content.Context
 import java.io.File
 
-/** Tipo de modelo de voz: Pocket (clona la voz de una muestra) o Kokoro (voces incluidas en el modelo). */
-enum class TtsModelType(val label: String) { POCKET("Pocket TTS"), KOKORO("Kokoro") }
+/** Tipo de modelo de voz: Pocket (clona una muestra), Kokoro y Supertonic (voces incluidas). */
+enum class TtsModelType(val label: String) {
+  POCKET("Pocket TTS"),
+  KOKORO("Kokoro"),
+  SUPERTONIC("Supertonic TTS"),
+}
 
 /** Un modelo de voz instalado: carpeta propia dentro de `tts/models/` (o el modelo antiguo `tts/pocket`). */
 data class TtsModelInfo(
@@ -60,7 +64,12 @@ object TtsModels {
     return out
   }
 
-  fun typeOf(dir: File): TtsModelType = if (KokoroModelFiles.looksLike(dir)) TtsModelType.KOKORO else TtsModelType.POCKET
+  fun typeOf(dir: File): TtsModelType =
+    when {
+      SupertonicModelFiles.looksLike(dir) -> TtsModelType.SUPERTONIC
+      KokoroModelFiles.looksLike(dir) -> TtsModelType.KOKORO
+      else -> TtsModelType.POCKET
+    }
 
   /** El modelo activo (el elegido, o el primero completo), o null si no hay ninguno. */
   fun active(context: Context): TtsModelInfo? {
@@ -72,7 +81,12 @@ object TtsModels {
     val label = runCatching { File(dir, LABEL_FILE).readText().trim() }.getOrDefault("").ifEmpty { fallback }
     val size = (dir.listFiles()?.sumOf { it.length() } ?: 0L) shr 20
     val type = typeOf(dir)
-    val missing = if (type == TtsModelType.KOKORO) KokoroModelFiles.missing(dir) else PocketModelFiles.missing(dir)
+    val missing =
+      when (type) {
+        TtsModelType.SUPERTONIC -> SupertonicModelFiles.missing(dir)
+        TtsModelType.KOKORO -> KokoroModelFiles.missing(dir)
+        else -> PocketModelFiles.missing(dir)
+      }
     return TtsModelInfo(id, label, dir, missing.isEmpty(), size, type, missing)
   }
 
