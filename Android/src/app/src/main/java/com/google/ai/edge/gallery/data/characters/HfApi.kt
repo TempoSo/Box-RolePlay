@@ -98,6 +98,15 @@ object HfApi {
     /** Cuantización del nombre ("Q4_K_M", "IQ3_XS", "F16"…), o null. */
     fun quant(fileName: String): String? = QUANT.find(fileName)?.groupValues?.get(1)?.uppercase()
 
+    /**
+     * BUG-046: Gemma 4 y Gemma 3 son multimodales; si se bajan desde aquí y se registran como
+     * `supportImage=false`, Visión no los ve. Se usa como valor inicial del interruptor.
+     */
+    fun likelyVision(fileName: String): Boolean {
+        val n = fileName.lowercase()
+        return n.contains("gemma-4") || n.contains("gemma-3") || "mmproj" in n
+    }
+
     /** Qué tan holgado cabe el archivo en la RAM del teléfono (el modelo ocupa su tamaño + caché). */
     fun fit(sizeBytes: Long, ramBytes: Long): HfFit =
         when {

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -36,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.data.characters.HfApi
 import com.google.ai.edge.gallery.data.characters.HfFileKind
+import com.google.ai.edge.gallery.data.downloads.DownloadLinkCatalog
+import com.google.ai.edge.gallery.data.downloads.LinkKind
 import com.google.ai.edge.gallery.data.characters.HfFit
 import com.google.ai.edge.gallery.ui.home.BoxScaffold
 import com.google.ai.edge.gallery.ui.home.BoxSectionLabel
@@ -58,7 +62,8 @@ private fun fmtCount(n: Long): String =
 @Composable
 fun HfBrowserScreen(
   onBack: () -> Unit,
-  onModelReady: (fileName: String, size: Long) -> Unit,
+  onModelReady: (fileName: String, size: Long, supportImage: Boolean) -> Unit,
+  onAddLink: (com.google.ai.edge.gallery.data.downloads.DownloadLink) -> Unit,
   viewModel: HfBrowserViewModel = hiltViewModel(),
 ) {
   val loading by viewModel.loading.collectAsState()
@@ -68,6 +73,8 @@ fun HfBrowserScreen(
   val message by viewModel.message.collectAsState()
   val downloads by viewModel.downloads.collectAsState()
   var query by remember { mutableStateOf("") }
+  // BUG-046: elección de Visión por archivo; Gemma 3/4 viene marcado por defecto.
+  val visionChoices = remember { mutableStateMapOf<String, Boolean>() }
 
   BoxScaffold(
     title = "Hugging Face",
@@ -126,6 +133,7 @@ fun HfBrowserScreen(
             val kind = HfApi.kind(f)
             val progress = downloads[f.path]
             val fit = HfApi.fit(f.size, viewModel.ramBytes)
+            val useVision = visionChoices[f.path] ?: HfApi.likelyVision(f.name)
             Card(Modifier.fillMaxWidth()) {
               Column(Modifier.padding(12.dp)) {
                 Text(f.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
@@ -153,7 +161,7 @@ fun HfBrowserScreen(
                   if (progress == null) {
                     Button(
                       enabled = kind != HfFileKind.SPLIT,
-                      onClick = { viewModel.download(f, onModelReady) },
+                      onClick = { viewModel.download(f, onModelReady, useVision) },
                     ) {
                       Icon(Icons.Rounded.Download, null)
                       Text(" Descargar")
@@ -162,6 +170,29 @@ fun HfBrowserScreen(
                     TextButton(onClick = { viewModel.cancel(f) }) { Text("Cancelar") }
                   }
                 }
+                if (kind == HfFileKind.MODEL) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                      checked = useVision,
+                      onCheckedChange = { visionChoices[f.path] = it },
+                    )
+                    Text("Usar también en Visión", style = MaterialTheme.typography.bodySmall)
+                  }
+                }
+                TextButton(
+                  enabled = kind != HfFileKind.SPLIT && repo != null,
+                  onClick = {
+                    onAddLink(
+                      DownloadLinkCatalog.fromHfFile(
+                        repoId = repo.orEmpty(),
+                        path = f.path,
+                        sizeBytes = f.size,
+                        kind = if (kind == HfFileKind.MMPROJ) LinkKind.MMPROJ else LinkKind.MODEL,
+                        vision = useVision,
+                      )
+                    )
+                  },
+                ) { Text("Añadir a Descargas") }
                 // BUG-028: hueco propio y separación fija bajo los metadatos. Nunca se pega al
                 // texto ni se recorta contra el botón, y conserva el color de BUG-020.
                 if (fit != HfFit.UNKNOWN && kind == HfFileKind.MODEL) {
@@ -196,7 +227,7 @@ fun HfBrowserScreen(
           }
           item {
             Text(
-              "Mantén la app abierta mientras descarga. Si se corta, vuelve a pulsar Descargar y continúa donde iba.",
+              "«Añadir a Descargas» usa la lista unificada: sigue bajando al cambiar de pestaña y permite pausar, reanudar y reintentar. La descarga directa de arriba requiere mantener la app abierta.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
               modifier = Modifier.padding(vertical = 8.dp),

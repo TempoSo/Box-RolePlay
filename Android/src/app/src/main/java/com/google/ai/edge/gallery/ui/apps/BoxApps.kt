@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Forum
@@ -77,6 +78,7 @@ object BoxAppIds {
     const val PROMPT_LAB = "prompt_lab"
     const val BENCHMARK = "benchmark"
     const val MODELS = "models"
+    const val DOWNLOADS = "downloads"
     const val HISTORY = "history"
 }
 
@@ -94,6 +96,7 @@ object BoxAppRegistry {
         BoxApp(BoxAppIds.PROMPT_LAB, "Laboratorio de prompts", "Prueba prompts de una sola vez", Icons.Rounded.Science, Color(0xFFEAB308), Color(0xFF854D0E)),
         BoxApp(BoxAppIds.BENCHMARK, "Benchmark de modelos", "Mide la velocidad de tus modelos", Icons.Rounded.Speed, Color(0xFFEF4444), Color(0xFF7F1D1D)),
         BoxApp(BoxAppIds.MODELS, "Gestor de modelos", "Descarga, importa y borra modelos", Icons.Rounded.Memory, Color(0xFF06B6D4), Color(0xFF155E75)),
+        BoxApp(BoxAppIds.DOWNLOADS, "Descargas", "Modelos enlazados con progreso, pausa y reintento", Icons.Rounded.Download, Color(0xFF14B8A6), Color(0xFF115E59)),
         BoxApp(BoxAppIds.HISTORY, "Historial", "Tus conversaciones anteriores", Icons.Rounded.History, Color(0xFF64748B), Color(0xFF1E293B)),
     )
 

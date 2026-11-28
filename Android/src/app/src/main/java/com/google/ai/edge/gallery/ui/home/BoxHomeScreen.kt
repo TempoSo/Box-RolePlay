@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Settings
@@ -179,6 +180,7 @@ fun BoxHomeScreen(
   onSettings: () -> Unit,
   onApps: () -> Unit = {},
   onOpenApp: (String) -> Unit = {},
+  onDownloads: () -> Unit = {},
   onMemory: () -> Unit = {},
   onOpenConversation: (com.google.ai.edge.gallery.data.local.entities.Conversation) -> Unit = {},
 ) {
@@ -260,6 +262,12 @@ fun BoxHomeScreen(
       title = "Tus apps",
       subtitle = "Voz, visión, imágenes, benchmark… cada una por separado",
       onClick = onApps,
+    )
+    BoxActionCard(
+      icon = Icons.Rounded.Download,
+      title = "Descargas",
+      subtitle = "Modelos enlazados: progreso, pausa y reintento",
+      onClick = onDownloads,
     )
     BoxActionCard(
       icon = Icons.Rounded.History,

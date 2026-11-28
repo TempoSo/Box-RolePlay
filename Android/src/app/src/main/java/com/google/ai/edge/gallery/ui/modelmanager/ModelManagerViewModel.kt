@@ -632,6 +632,45 @@ constructor(
     }
   }
 
+  /**
+   * Registra en la lista de modelos los enlaces que ya terminaron de descargarse. Se llama desde
+   * Descargas (y al usar un modelo) para que un archivo bajado en segundo plano aparezca también
+   * en Visión cuando corresponde, sin depender de que la pantalla siga abierta.
+   */
+  fun syncDownloadLinks() {
+    val store = com.google.ai.edge.gallery.data.downloads.DownloadLinkStore
+    store.attach(context)
+    val known = dataStoreRepository.readImportedModels().map { it.fileName }.toSet()
+    store
+      .snapshot()
+      .filter {
+        it.state == com.google.ai.edge.gallery.data.downloads.LinkState.COMPLETED &&
+          it.kind == com.google.ai.edge.gallery.data.downloads.LinkKind.MODEL &&
+          it.fileName !in known
+      }
+      .forEach { link ->
+        addImportedLlmModel(
+          ImportedModel.newBuilder()
+            .setFileName(link.fileName)
+            .setFileSize(link.sizeBytes)
+            .setLlmConfig(
+              com.google.ai.edge.gallery.proto.LlmConfig.newBuilder()
+                .addAllCompatibleAccelerators(listOf("CPU", "GPU"))
+                .setDefaultMaxTokens(4096)
+                .setDefaultTopk(com.google.ai.edge.gallery.data.DEFAULT_TOPK)
+                .setDefaultTopp(com.google.ai.edge.gallery.data.DEFAULT_TOPP)
+                .setDefaultTemperature(com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE)
+                .setSupportImage(link.vision)
+                .setSupportAudio(false)
+                .setSupportMobileActions(false)
+                .setSupportThinking(false)
+                .build()
+            )
+            .build()
+        )
+      }
+  }
+
   fun addImportedLlmModel(info: ImportedModel) {
     Log.d(TAG, "adding imported llm model: $info")
 

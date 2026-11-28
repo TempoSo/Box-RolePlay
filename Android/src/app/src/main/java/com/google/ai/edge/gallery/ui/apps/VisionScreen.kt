@@ -103,6 +103,16 @@ fun VisionScreen(
   var error by remember { mutableStateOf<String?>(null) }
   var reloadTick by remember { mutableIntStateOf(0) }
 
+  // BUG-046: si el proyector guardado ya no existe (cambio de paquete o borrado), se limpia para
+  // que la pantalla no siga apuntando a un archivo fantasma.
+  LaunchedEffect(mmprojFiles) {
+    if (mmproj.isNotBlank() && mmproj !in mmprojFiles) {
+      mmproj = ""
+      perfStore.save(perfStore.load().copy(mmproj = ""))
+      reloadTick++
+    }
+  }
+
   val modelUi by modelManagerViewModel.uiState.collectAsState()
   val chatUi by viewModel.uiState.collectAsState()
   val perfLine by viewModel.perfLine.collectAsState()
@@ -244,7 +254,8 @@ fun VisionScreen(
         }
         Text(
           when {
-            model == null -> "No hay ningún modelo con visión. Impórtalo en Configuración de inferencia."
+            model == null ->
+              "No hay ningún modelo con visión. Descárgalo en Descargas (marca «Usar también en Visión») o impórtalo abajo. Si vienes de la instalación anterior, vuelve a importarlo: Android aísla los archivos por paquete."
             initStatus == ModelInitializationStatusType.INITIALIZING -> "⏳ Cargando el modelo…"
             initStatus == ModelInitializationStatusType.ERROR -> "No se pudo cargar el modelo (revisa los archivos de abajo)."
             initStatus == ModelInitializationStatusType.INITIALIZED -> "Modelo listo."
@@ -279,7 +290,7 @@ fun VisionScreen(
         Text("Modelo", style = MaterialTheme.typography.labelMedium)
         if (models.isEmpty()) {
           Text(
-            "No hay modelos con visión. Importa uno en Configuración de inferencia.",
+            "No hay modelos con visión. Descárgalo en «Descargas» (con visión) o importa el archivo y su mmproj aquí.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
           )

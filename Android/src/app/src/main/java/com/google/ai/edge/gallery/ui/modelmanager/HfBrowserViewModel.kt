@@ -10,6 +10,7 @@ import com.google.ai.edge.gallery.data.characters.HfClient
 import com.google.ai.edge.gallery.data.characters.HfFile
 import com.google.ai.edge.gallery.data.characters.HfFileKind
 import com.google.ai.edge.gallery.data.characters.HfRepo
+import com.google.ai.edge.gallery.data.characters.EnginePerfStore
 import com.google.ai.edge.gallery.data.characters.MmprojFiles
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -81,8 +82,14 @@ class HfBrowserViewModel @Inject constructor(@ApplicationContext private val con
 
     fun cancel(file: HfFile) { cancelled += file.path }
 
-    /** [onModel]: se llama al terminar un modelo (nombre del archivo y tamaño) para registrarlo en la app. */
-    fun download(file: HfFile, onModel: (fileName: String, size: Long) -> Unit) {
+    /**
+     * [onModel]: se llama al terminar (nombre, tamaño y si debe aparecer en Visión) para registrarlo.
+     */
+    fun download(
+        file: HfFile,
+        onModel: (fileName: String, size: Long, supportImage: Boolean) -> Unit,
+        supportImage: Boolean = false,
+    ) {
         val repoId = _repo.value ?: return
         val kind = HfApi.kind(file)
         if (kind == HfFileKind.SPLIT) {
@@ -105,10 +112,13 @@ class HfBrowserViewModel @Inject constructor(@ApplicationContext private val con
                     onProgress = { r, t -> _downloads.update { it + (file.path to HfDownload(r, t)) } },
                     isCancelled = { file.path in cancelled },
                 )
-                if (kind == HfFileKind.MMPROJ) _message.value = "Visión descargada: $name. Elígela en Configuración de inferencia."
-                else {
-                    onModel(name, dest.length())
-                    _message.value = "Modelo listo: $name"
+                if (kind == HfFileKind.MMPROJ) {
+                    // BUG-046: seleccionar el proyector al bajarlo evita que Visión siga sin verlo.
+                    EnginePerfStore(context).setMmproj(name)
+                    _message.value = "Visión descargada y seleccionada: $name"
+                } else {
+                    onModel(name, dest.length(), supportImage)
+                    _message.value = "Modelo listo: $name${if (supportImage) " (disponible en Visión)" else ""}"
                 }
             } catch (e: Exception) {
                 _message.value = e.message ?: "La descarga falló"

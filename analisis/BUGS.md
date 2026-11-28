@@ -1,6 +1,6 @@
 # 🐞 Inventario de bugs — Box RolePlay
 
-> **Triaje 2026-11-25:** 43 cerrados (017, 029 y 045 cerrados el 25/11) · 0 abiertos · 2 herramientas abiertas (043, 044; se mantienen mientras se pule). Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
+> **Triaje 2026-11-28:** 43 cerrados (017, 029 y 045 cerrados el 25/11) · 1 abierto (046, parcheado el 28/11, pendiente de re-prueba en dispositivo) · 2 herramientas abiertas (043, 044; se mantienen mientras se pule). Los cerrados se sustituyeron por una línea de referencia y su texto íntegro se conserva en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md); este documento sigue siendo el inventario de los activos; empieza por el § Orden sugerido.
 >
 > **Documento vivo.** Un bug = una entrada. Al cerrar uno: **no se marca ✅ dentro del texto**; se mueve el bloque entero a [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md), se deja aquí solo una línea de referencia y se añade una entrada en [`CAMBIOS.md`](CAMBIOS.md) con fecha, archivos tocados y motivo.
 > Origen: pruebas del Bloque 2 (2026-11-16, POCO duchamp, HyperOS 3.0.9.0, Android 15 — fingerprint del crash) y de los Bloques 4 y 5 (2026-11-17, Xiaomi 2311DRK48G / POCO duchamp).
@@ -59,6 +59,8 @@
 > **BUG-029** — cerrado y verificado el 2026-11-25. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-029).
 
 > **BUG-031** — cerrado y verificado. Su síntoma, causa, fix y commit están en [`BUGS_CERRADOS.md`](BUGS_CERRADOS.md#bug-031).
+
+> **BUG-046** — **abierto; parche aplicado el 2026-11-28, pendiente de re-prueba en el Xiaomi 2311DRK48G.** **Síntoma:** los GGUF descargados desde el navegador de Hugging Face dentro de Nexo no aparecen en la app Visión; los importados desde el teléfono sí. **Causa:** `GalleryNavGraph.kt` registraba todo modelo de HF con `setSupportImage(false)`, por lo que nunca entraba en `LLM_ASK_IMAGE`; además el mmproj bajado desde HF se guardaba en `filesDir/mmproj` pero no se seleccionaba en `engine_perf`, y `VisionScreen.kt` solo lee esa preferencia. **Fix aplicado:** `supportImage` se elige por archivo (Gemma 3/4 marcados por defecto) y se propaga al registrar el modelo; el mmproj se selecciona automáticamente al terminar; Visión limpia la preferencia si el proyector ya no existe. Las descargas nuevas pasan por la lista unificada de WorkManager. **Re-prueba pendiente:** descargar «Gemma 4 E2B Q4_K_M · Unsloth» y su proyector desde Descargas, abrir Visión, confirmar que el modelo aparece y que el mmproj queda seleccionado; repetir con descarga directa del navegador HF.
 
 ## P2 — UX
 

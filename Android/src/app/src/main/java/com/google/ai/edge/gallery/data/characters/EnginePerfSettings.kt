@@ -109,6 +109,11 @@ class EnginePerfStore(context: Context) {
       .sanitized()
   }
 
+  /** Selecciona un proyector descargado sin pisar el resto de ajustes de inferencia. */
+  fun setMmproj(fileName: String) {
+    save(load().copy(mmproj = fileName))
+  }
+
   fun save(s: EnginePerfSettings) {
     val v = s.sanitized()
     prefs

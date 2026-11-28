@@ -95,6 +95,7 @@ private const val ROUTE_ROLEPLAY = "roleplay"
 private const val ROUTE_SCENARIOS = "box_scenarios"
 private const val ROUTE_MEMORY = "box_memory"
 private const val ROUTE_HF = "box_hf"
+private const val ROUTE_DOWNLOADS = "box_downloads"
 private const val ROUTE_SCENARIO_EDIT = "box_scenario_edit"
 private const val ROUTE_ROLEPLAY_EDIT = "roleplay_edit"
 private const val ROUTE_SETTINGS = "box_settings"
@@ -235,6 +236,7 @@ fun GalleryNavHost(
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.PROMPT_LAB -> openTask(BuiltInTaskId.LLM_PROMPT_LAB)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.BENCHMARK -> navController.navigate(ROUTE_APP_BENCH)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.MODELS -> navController.navigate(ROUTE_MODEL_MANAGER)
+          com.google.ai.edge.gallery.ui.apps.BoxAppIds.DOWNLOADS -> navController.navigate(ROUTE_DOWNLOADS)
           com.google.ai.edge.gallery.ui.apps.BoxAppIds.HISTORY -> navController.navigate(ROUTE_CHAT_HISTORY)
           else -> Unit
         }
@@ -242,6 +244,7 @@ fun GalleryNavHost(
       BoxHomeScreen(
         onApps = { navController.navigate(ROUTE_APPS) },
         onOpenApp = { openApp(it) },
+        onDownloads = { navController.navigate(ROUTE_DOWNLOADS) },
         modelLabel = chosen?.let { it.displayName.ifBlank { it.name } },
         onChat = {
           if (chosen != null) {
@@ -269,10 +272,12 @@ fun GalleryNavHost(
     }
 
     composable(route = ROUTE_HF) {
+      val hfContext = LocalContext.current
       com.google.ai.edge.gallery.ui.modelmanager.HfBrowserScreen(
         onBack = { navController.navigateUp() },
-        onModelReady = { fileName, size ->
-          // Se registra igual que un modelo importado desde el teléfono.
+        onModelReady = { fileName, size, supportImage ->
+          // BUG-046: antes se registraba siempre con supportImage=false, por lo que un modelo
+          // multimodal bajado desde HF nunca aparecía en Visión. Ahora se respeta la elección.
           modelManagerViewModel.addImportedLlmModel(
             com.google.ai.edge.gallery.proto.ImportedModel.newBuilder()
               .setFileName(fileName)
@@ -284,7 +289,7 @@ fun GalleryNavHost(
                   .setDefaultTopk(com.google.ai.edge.gallery.data.DEFAULT_TOPK)
                   .setDefaultTopp(com.google.ai.edge.gallery.data.DEFAULT_TOPP)
                   .setDefaultTemperature(com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE)
-                  .setSupportImage(false)
+                  .setSupportImage(supportImage)
                   .setSupportAudio(false)
                   .setSupportMobileActions(false)
                   .setSupportThinking(false)
@@ -293,6 +298,26 @@ fun GalleryNavHost(
               .build()
           )
         },
+        onAddLink = { link ->
+          com.google.ai.edge.gallery.data.downloads.DownloadLinkStore.attach(hfContext)
+          com.google.ai.edge.gallery.data.downloads.DownloadLinkStore.upsert(link)
+          navController.navigate(ROUTE_DOWNLOADS)
+        },
+      )
+    }
+
+    composable(route = ROUTE_DOWNLOADS) {
+      com.google.ai.edge.gallery.ui.downloads.DownloadsScreen(
+        onBack = { navController.navigateUp() },
+        onSearchHf = { navController.navigate(ROUTE_HF) },
+        onUseModel = { fileName ->
+          lastNavigatedModelName = ""
+          navController.navigate(
+            "$ROUTE_MODEL/${BuiltInTaskId.LLM_CHAT}/$fileName?autoResume=false"
+          )
+        },
+        onUseVision = { navController.navigate(ROUTE_APP_VISION) },
+        modelManagerViewModel = modelManagerViewModel,
       )
     }
 
@@ -343,6 +368,7 @@ fun GalleryNavHost(
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.PROMPT_LAB -> openTask(BuiltInTaskId.LLM_PROMPT_LAB)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.BENCHMARK -> navController.navigate(ROUTE_APP_BENCH)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.MODELS -> navController.navigate(ROUTE_MODEL_MANAGER)
+            com.google.ai.edge.gallery.ui.apps.BoxAppIds.DOWNLOADS -> navController.navigate(ROUTE_DOWNLOADS)
             com.google.ai.edge.gallery.ui.apps.BoxAppIds.HISTORY -> navController.navigate(ROUTE_CHAT_HISTORY)
             else -> Unit
           }
