@@ -115,6 +115,7 @@ class MemoryViewModel @Inject constructor(
           viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val idsBorrados = mutableSetOf<String>()
             var recuerdos = 0
+            var anteriorId = memoryRepository.getAll(character.id).firstOrNull()?.id.orEmpty()
             extraidos.forEachIndexed { i, recuerdo ->
               if (recuerdo != null) {
                 val keysJson =
@@ -122,16 +123,22 @@ class MemoryViewModel @Inject constructor(
                     "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
                   }
                 val guardado =
-                  memoryRepository.save(
-                    CharacterMemory(
-                      characterId = character.id,
-                      content = recuerdo.resumen,
-                      topic = recuerdo.topic,
-                      keysJson = keysJson,
-                      importance = recuerdo.importance,
-                      updatedAt = System.currentTimeMillis(),
-                    )
+                  memoryRepository.saveStructured(
+                    memory =
+                      CharacterMemory(
+                        characterId = character.id,
+                        content = recuerdo.resumen,
+                        topic = recuerdo.topic,
+                        keysJson = keysJson,
+                        importance = recuerdo.importance,
+                        updatedAt = System.currentTimeMillis(),
+                      ),
+                    rawText = tandas.getOrNull(i)?.joinToString("\n") { it.text }.orEmpty(),
+                    userName = userName,
+                    charName = character.name,
+                    anteriorId = anteriorId,
                   )
+                if (guardado) anteriorId = memoryRepository.getAll(character.id).firstOrNull()?.id.orEmpty()
                 // Si el recuerdo era duplicado no se guarda: sus notas tampoco se borran.
                 if (guardado) {
                   tandas.getOrNull(i)?.forEach { idsBorrados.add(it.id) }

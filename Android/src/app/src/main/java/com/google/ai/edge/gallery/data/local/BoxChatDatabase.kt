@@ -11,7 +11,10 @@ import com.google.ai.edge.gallery.data.local.dao.ConversationDao
 import com.google.ai.edge.gallery.data.local.dao.MessageDao
 import com.google.ai.edge.gallery.data.local.dao.PersonaDao
 import com.google.ai.edge.gallery.data.local.dao.MemoryDao
+import com.google.ai.edge.gallery.data.local.dao.MemoryGraphDao
 import com.google.ai.edge.gallery.data.local.entities.CharacterMemory
+import com.google.ai.edge.gallery.data.local.entities.MemoryEdge
+import com.google.ai.edge.gallery.data.local.entities.MemoryNode
 import com.google.ai.edge.gallery.data.local.entities.Conversation
 import com.google.ai.edge.gallery.data.local.entities.Message
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
@@ -24,7 +27,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
  * Uses SQLCipher for at-rest encryption with a key derived from device Keystore.
  */
 @Database(
-    entities = [Conversation::class, Message::class, RoleplayCharacter::class, UserPersona::class, CharacterMemory::class],
+    entities = [
+        Conversation::class, Message::class, RoleplayCharacter::class, UserPersona::class,
+        CharacterMemory::class, MemoryNode::class, MemoryEdge::class,
+    ],
     version = 8,
     exportSchema = false
 )
@@ -34,6 +40,7 @@ abstract class BoxChatDatabase : RoomDatabase() {
     abstract fun characterDao(): CharacterDao
     abstract fun personaDao(): PersonaDao
     abstract fun memoryDao(): MemoryDao
+    abstract fun memoryGraphDao(): MemoryGraphDao
 
     companion object {
         private const val DB_NAME = "box_chat.db"

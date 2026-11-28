@@ -4,6 +4,9 @@ import com.google.ai.edge.gallery.data.characters.Swipes
 import com.google.ai.edge.gallery.data.local.dao.CharacterDao
 import android.content.Context
 import com.google.ai.edge.gallery.data.characters.AutoMemory
+import com.google.ai.edge.gallery.data.characters.MemoryGraphBuilder
+import com.google.ai.edge.gallery.data.characters.MemoryRepository
+import com.google.ai.edge.gallery.data.characters.MemoryRetriever
 import com.google.ai.edge.gallery.data.characters.NOTAS_PUENTE
 import com.google.ai.edge.gallery.data.characters.RawMemory
 import com.google.ai.edge.gallery.data.characters.RawMemoryStore
@@ -14,6 +17,7 @@ import com.google.ai.edge.gallery.data.local.dao.ConversationDao
 import com.google.ai.edge.gallery.data.local.dao.PersonaDao
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.ai.edge.gallery.data.local.dao.MessageDao
+import com.google.ai.edge.gallery.data.local.entities.CharacterMemory
 import com.google.ai.edge.gallery.data.local.entities.Conversation
 import com.google.ai.edge.gallery.data.local.entities.Message
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +37,7 @@ class ChatRepository @Inject constructor(
     private val characterDao: CharacterDao,
     private val personaDao: PersonaDao,
     private val scenarioStore: ScenarioStore,
+    private val memoryRepository: MemoryRepository,
     @ApplicationContext private val context: Context,
 ) {
     /** Nombres de los personajes de una escena ("scene:<id>"), o lista vacía si no es una escena. */
@@ -70,6 +75,25 @@ class ChatRepository @Inject constructor(
         val raw = RawMemoryStore(context)
         if (AutoMemory.isDuplicate(text, raw.forCharacter(charId).take(5).map { it.text })) return
         raw.add(RawMemory(characterId = charId, text = text))
+        // La nota ya nace como recuerdo estructurado: no hace falta absorberla para que cuente.
+        // sourceConversationId evita que se inyecte en el chat que la acaba de generar (anti-eco
+        // y firma estable para la caché de prefijo); en el chat siguiente queda elegible.
+        val claves = MemoryRetriever.tokens(text).sortedByDescending { it.length }.take(5)
+        val anterior = memoryRepository.getAll(charId).firstOrNull()?.id.orEmpty()
+        memoryRepository.saveStructured(
+            memory =
+                CharacterMemory(
+                    characterId = charId,
+                    content = text,
+                    topic = MemoryGraphBuilder.sugerirTopic(text),
+                    keysJson = claves.joinToString(",", "[", "]") { "\"$it\"" },
+                    sourceConversationId = conversationId,
+                ),
+            rawText = text,
+            userName = userName,
+            charName = charName,
+            anteriorId = anterior,
+        )
     }
 
     /**

@@ -6,6 +6,7 @@ import com.google.ai.edge.gallery.data.local.dao.CharacterDao
 import com.google.ai.edge.gallery.data.local.dao.ConversationDao
 import com.google.ai.edge.gallery.data.local.dao.MessageDao
 import com.google.ai.edge.gallery.data.local.dao.MemoryDao
+import com.google.ai.edge.gallery.data.local.dao.MemoryGraphDao
 import com.google.ai.edge.gallery.data.local.dao.PersonaDao
 import dagger.Module
 import dagger.Provides
@@ -39,4 +40,7 @@ object DatabaseModule {
 
     @Provides
     fun provideMemoryDao(db: BoxChatDatabase): MemoryDao = db.memoryDao()
+
+    @Provides
+    fun provideMemoryGraphDao(db: BoxChatDatabase): MemoryGraphDao = db.memoryGraphDao()
 }

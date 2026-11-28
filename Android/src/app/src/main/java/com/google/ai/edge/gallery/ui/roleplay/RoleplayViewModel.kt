@@ -51,7 +51,18 @@ class RoleplayViewModel @Inject constructor(
     fun memories(characterId: String) = memoryRepository.observe(characterId)
 
     fun saveMemory(memory: com.google.ai.edge.gallery.data.local.entities.CharacterMemory) {
-        viewModelScope.launch { memoryRepository.save(memory) }
+        viewModelScope.launch {
+            val charName = characters.value.firstOrNull { it.id == memory.characterId }?.name.orEmpty()
+            val userName = personaRepository.getActive()?.name.orEmpty()
+            val anterior = memoryRepository.getAll(memory.characterId).firstOrNull()?.id.orEmpty()
+            memoryRepository.saveStructured(
+                memory = memory,
+                rawText = memory.content,
+                userName = userName,
+                charName = charName,
+                anteriorId = anterior,
+            )
+        }
     }
 
     fun deleteMemory(memory: com.google.ai.edge.gallery.data.local.entities.CharacterMemory) {
