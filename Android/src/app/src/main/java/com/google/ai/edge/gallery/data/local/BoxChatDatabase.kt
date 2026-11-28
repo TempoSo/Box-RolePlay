@@ -31,7 +31,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         Conversation::class, Message::class, RoleplayCharacter::class, UserPersona::class,
         CharacterMemory::class, MemoryNode::class, MemoryEdge::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class BoxChatDatabase : RoomDatabase() {
@@ -128,7 +128,7 @@ abstract class BoxChatDatabase : RoomDatabase() {
             }
         }
 
-        // Roleplay: campos de recuperación por relevancia y tablas del grafo (fase posterior).
+        // Roleplay: campos de recuperación por relevancia y tablas del grafo (ahora en uso).
         // Todos los DEFAULT son obligatorios en SQLite para ALTER TABLE sobre filas existentes.
         private val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -147,6 +147,25 @@ abstract class BoxChatDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_character_memories_characterId_valid " +
                         "ON character_memories(characterId, valid)"
                 )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS memory_nodes (" +
+                        "id TEXT NOT NULL, characterId TEXT NOT NULL, label TEXT NOT NULL, " +
+                        "type TEXT NOT NULL, topic TEXT NOT NULL, PRIMARY KEY(id))"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS memory_edges (" +
+                        "id TEXT NOT NULL, characterId TEXT NOT NULL, sourceId TEXT NOT NULL, " +
+                        "targetId TEXT NOT NULL, relation TEXT NOT NULL, linkType TEXT NOT NULL, " +
+                        "PRIMARY KEY(id))"
+                )
+            }
+        }
+
+        // Las tablas del grafo ya las creó 7→8. Este paso solo hace falta para que Room actualice
+        // el hash de identidad al registrar MemoryNode y MemoryEdge como entidades (@Database).
+        // Sin el salto de versión, Room aborta la apertura con "cannot verify the data integrity".
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS memory_nodes (" +
                         "id TEXT NOT NULL, characterId TEXT NOT NULL, label TEXT NOT NULL, " +
@@ -185,7 +204,7 @@ abstract class BoxChatDatabase : RoomDatabase() {
                 .openHelperFactory(factory)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 )
                 .fallbackToDestructiveMigration()
                 .build()

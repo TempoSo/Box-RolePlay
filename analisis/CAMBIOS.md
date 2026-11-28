@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Arranca de nuevo: subir Room a v9 al registrar las entidades del grafo
+
+- **Qué**: `@Database` pasa de versión 8 a 9 y se añade la migración `8→9` (recrea `IF NOT EXISTS` las tablas `memory_nodes`/`memory_edges` para que Room recalcule el hash de identidad). La migración queda registrada en `addMigrations`.
+- **Por qué**: el commit `124b084` registró `MemoryNode` y `MemoryEdge` como entidades pero no subió la versión. Room compara el hash del esquema al abrir —antes de migrar— y aborta con `IllegalStateException: Room cannot verify the data integrity... Expected identity hash: 2b3021d1..., found: 98def620...`. `fallbackToDestructiveMigration()` no cubre este caso. Resultado: la app abría y se cerraba al instante desde que se instaló esa versión. El log del dispositivo (`box-log-20261127-223400.txt`) mostró el stack completo en `BaseRoomConnectionManager.checkIdentity`.
+- **Archivos**: `Android/src/app/src/main/java/com/google/ai/edge/gallery/data/local/BoxChatDatabase.kt` (versión 9, `MIGRATION_8_9`, registro en `addMigrations` y comentario de la 7→8), `analisis/CAMBIOS.md`.
+- **Verificado**: `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon` → BUILD SUCCESSFUL (279 tests, sin regresiones). **Sin verificar en móvil**: que la app ya no se cierre al abrir sobre una instalación con BD en v8 y que el grafo siga escribiéndose. Queda en `desarrollo`, sin fusionar en `main`.
+- **Nota**: se intentó un test de regresión leyendo `@Database` por reflexión, pero la anotación tiene retención de fuente (KSP) y no existe en runtime; se retiró. La comprobación real es abrir la app en el dispositivo con la BD ya migrada.
+
 ### 2026-11-27 — Fichas: evitar el rebote al deslizar hacia arriba cuando el contenido cabe justo
 
 - **Qué**: se añade una conexión de scroll anidado que consume el gesto hacia arriba cuando el contenido de la ficha ya está en el fondo. Así el `ModalBottomSheet` no recibe ese delta y deja de rebotar en su ancla superior. El gesto hacia abajo **no** se consume, para que siga cerrando la ficha. Se aplica tanto a la ficha previa de la tienda como a la ficha de personaje importado.
