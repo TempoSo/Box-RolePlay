@@ -41,7 +41,12 @@
 
 ## 📝 Registro
 
-### 2026-11-28 — TTS multi-motor: Supertonic y voces de personaje por motor
+### 2026-11-28 — Revisión de la secuencia de fases de memoria y Workflows de las dos ramas
+
+- **Qué**: se aclara en `analisis/MEMORIA_MEJORAS.md` la secuencia acordada por el usuario (Fase 1: entidades/DAO, `MemoryGraphBuilder` y cableado en `captureAutoMemory` y «Añadir recuerdo» con el botón Absorber intacto; Fase 2: refuerzo del `scoring` con el grafo sin cambiar el texto inyectado y vista 2D con filtros Todo/T0/T1/Temporal; Fase 3: «Absorber» → «Consolidar» con refinamiento, limpieza de grafo y retirada de notas puente). Revisado el código: las tres fases están implementadas en `desarrollo` y la firma de caché `ids|día|notas` no cambia. Se lanzan los Workflows `Build APK` de GitHub Actions para `desarrollo` y `voz-manos-libres` (runs `46114296139` y `46114298551`) para descargar los APK mañana.
+- **Por qué**: el usuario pidió verificar que las fases seguían el plan original antes de dar por terminada la sesión y dejar ambos Workflows listos.
+- **Archivos**: `analisis/MEMORIA_MEJORAS.md`, `analisis/CAMBIOS.md`. Sin cambios de código.
+- **Verificado**: `captureAutoMemory` llama a `MemoryGraphBuilder.sugerirTopic` y a `saveStructured`; `MemoryRepository` calcula `MemoryGraphScorer.boosts` y `LlmChatViewModel` los pasa al recuperador; `MemoryGraphView` expone los cuatro filtros; `MemoryScreen` usa un único botón «Consolidar». Workflows lanzados con `gh workflow run build-apk.yml --ref <rama>`; el APK local de `voz-manos-libres` quedó en `APK/Box-RolePlay-manos-libres-arm64.apk` (excluido de Git).
 
 - **Qué**: el TTS ya no asume que el modelo activo es Pocket o Kokoro. Se añade **Supertonic TTS** como tercer motor, con descarga desde Hugging Face (`csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11`), importación de carpeta, 10 voces (`sid`) y selector de idioma (es/en/fr/pt/ko). Las referencias de voz por personaje admiten `kokoro:N`, `supertonic:N` (o `supertonic:N@es`) y las muestras `.wav` de Pocket; el diálogo avisa cuando la voz elegida es de otro motor.
 - **Por qué**: el usuario pidió que las voces ligadas a personaje funcionen con todos los motores implementados, con Supertonic incluido; SenseVoice queda reservado para STT y no se mezcla con TTS. Supertonic no clona muestras: sus voces viven en `voice.bin`, por eso hacía falta un prefijo de referencia nuevo.
