@@ -2,6 +2,7 @@ package com.google.ai.edge.gallery.store
 
 import com.google.ai.edge.gallery.data.characters.CharacterCardException
 import com.google.ai.edge.gallery.data.characters.CharacterCardParser
+import com.google.ai.edge.gallery.data.characters.toEntity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -26,6 +27,15 @@ object CharacterStore {
 
   /** Bytes de la tarjeta (PNG con datos incrustados, o JSON) de un resultado de la búsqueda. */
   fun download(card: StoreCard): ByteArray = downloadTarget(LinkTarget(LinkTarget.Site.CHUB, card.id))
+
+  /**
+   * Prepara la ficha de una tarjeta ya descargada sin guardarla: el personaje devuelto no tiene id
+   * ni avatar en disco, así que se puede mostrar al usuario antes de decidir si importa los bytes.
+   */
+  fun preview(card: StoreCard, bytes: ByteArray): StorePreview {
+    val parsed = CharacterCardParser.parse(bytes)
+    return StorePreview(card, bytes, parsed.card.toEntity(id = "", avatarPath = ""))
+  }
 
   /** Reconoce un enlace o ID pegado; lanza si no se entiende. */
   fun resolve(link: String): LinkTarget = StoreLinks.parse(link) ?: throw CharacterCardException(

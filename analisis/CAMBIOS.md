@@ -17,7 +17,7 @@
 
 - **Qué es:** fork de [Box](https://github.com/jegly/Box) de jegly (que deriva de Google AI Edge Gallery) reorientado a **roleplay con IA 100 % local** (personajes, escenas multipersonaje, memoria a largo plazo, TTS por personaje).
 - **Base del fork: Box 1.0.1.** El README upstream que venía en el repo era el de la 3.5.7: sus funciones posteriores (Box Assist, Nano Hub, upscale, música, Bonsai/FLUX, MCP…) **NO están en este código**.
-- **Rama activa:** `fase1-rendimiento`.
+- **Rama principal:** `main`. Ramas de trabajo: `fase2-voice-studio` (voz) y `fase2-store-preview` (ficha previa de la tienda).
 - **Nombre de la app:** "Box RolePlay" (`Android/src/app/src/main/res/values/strings.xml` → `app_name`; paquete raíz `com.box.gallery` con código bajo `com.google.ai.edge.gallery`).
 - **Convenciones:** commits y documentación en **español**, sin tildes en muchos commits históricos. Los submódulos (`llama.cpp`, `stable-diffusion.cpp`, `whisper.cpp`) son obligatorios al clonar.
 - **Historia previa:** el trabajo roleplay empezó con parches "roleplay fase 2→8" (personas, contexto, muestreo, motor, memoria, lorebook, biblioteca, voz base, especulativa) y continuó con la estructura actual de fases 1–6 y A–E2 (ver git log).
@@ -40,6 +40,13 @@
 ---
 
 ## 📝 Registro
+
+### 2026-11-27 — Tienda: ficha previa antes de importar un personaje
+
+- **Qué**: al tocar una tarjeta de la tienda (o usar «Sorpréndeme») se descarga la tarjeta completa y se muestra una hoja de resumen con avatar, autor, etiquetas, descripción, personalidad, escenario, notas del creador y saludos; solo al pulsar «Importar» se guarda el personaje. El botón de la tarjeta pasa de «descargar» a «ver ficha», así que no se importa nada sin revisarlo antes. La importación reutiliza los bytes ya descargados (sin segunda petición).
+- **Por qué**: el usuario pudo ver que las tarjetas de la tienda solo mostraban nombre e imagen, sin forma de leer la ficha como con los personajes ya importados, y quería decidir si le gustaba antes de importarla (también en el botón «Sorpréndeme»).
+- **Archivos**: `Android/src/app/src/main/java/com/google/ai/edge/gallery/store/StoreModels.kt` (nuevo `StorePreview`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/store/CharacterStore.kt` (`preview`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/CharacterStoreViewModel.kt` (estado `preview`, `open`, `confirmPreview`, `dismissPreview`; `randomCharacter` ya no importa directo), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/CharacterStoreScreen.kt` (tarjeta pulsable + hoja), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/StoreCardPreviewSheet.kt` (nuevo), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterDetailSheet.kt` (`ExpandableBlock` pasa a `internal` para reutilizarlo), `Android/src/app/src/test/java/com/google/ai/edge/gallery/store/StorePreviewTest.kt` (nuevo), `analisis/CAMBIOS.md`.
+- **Verificado**: tests unitarios (`StorePreviewTest` + `StorePagerTest`) en verde. Sin verificar en móvil: el aspecto de la hoja en pantallas estrechas y el flujo completo «Sorpréndeme» → ficha → importar. Trabajo en la rama `fase2-store-preview`, todavía no fusionada en `main`.
 
 ### 2026-11-27 — main: fusión de las ramas de trabajo y README en dos idiomas
 

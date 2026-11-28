@@ -37,6 +37,7 @@ Los modelos corren en el dispositivo (LiteRT y llama.cpp con GGUF): puedes inter
 - **Tu persona activa**: tu perfil con nombre y descripción que la IA usa para saber quién eres.
 - **Copia de seguridad** en `.zip` (personajes, recuerdos, personas, presets y escenas) e importación selectiva.
 - **Tienda de personajes**: búsqueda en Chub, cuadrícula de 2 columnas, páginas numeradas, filtro +18, importación por enlace y botón «Sorpréndeme».
+- **Ficha antes de importar**: al tocar una tarjeta (o usar «Sorpréndeme») ves descripción, personalidad, escenario y saludos, y decides tú si la importas.
 
 ### 🎭 Escenas multipersonaje
 - Escenarios con nombre, prompt, etiquetas y 2+ personajes; la IA da vida a cada uno (`Nombre: texto`) sin hablar por ti.

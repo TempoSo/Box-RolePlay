@@ -205,7 +205,7 @@ private fun StatCard(value: String, label: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun ExpandableBlock(title: String, text: String, emptyText: String = "Sin datos.") {
+internal fun ExpandableBlock(title: String, text: String, emptyText: String = "Sin datos.") {
     var expanded by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),

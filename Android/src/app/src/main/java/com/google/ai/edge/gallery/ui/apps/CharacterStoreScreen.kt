@@ -33,11 +33,11 @@ import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,6 +94,7 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
   val hasMore by viewModel.hasMore.collectAsState()
   val added by viewModel.added.collectAsState()
   val busyId by viewModel.busyId.collectAsState()
+  val preview by viewModel.preview.collectAsState()
   val message by viewModel.message.collectAsState()
   val pendingLore by viewModel.pendingLore.collectAsState()
   val characters by viewModel.characters.collectAsState()
@@ -208,6 +209,16 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
     )
   }
 
+  preview?.let { p ->
+    StoreCardPreviewSheet(
+      preview = p,
+      alreadyAdded = p.card.id in added,
+      importing = busyId == p.card.id,
+      onDismiss = { viewModel.dismissPreview() },
+      onImport = { viewModel.confirmPreview() },
+    )
+  }
+
   BoxScaffold(title = "Tienda de personajes", subtitle = "Tarjetas de Chub y otras fuentes", onBack = onBack) {
     Column(Modifier.fillMaxSize()) {
       Row(
@@ -258,7 +269,7 @@ fun CharacterStoreScreen(onBack: () -> Unit, viewModel: CharacterStoreViewModel 
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
         gridItems(results, key = { it.source + it.id }) { card ->
-          StoreCardTile(card, added = card.id in added, busy = busyId == card.id, anyBusy = busyId != null) { viewModel.add(card) }
+          StoreCardTile(card, added = card.id in added, busy = busyId == card.id, anyBusy = busyId != null) { viewModel.open(card) }
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
           Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
@@ -324,10 +335,12 @@ private fun PageBar(
 private fun compact(n: Int): String = if (n >= 1000) "%.1fk".format(n / 1000f) else "$n"
 
 @Composable
-private fun StoreCardTile(card: StoreCard, added: Boolean, busy: Boolean, anyBusy: Boolean, onAdd: () -> Unit) {
+private fun StoreCardTile(card: StoreCard, added: Boolean, busy: Boolean, anyBusy: Boolean, onOpen: () -> Unit) {
   Box(
     Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(18.dp))
-      .background(MaterialTheme.colorScheme.surfaceVariant),
+      .background(MaterialTheme.colorScheme.surfaceVariant)
+      // Toda la tarjeta abre la ficha: la importación se decide después, en la hoja de resumen.
+      .clickable(enabled = !anyBusy || busy, onClick = onOpen),
   ) {
     RemoteImage(card.avatarUrl, Modifier.fillMaxSize(), RoundedCornerShape(0.dp))
     Box(
@@ -368,21 +381,21 @@ private fun StoreCardTile(card: StoreCard, added: Boolean, busy: Boolean, anyBus
       }
     }
     FilledIconButton(
-      onClick = onAdd,
-      enabled = !added && !anyBusy,
+      onClick = onOpen,
+      enabled = !anyBusy || busy,
       modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(38.dp),
     ) {
       when {
         busy -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-        added -> Icon(Icons.Rounded.Check, "Añadido")
-        else -> Icon(Icons.Rounded.Download, "Añadir a mis personajes")
+        added -> Icon(Icons.Rounded.Check, "Ya añadido")
+        else -> Icon(Icons.Rounded.Visibility, "Ver ficha del personaje")
       }
     }
   }
 }
 
 @Composable
-private fun RemoteImage(url: String, modifier: Modifier, shape: RoundedCornerShape) {
+internal fun RemoteImage(url: String, modifier: Modifier, shape: RoundedCornerShape) {
   val bitmap by produceState<Bitmap?>(initialValue = StoreImages.cached(url), url) {
     if (value == null && url.isNotBlank()) value = withContext(Dispatchers.IO) { StoreImages.load(url) }
   }

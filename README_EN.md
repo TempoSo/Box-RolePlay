@@ -37,6 +37,7 @@ Models run on the device (LiteRT and llama.cpp with GGUF), so you can roleplay c
 - **Active persona**: your own profile with name and description that the AI uses to know who you are.
 - **Backup** as a `.zip` (characters, memories, personas, presets and scenes) with selective import.
 - **Character store**: Chub search, 2-column grid, numbered pages, +18 filter, link import and a «Surprise me» button.
+- **Preview before importing**: tapping a card (or «Surprise me») shows its description, personality, scenario and greetings so you decide whether to import it.
 
 ### 🎭 Multi-character scenes
 - Scenarios with a name, prompt, tags and 2+ characters; the AI voices each one (`Name: text`) without speaking for you.

@@ -1,5 +1,7 @@
 package com.google.ai.edge.gallery.store
 
+import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
+
 /** Una tarjeta de personaje de una tienda en línea. */
 data class StoreCard(
   /** Fuente (por ahora «chub»). */
@@ -31,4 +33,14 @@ data class StoreQuery(
   /** Mostrar también contenido para adultos (NSFW). */
   val nsfw: Boolean = false,
   val pageSize: Int = 20,
+)
+
+/**
+ * Ficha descargada pero aún no guardada. [character] tiene un id vacío y sin avatar en disco:
+ * solo sirve para mostrársela al usuario antes de decidir si importa [bytes].
+ */
+data class StorePreview(
+  val card: StoreCard,
+  val bytes: ByteArray,
+  val character: RoleplayCharacter,
 )

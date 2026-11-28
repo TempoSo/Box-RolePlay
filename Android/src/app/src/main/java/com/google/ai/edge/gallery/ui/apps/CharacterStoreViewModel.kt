@@ -8,6 +8,7 @@ import com.google.ai.edge.gallery.data.characters.CharacterRepository
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
 import com.google.ai.edge.gallery.store.CharacterStore
 import com.google.ai.edge.gallery.store.LinkTarget
+import com.google.ai.edge.gallery.store.StorePreview
 import com.google.ai.edge.gallery.store.LorebookConvert
 import com.google.ai.edge.gallery.store.StoreLorebook
 import com.google.ai.edge.gallery.store.StoreCard
@@ -60,6 +61,9 @@ constructor(
   val added: StateFlow<Set<String>> = _added.asStateFlow()
   private val _busyId = MutableStateFlow<String?>(null)
   val busyId: StateFlow<String?> = _busyId.asStateFlow()
+  /** Ficha descargada que espera a que el usuario decida si la importa. */
+  private val _preview = MutableStateFlow<StorePreview?>(null)
+  val preview: StateFlow<StorePreview?> = _preview.asStateFlow()
   private val _message = MutableStateFlow<String?>(null)
   val message: StateFlow<String?> = _message.asStateFlow()
 
@@ -98,7 +102,8 @@ constructor(
 
   /**
    * «¿No encuentras lo que quieres?»: va a una página al azar, elige un personaje de entre los que
-   * aún no se han añadido y lo importa. A diferencia de [random], deja un personaje concreto listo.
+   * aún no se han añadido y muestra su ficha. A diferencia de [random], deja un personaje concreto
+   * listo; la importación la decide el usuario en la ficha.
    */
   fun randomCharacter() {
     if (_loading.value || _busyId.value != null) return
@@ -116,7 +121,7 @@ constructor(
         prefs.lastText = q.text; prefs.lastSort = q.sort.name; prefs.lastPage = target
         val card = StorePager.randomCard(res.cards, _added.value)
         if (card == null) _message.value = "Ya tienes todos los personajes de esta página; prueba otra vez"
-        else add(card)
+        else open(card)
       } catch (e: Exception) {
         _message.value = "No se pudo buscar: ${e.message ?: "sin conexión"}"
       } finally {
@@ -146,12 +151,38 @@ constructor(
     }
   }
 
-  fun add(card: StoreCard) {
-    if (_busyId.value != null) return
+  /** Descarga la ficha de una tarjeta y la deja lista para mostrar, sin guardarla todavía. */
+  fun open(card: StoreCard) {
+    if (_busyId.value != null || _preview.value != null) return
     _busyId.value = card.id
     viewModelScope.launch {
       try {
         val bytes = withContext(Dispatchers.IO) { CharacterStore.download(card) }
+        _preview.value = CharacterStore.preview(card, bytes)
+      } catch (e: CharacterCardException) {
+        _message.value = e.message ?: "La tarjeta no es válida"
+      } catch (e: Exception) {
+        _message.value = "No se pudo descargar: ${e.message ?: "error"}"
+      } finally {
+        _busyId.value = null
+      }
+    }
+  }
+
+  /** Importa la ficha en revisión con los bytes ya descargados (sin una segunda petición). */
+  fun confirmPreview() {
+    val pending = _preview.value ?: return
+    _preview.value = null
+    importBytes(pending.card, pending.bytes)
+  }
+
+  fun dismissPreview() { _preview.value = null }
+
+  private fun importBytes(card: StoreCard, bytes: ByteArray) {
+    if (_busyId.value != null) return
+    _busyId.value = card.id
+    viewModelScope.launch {
+      try {
         val c = repository.importFromBytes(bytes)
         prefs.markAdded(card.id)
         _added.value = prefs.added()
@@ -159,7 +190,7 @@ constructor(
       } catch (e: CharacterCardException) {
         _message.value = e.message ?: "La tarjeta no es válida"
       } catch (e: Exception) {
-        _message.value = "No se pudo descargar: ${e.message ?: "error"}"
+        _message.value = "No se pudo importar: ${e.message ?: "error"}"
       } finally {
         _busyId.value = null
       }
