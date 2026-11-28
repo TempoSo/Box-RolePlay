@@ -81,6 +81,7 @@ fun CharacterDetailSheet(
     onNewChat: (greeting: String?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scrollState = rememberScrollState()
     // -1 = saludo aleatorio; si no, índice en detail.greetings.
     var greetingIdx by remember { mutableIntStateOf(-1) }
     val greetings = detail?.greetings.orEmpty()
@@ -96,7 +97,9 @@ fun CharacterDetailSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Column(
-                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                // Sin overscroll propio: si la ficha es corta, el estiramiento del scroll
+                // competia con el drag del sheet y hacia que oscilara al arrastrar hacia abajo.
+                Modifier.weight(1f, fill = false).verticalScroll(scrollState, overscrollEffect = null),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

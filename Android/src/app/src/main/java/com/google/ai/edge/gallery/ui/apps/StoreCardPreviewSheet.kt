@@ -50,6 +50,7 @@ fun StoreCardPreviewSheet(
   onImport: () -> Unit,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  val scrollState = rememberScrollState()
   val character = preview.character
   val card = preview.card
   val greetings = listOf(character.firstMessage).filter { it.isNotBlank() } + character.toCard().alternateGreetings
@@ -68,7 +69,9 @@ fun StoreCardPreviewSheet(
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
       Column(
-        Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+        // Sin overscroll propio: con fichas cortas el estiramiento del scroll peleaba con el drag
+        // del sheet y producia el "levantamiento fantasma" al arrastrar hacia abajo.
+        Modifier.weight(1f, fill = false).verticalScroll(scrollState, overscrollEffect = null),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
         Row(

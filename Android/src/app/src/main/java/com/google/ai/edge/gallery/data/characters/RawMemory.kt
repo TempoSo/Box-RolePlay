@@ -32,6 +32,20 @@ fun List<RawMemory>.withEditedText(id: String, text: String): List<RawMemory> {
     return map { if (it.id == id) it.copy(text = clean) else it }
 }
 
+/** Notas crudas que se conservan tras absorber para dar continuidad al siguiente chat (1 o 2). */
+const val NOTAS_PUENTE = 2
+
+/**
+ * Ids que se pueden borrar tras absorber. La lista de entrada viene de más nueva a más vieja,
+ * así que las [NOTAS_PUENTE] primeras se dejan vivas para inyectarlas en el próximo chat.
+ */
+fun List<RawMemory>.idsBorrablesTrasAbsorber(idsAbsorbidos: Set<String>): Set<String> =
+    idsAbsorbidos - take(NOTAS_PUENTE).map { it.id }.toSet()
+
+/** Notas listas para el próximo chat: como máximo 2, más nueva primero. */
+fun List<RawMemory>.paraInyectar(limite: Int = NOTAS_PUENTE): List<RawMemory> =
+    take(limite.coerceIn(0, NOTAS_PUENTE)).filter { it.text.isNotBlank() }
+
 object RawMemoryJson {
     fun encode(list: List<RawMemory>): String =
         buildJsonArray {

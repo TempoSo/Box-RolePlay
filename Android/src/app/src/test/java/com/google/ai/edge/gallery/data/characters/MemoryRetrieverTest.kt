@@ -99,4 +99,58 @@ class MemoryRetrieverTest {
     val sinClaves = memoria("s", "Ana prefiere respuestas cortas en español", emptyList(), now)
     assertTrue(MemoryRetriever.claves(sinClaves).contains("prefiere"))
   }
+
+  private fun nota(id: String, texto: String, createdAt: Long = now) =
+    RawMemory(id = id, characterId = "ana", text = texto, createdAt = createdAt)
+
+  @Test fun sinNotasElBloqueNoCambia() {
+    val cafe = memoria("c", "Le gusta el café", listOf("cafe"), now - day)
+    val resultado =
+      MemoryRetriever.seleccionar(listOf(cafe), "Ana", "café", now, "", notasRecientes = emptyList())
+    assertEquals("Ana remembers previously:\n[ayer] Le gusta el café\n${MemoryPromptBuilder.GUARD}", resultado.bloque)
+    assertEquals("c|${now / day}", resultado.firma)
+    assertTrue(resultado.idsNotas.isEmpty())
+  }
+
+  @Test fun notasPuenteEntranDetrasDeLosRecuerdos() {
+    val cafe = memoria("c", "Le gusta el café", listOf("cafe"), now - day)
+    val notas = listOf(nota("n2", "Hoy se rió", now), nota("n1", "Ayer dudó", now - day))
+    val resultado =
+      MemoryRetriever.seleccionar(listOf(cafe), "Ana", "café", now, "", notasRecientes = notas)
+    assertEquals(listOf("c"), resultado.ids)
+    assertEquals(listOf("n2", "n1"), resultado.idsNotas)
+    assertTrue(resultado.bloque.indexOf("Recent notes:") > resultado.bloque.indexOf("remembers previously"))
+    assertTrue(resultado.bloque.contains("[hoy] Hoy se rió"))
+    assertTrue(resultado.bloque.contains("[ayer] Ayer dudó"))
+    assertTrue(resultado.bloque.endsWith(MemoryPromptBuilder.GUARD))
+    assertEquals(1, resultado.bloque.split(MemoryPromptBuilder.GUARD).size - 1)
+    assertTrue(resultado.traza.contains("notas=n2,n1"))
+  }
+
+  @Test fun comoMaximoDosNotasYLaFirmaDetectaEdiciones() {
+    val cafe = memoria("c", "Le gusta el café", listOf("cafe"), now - day)
+    val notas = listOf(nota("a", "Uno"), nota("b", "Dos"), nota("c", "Tres"))
+    val resultado =
+      MemoryRetriever.seleccionar(listOf(cafe), "Ana", "café", now, "", notasRecientes = notas)
+    assertEquals(listOf("a", "b"), resultado.idsNotas)
+    assertFalse(resultado.bloque.contains("Tres"))
+    val editada = listOf(nota("a", "Uno distinto"), nota("b", "Dos"))
+    val otro =
+      MemoryRetriever.seleccionar(listOf(cafe), "Ana", "café", now, "", notasRecientes = editada)
+    assertTrue(otro.firma != resultado.firma)
+    assertTrue(otro.bloque != resultado.bloque)
+  }
+
+  @Test fun notasEntranAunSinRecuerdosDestilados() {
+    val resultado =
+      MemoryRetriever.seleccionar(
+        emptyList(), "Ana", "hola", now, "",
+        MemoryInjectionSettings(injectLastOnNewChat = false),
+        notasRecientes = listOf(nota("n", "Se quedó callada")),
+      )
+    assertTrue(resultado.ids.isEmpty())
+    assertEquals(listOf("n"), resultado.idsNotas)
+    assertTrue(resultado.bloque.contains("Se quedó callada"))
+    assertTrue(resultado.bloque.endsWith(MemoryPromptBuilder.GUARD))
+  }
 }

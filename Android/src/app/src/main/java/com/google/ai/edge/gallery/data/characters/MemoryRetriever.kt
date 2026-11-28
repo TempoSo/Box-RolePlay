@@ -47,6 +47,8 @@ object MemoryRetriever {
     /** Cambia solo si cambian los recuerdos elegidos o el día: sirve para no recalcular el prefijo. */
     val firma: String,
     val traza: String,
+    /** Notas puente inyectadas; nunca se pasan a `bumpAccess` porque no son recuerdos Room. */
+    val idsNotas: List<String> = emptyList(),
   )
 
   /** Normaliza like -> like, café -> cafe, sin puntuación ni espacios dobles. */
@@ -109,6 +111,42 @@ object MemoryRetriever {
     else prompt.substring(0, corte) + "\n\n" + bloque + prompt.substring(corte)
   }
 
+  /** Las notas puente también invalidan la firma si se editan o se borran. */
+  private fun sufijoNotas(notas: List<RawMemory>): String =
+    if (notas.isEmpty()) "" else "|n:" + notas.joinToString(",") { "${it.id}:${it.text.hashCode()}" }
+
+  /**
+   * Arma el bloque con dos partes: los recuerdos destilados (scoring) y, detrás, las notas puente
+   * recién absorbidas. La guardia va una sola vez al final y no hay líneas en blanco dentro del
+   * bloque para que `quitaBloqueAntiguo` pueda retirarlo entero en el siguiente turno.
+   */
+  private fun armarBloque(
+    nombre: String,
+    lineas: List<String>,
+    notas: List<RawMemory>,
+    now: Long,
+    incluirTiempo: Boolean,
+    maxNotasChars: Int,
+  ): String =
+    buildString {
+      append("${nombre.trim().ifEmpty { "Character" }} remembers previously:\n")
+      append(lineas.joinToString("\n"))
+      if (notas.isEmpty()) {
+        append('\n')
+      } else {
+        append("\nRecent notes:\n")
+        notas.forEach { nota ->
+          val texto = nota.text.trim().let {
+            if (it.length > maxNotasChars) it.take(maxNotasChars).trimEnd() + "…" else it
+          }
+          val etiqueta = if (incluirTiempo) etiquetaTiempo(nota.createdAt, now) else ""
+          if (etiqueta.isNotEmpty()) append("[$etiqueta] ")
+          append(texto).append('\n')
+        }
+      }
+      append(MemoryPromptBuilder.GUARD)
+    }
+
   /**
    * Elige los recuerdos que entran este turno y arma el bloque listo para el prompt. El orden es
    * estable (puntuación, fecha, id) y la firma solo cambia si cambia el conjunto o el día.
@@ -121,8 +159,17 @@ object MemoryRetriever {
     conversacionActual: String,
     ajustes: MemoryInjectionSettings = MemoryInjectionSettings(),
     maxChars: Int = MemoryPromptBuilder.DEFAULT_MAX_CHARS,
+    /** Notas crudas recientes, más nueva primero; se inyectan aparte del scoring de recuerdos. */
+    notasRecientes: List<RawMemory> = emptyList(),
+    maxNotasRecientes: Int = NOTAS_PUENTE,
+    maxNotasChars: Int = 400,
   ): Resultado {
     val consulta = tokens(textoConsulta)
+    // Las notas puente no compiten con los recuerdos: van detrás, con su propio tope y presupuesto.
+    val notas = notasRecientes.paraInyectar(maxNotasRecientes)
+    val sufijo = sufijoNotas(notas)
+    val trazaNotas =
+      if (notas.isEmpty()) "" else ", notas=${notas.joinToString(",") { it.id.take(8) }}"
     val candidatos =
       memorias.filter { it.valid && it.content.isNotBlank() }
         .filterNot { ajustes.excludeActiveSession && conversacionActual.isNotBlank() && it.sourceConversationId == conversacionActual }
@@ -141,10 +188,13 @@ object MemoryRetriever {
     }
     if (elegidos.isEmpty()) {
       return Resultado(
-        bloque = "",
+        bloque =
+          if (notas.isEmpty()) ""
+          else armarBloque(nombrePersonaje, emptyList(), notas, now, ajustes.includeRelativeTime, maxNotasChars),
         ids = emptyList(),
-        firma = "vacio|${now / DAY}",
-        traza = "LTM: evaluados=${candidatos.size}, umbral=$umbral, entró ninguno",
+        idsNotas = notas.map { it.id },
+        firma = "vacio|${now / DAY}$sufijo",
+        traza = "LTM: evaluados=${candidatos.size}, umbral=$umbral, entró ninguno$trazaNotas",
       )
     }
 
@@ -167,27 +217,31 @@ object MemoryRetriever {
     }
     if (lineas.isEmpty()) {
       return Resultado(
-        bloque = "",
+        bloque =
+          if (notas.isEmpty()) ""
+          else armarBloque(nombrePersonaje, emptyList(), notas, now, ajustes.includeRelativeTime, maxNotasChars),
         ids = emptyList(),
-        firma = "vacio|${now / DAY}",
-        traza = "LTM: evaluados=${candidatos.size}, umbral=$umbral, entró ninguno",
+        idsNotas = notas.map { it.id },
+        firma = "vacio|${now / DAY}$sufijo",
+        traza = "LTM: evaluados=${candidatos.size}, umbral=$umbral, entró ninguno$trazaNotas",
       )
     }
 
     val ids = elegidos.take(lineas.size).map { it.first.id }
     val bloque =
-      buildString {
-        append("${nombrePersonaje.trim().ifEmpty { "Character" }} remembers previously:\n")
-        append(lineas.joinToString("\n"))
-        append('\n')
-        append(MemoryPromptBuilder.GUARD)
-      }
+      armarBloque(nombrePersonaje, lineas, notas, now, ajustes.includeRelativeTime, maxNotasChars)
     val detalle = elegidos.take(lineas.size).joinToString(", ") {
       "${it.first.id.take(8)}=${String.format(Locale.ROOT, "%.2f", it.second)}"
     }
     val traza =
       "LTM: evaluados=${candidatos.size}, umbral=$umbral, entraron=$detalle" +
         (if (fallback) " (fallback último recuerdo)" else "")
-    return Resultado(bloque, ids, ids.joinToString(",") + "|${now / DAY}", traza)
+    return Resultado(
+      bloque = bloque,
+      ids = ids,
+      firma = ids.joinToString(",") + "|${now / DAY}" + sufijo,
+      traza = traza + trazaNotas,
+      idsNotas = notas.map { it.id },
+    )
   }
 }

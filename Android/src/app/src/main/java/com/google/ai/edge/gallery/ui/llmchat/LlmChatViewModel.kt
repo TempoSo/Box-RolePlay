@@ -473,6 +473,11 @@ open class LlmChatViewModelBase() : ChatViewModel() {
         if (isRoleplayChat && memorySettings.enabled && memoryCharacterId.isNotBlank() && repo != null) {
           try {
             val memorias = withContext(Dispatchers.IO) { repo.getForRetrieval(memoryCharacterId) }
+            // Notas puente: las 2 más recientes sobreviven a absorber y dan continuidad al chat.
+            val notas =
+              if (::chatRepository.isInitialized && memoryCharacterId.isNotBlank()) {
+                chatRepository.recentRawMemories(memoryCharacterId)
+              } else emptyList()
             val consulta = (previous.takeLast(2).map { it.content } + input).joinToString("\n")
             val resultado =
               retriever.seleccionar(
@@ -482,6 +487,7 @@ open class LlmChatViewModelBase() : ChatViewModel() {
                 now = System.currentTimeMillis(),
                 conversacionActual = memoryConversationId,
                 ajustes = memorySettings,
+                notasRecientes = notas,
               )
             // Solo se reescribe el bloque si cambian los recuerdos elegidos o el día.
             if (resultado.firma != memorySignature) {

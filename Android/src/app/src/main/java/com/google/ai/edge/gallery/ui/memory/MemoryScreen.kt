@@ -41,6 +41,8 @@ import com.google.ai.edge.gallery.data.characters.CharacterRepository
 import com.google.ai.edge.gallery.data.characters.MemoryAbsorbPrompt
 import com.google.ai.edge.gallery.data.characters.MemoryRepository
 import com.google.ai.edge.gallery.data.characters.PersonaRepository
+import com.google.ai.edge.gallery.data.characters.idsBorrablesTrasAbsorber
+import com.google.ai.edge.gallery.data.characters.paraInyectar
 import com.google.ai.edge.gallery.data.characters.RawMemory
 import com.google.ai.edge.gallery.data.characters.RawMemoryStore
 import android.content.Context
@@ -137,12 +139,16 @@ class MemoryViewModel @Inject constructor(
                 }
               }
             }
-            rawStore.remove(idsBorrados); refreshRaw()
-            val notas = idsBorrados.size
-            onMessage(
-              if (recuerdos == 1) "Listo: $notas notas absorbidas en un recuerdo."
-              else "Listo: $notas notas absorbidas en $recuerdos recuerdos (por tandas)."
-            )
+            // Las 2 notas más nuevas se conservan como "puente": el modelo las ve en el próximo
+            // chat junto a los recuerdos ya destilados, para que la escena no pierda frescura.
+            val idsBorrables = notes.idsBorrablesTrasAbsorber(idsBorrados)
+            rawStore.remove(idsBorrables); refreshRaw()
+            val borradas = idsBorrables.size
+            val conservadas = notes.paraInyectar().size
+            val resumen =
+              if (recuerdos == 1) "$borradas notas absorbidas en un recuerdo."
+              else "$borradas notas absorbidas en $recuerdos recuerdos (por tandas)."
+            onMessage("$resumen Se conservan $conservadas notas recientes para el próximo chat.")
           }
         },
         onError = { onMessage(it) })
@@ -218,16 +224,11 @@ fun MemoryScreen(
       LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (shown.isEmpty()) item { Text("Sin recuerdos todavía.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(shown, key = { it.id }) { m ->
-          Card(Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-              IconButton(onClick = { editing = m; editText = m.content }) { Icon(Icons.Rounded.Edit, "Editar") }
-              Column(Modifier.weight(1f)) {
-                Text(relativeTime(m.createdAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(m.content, maxLines = 6)
-              }
-              IconButton(onClick = { viewModel.delete(m) }) { Icon(Icons.Rounded.Delete, "Borrar", tint = MaterialTheme.colorScheme.error) }
-            }
-          }
+          MemoryCard(
+            memory = m,
+            onEdit = { editing = m; editText = m.content },
+            onDelete = { viewModel.delete(m) },
+          )
         }
         item {
           BoxSectionLabel("Ajustes por personaje")
@@ -241,7 +242,7 @@ fun MemoryScreen(
           }
           BoxSectionLabel("Recuerdos sin procesar (${rawNotes.size})")
           Text(
-            note ?: "Notas ligeras que se guardan al instante mientras chateas. Al absorberlas, el modelo las resume en un recuerdo real que se usa en el prompt.",
+            note ?: "Notas ligeras que se guardan al instante mientras chateas. Al absorberlas, el modelo las resume en recuerdos reales; las 2 más recientes se conservan y también se usan en el próximo chat.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Button(

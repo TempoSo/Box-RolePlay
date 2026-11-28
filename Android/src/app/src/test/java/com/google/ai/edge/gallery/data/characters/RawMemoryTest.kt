@@ -109,4 +109,15 @@ class RawMemoryTest {
         assertEquals(listOf(a, b), listOf(a, b).withEditedText("a", "   "))
         assertEquals(listOf(a, b), listOf(a, b).withEditedText("zzz", "x"))
     }
+
+    // Las notas puente sobreviven a absorber: se conservan la más nueva y la segunda (1..2).
+    @Test fun absorberConservaDosNotasParaElSiguienteChat() {
+        val notas =
+            listOf("nueva", "segunda", "tercera", "vieja").mapIndexed { i, texto ->
+                RawMemory(id = "n$i", characterId = "c", text = texto, createdAt = i.toLong())
+            }
+        assertEquals(listOf("n0", "n1"), notas.paraInyectar().map { it.id })
+        assertEquals(setOf("n2", "n3"), notas.idsBorrablesTrasAbsorber(notas.map { it.id }.toSet()))
+        assertEquals(listOf("n0"), notas.take(1).paraInyectar().map { it.id })
+    }
 }

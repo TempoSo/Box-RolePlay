@@ -35,6 +35,7 @@ import com.google.ai.edge.gallery.data.characters.MemoryPromptBuilder
 import com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore
 import com.google.ai.edge.gallery.data.local.entities.CharacterMemory
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
+import com.google.ai.edge.gallery.ui.memory.MemoryCard
 
 /**
  * Memoria a largo plazo de un personaje: recuerdos (por ejemplo, resúmenes de charlas anteriores)
@@ -90,20 +91,11 @@ fun MemoryDialog(
                     Text("Todavía no hay recuerdos.", style = MaterialTheme.typography.bodySmall)
                 }
                 memories.forEach { m ->
-                    Card(Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(MemoryPromptBuilder.timeAgo(m.createdAt, now), style = MaterialTheme.typography.labelSmall)
-                                Text(m.content, style = MaterialTheme.typography.bodyMedium, maxLines = 5)
-                            }
-                            IconButton(onClick = { editText = m.content; editing = m }) {
-                                Icon(Icons.Rounded.Edit, contentDescription = "Editar recuerdo")
-                            }
-                            IconButton(onClick = { viewModel.deleteMemory(m) }) {
-                                Icon(Icons.Rounded.Delete, contentDescription = "Borrar recuerdo")
-                            }
-                        }
-                    }
+                    MemoryCard(
+                        memory = m,
+                        onEdit = { editText = m.content; editing = m },
+                        onDelete = { viewModel.deleteMemory(m) },
+                    )
                 }
                 if (memories.isNotEmpty()) {
                     TextButton(onClick = { confirmClear = true }) { Text("Borrar todos los recuerdos") }

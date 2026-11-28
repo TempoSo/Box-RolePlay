@@ -4,6 +4,7 @@ import com.google.ai.edge.gallery.data.characters.Swipes
 import com.google.ai.edge.gallery.data.local.dao.CharacterDao
 import android.content.Context
 import com.google.ai.edge.gallery.data.characters.AutoMemory
+import com.google.ai.edge.gallery.data.characters.NOTAS_PUENTE
 import com.google.ai.edge.gallery.data.characters.RawMemory
 import com.google.ai.edge.gallery.data.characters.RawMemoryStore
 import com.google.ai.edge.gallery.data.characters.RoleplaySettingsStore
@@ -15,7 +16,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.ai.edge.gallery.data.local.dao.MessageDao
 import com.google.ai.edge.gallery.data.local.entities.Conversation
 import com.google.ai.edge.gallery.data.local.entities.Message
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -68,6 +71,16 @@ class ChatRepository @Inject constructor(
         if (AutoMemory.isDuplicate(text, raw.forCharacter(charId).take(5).map { it.text })) return
         raw.add(RawMemory(characterId = charId, text = text))
     }
+
+    /**
+     * Notas puente para el próximo chat: las más recientes del personaje (máximo 2), ya en orden
+     * de más nueva a más vieja. Se leen en IO porque viven en un fichero JSON, no en Room.
+     */
+    suspend fun recentRawMemories(characterId: String, limit: Int = NOTAS_PUENTE): List<RawMemory> =
+        withContext(Dispatchers.IO) {
+            if (characterId.isBlank() || characterId.startsWith("scene:")) emptyList()
+            else RawMemoryStore(context).forCharacter(characterId).take(limit.coerceIn(0, NOTAS_PUENTE))
+        }
 
     /** Roleplay: JSON del lorebook (character_book) del personaje, o "" si no tiene. */
     suspend fun getCharacterBookJson(characterId: String): String =
