@@ -16,6 +16,7 @@ import kotlinx.serialization.json.Json
 object DownloadLinkStore {
   private const val PREFS_NAME = "model_links"
   private const val KEY_LINKS = "links"
+  private const val KEY_CATALOG_VERSION = "catalog_version"
   private const val IMPORTS_DIR = "__imports"
 
   private val json = Json { ignoreUnknownKeys = true }
@@ -32,9 +33,21 @@ object DownloadLinkStore {
     synchronized(this) {
       if (ready) return
       prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      _links.value = load().let { stored ->
-        val byId = stored.associateBy { it.id }
-        DownloadLinkCatalog.base.map { byId[it.id] ?: it } + stored.filter { !it.pinned }
+      val stored = load()
+      val needsCatalogRefresh =
+        prefs?.getInt(KEY_CATALOG_VERSION, 0) != DownloadLinkCatalog.VERSION
+      _links.value =
+        if (needsCatalogRefresh) {
+          // El catálogo cambió (F16, nuevos modelos…): las entradas fijas se sustituyen, pero los
+          // enlaces que el usuario añadió desde HF se conservan.
+          val custom = stored.filter { !it.pinned }
+          DownloadLinkCatalog.base + custom
+        } else {
+          val byId = stored.associateBy { it.id }
+          DownloadLinkCatalog.base.map { byId[it.id] ?: it } + stored.filter { !it.pinned }
+        }
+      if (needsCatalogRefresh) {
+        prefs?.edit { putInt(KEY_CATALOG_VERSION, DownloadLinkCatalog.VERSION) }
       }
       ready = true
     }

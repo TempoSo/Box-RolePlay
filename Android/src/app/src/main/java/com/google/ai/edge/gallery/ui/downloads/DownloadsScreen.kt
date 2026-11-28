@@ -12,6 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -28,13 +31,17 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.data.downloads.DownloadLink
 import com.google.ai.edge.gallery.data.downloads.DownloadLinkFormat
+import com.google.ai.edge.gallery.data.downloads.DownloadVariant
+import com.google.ai.edge.gallery.data.downloads.DeviceProfile
+import com.google.ai.edge.gallery.data.downloads.LinkKind
 import com.google.ai.edge.gallery.data.downloads.LinkState
 import com.google.ai.edge.gallery.ui.home.BoxScaffold
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 
 /**
- * Lista unificada de modelos enlazados. Las descargas siguen aunque se cambie de pestaña: el
- * estado sale de [DownloadsViewModel.links], que es persistente y no depende de esta pantalla.
+ * Lista unificada de modelos enlazados. Cada familia (modelo + proyector) ocupa una sola tarjeta
+ * con su selector de cuantización. Las descargas siguen aunque se cambie de pestaña: el estado sale
+ * de [DownloadsViewModel.links], que es persistente y no depende de esta pantalla.
  */
 @Composable
 fun DownloadsScreen(
@@ -55,6 +62,9 @@ fun DownloadsScreen(
     if (completed.isNotEmpty()) modelManagerViewModel.syncDownloadLinks()
   }
 
+  // El proyector se pinta dentro de la tarjeta de su modelo, no como tarjeta suelta.
+  val cards = links.filter { it.groupId.isBlank() || it.kind == LinkKind.MODEL }
+
   BoxScaffold(
     title = "Descargas",
     subtitle = "Modelos enlazados · la descarga continúa al cambiar de pantalla",
@@ -73,23 +83,31 @@ fun DownloadsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Button(onClick = onSearchHf, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            androidx.compose.material3.Icon(Icons.Rounded.Search, null)
+            Icon(Icons.Rounded.Search, null)
             Text("  Buscar y enlazar desde Hugging Face")
           }
           Text(
-            "Los enlaces de Hugging Face se añaden desde el buscador. Pausa y reanuda conserva lo ya bajado.",
+            "Elige cuantización según tu RAM: el cálculo incluye el proyector cuando hay visión. " +
+              "Pausa y reanuda conserva lo ya bajado.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp),
           )
         }
       }
-      items(links, key = { it.id }) { link ->
+      items(cards, key = { it.id }) { link ->
+        val projector =
+          links.firstOrNull {
+            it.groupId.isNotBlank() && it.groupId == link.groupId && it.kind == LinkKind.MMPROJ
+          }
         val totalBytes = device.groupBytes(link, links)
         DownloadLinkCard(
           link = link,
+          projector = projector,
+          device = device,
           groupBytes = totalBytes,
           warning = device.warningFor(link, totalBytes),
+          onSelectVariant = { viewModel.selectVariant(link, it) },
           onDownload = { viewModel.download(link) },
           onPause = { viewModel.pause(link) },
           onCancel = { viewModel.cancel(link) },
@@ -98,8 +116,18 @@ fun DownloadsScreen(
           onRemove = { viewModel.removeLink(link) },
           onUse = {
             modelManagerViewModel.syncDownloadLinks()
-            if (link.kind == com.google.ai.edge.gallery.data.downloads.LinkKind.MMPROJ) onUseVision()
-            else onUseModel(link.fileName)
+            onUseModel(link.fileName)
+          },
+          onProjectorAction = { action ->
+            projector?.let { p ->
+              when (action) {
+                "download", "retry" -> viewModel.download(p)
+                "pause" -> viewModel.pause(p)
+                "cancel" -> viewModel.cancel(p)
+                "delete" -> viewModel.deleteFile(p)
+                "use" -> onUseVision()
+              }
+            }
           },
         )
       }
@@ -110,8 +138,11 @@ fun DownloadsScreen(
 @Composable
 private fun DownloadLinkCard(
   link: DownloadLink,
+  projector: DownloadLink?,
+  device: DeviceProfile,
   groupBytes: Long,
   warning: String?,
+  onSelectVariant: (DownloadVariant) -> Unit,
   onDownload: () -> Unit,
   onPause: () -> Unit,
   onCancel: () -> Unit,
@@ -119,11 +150,16 @@ private fun DownloadLinkCard(
   onDeleteFile: () -> Unit,
   onRemove: () -> Unit,
   onUse: () -> Unit,
+  onProjectorAction: (String) -> Unit,
 ) {
+  val extraBytes = projector?.sizeBytes ?: 0L
+  val currentQuant = link.variants.firstOrNull { it.fileName == link.fileName }?.quant
+  val recommended = device.recommendedVariant(link, extraBytes)
+
   Card(Modifier.fillMaxWidth()) {
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
       Text(
-        link.label,
+        if (currentQuant == null) link.label else "$link.label · $currentQuant",
         style = MaterialTheme.typography.titleSmall,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
@@ -131,53 +167,118 @@ private fun DownloadLinkCard(
       Text(
         listOfNotNull(
           DownloadLinkFormat.mb(link.sizeBytes),
+          device.fitLabel(link.sizeBytes + extraBytes),
           if (link.vision) "visión" else null,
-          if (groupBytes > link.sizeBytes) "total ${DownloadLinkFormat.mb(groupBytes)} con visión" else null,
-          if (link.kind == com.google.ai.edge.gallery.data.downloads.LinkKind.MMPROJ) "proyector" else null,
+          if (projector != null) "total ${DownloadLinkFormat.mb(groupBytes)}" else null,
           stateLabel(link.state),
         ).joinToString(" · "),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
-      if (warning != null && link.state != LinkState.COMPLETED) {
+
+      if (link.variants.isNotEmpty()) {
         Text(
-          "⚠ $warning",
+          if (recommended == null) {
+            "Cuantización: ninguna cabe con holgura en este dispositivo."
+          } else {
+            "Cuantización · recomendada: ${recommended.quant} (${device.fitLabel(recommended.sizeBytes + extraBytes)})"
+          },
           style = MaterialTheme.typography.bodySmall,
-          color = Color(0xFFFFB300),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-      }
-      if (link.state == LinkState.DOWNLOADING || link.state == LinkState.PAUSED) {
-        LinearProgressIndicator(progress = { link.fraction }, modifier = Modifier.fillMaxWidth())
-        Text(DownloadLinkFormat.progress(link), style = MaterialTheme.typography.bodySmall)
-      }
-      if (link.error.isNotBlank()) {
-        Text(
-          "Error: ${link.error}",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.error,
-        )
-      }
-      FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        when (link.state) {
-          LinkState.IDLE -> Button(onClick = onDownload) { Text("Descargar") }
-          LinkState.DOWNLOADING -> {
-            OutlinedButton(onClick = onPause) { Text("Pausar") }
-            TextButton(onClick = onCancel) { Text("Cancelar") }
-          }
-          LinkState.PAUSED -> {
-            Button(onClick = onRetry) { Text("Reanudar") }
-            TextButton(onClick = onCancel) { Text("Cancelar") }
-          }
-          LinkState.FAILED -> {
-            Button(onClick = onRetry) { Text("Reintentar") }
-            TextButton(onClick = onCancel) { Text("Cancelar") }
-          }
-          LinkState.COMPLETED -> {
-            Button(onClick = onUse) { Text("Usar") }
-            TextButton(onClick = onDeleteFile) { Text("Borrar archivo") }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          link.variants.forEach { variant ->
+            FilterChip(
+              selected = variant.fileName == link.fileName,
+              onClick = { onSelectVariant(variant) },
+              label = { Text("${variant.quant} · ${device.fitLabel(variant.sizeBytes + extraBytes)}") },
+            )
           }
         }
-        if (!link.pinned) TextButton(onClick = onRemove) { Text("Quitar enlace") }
+      }
+
+      if (warning != null && link.state != LinkState.COMPLETED) {
+        Text("⚠ $warning", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB300))
+      }
+      ProgressOrError(link)
+
+      LinkActionButtons(
+        state = link.state,
+        onDownload = onDownload,
+        onPause = onPause,
+        onCancel = onCancel,
+        onRetry = onRetry,
+        onDeleteFile = onDeleteFile,
+        onUse = onUse,
+      )
+      if (!link.pinned) TextButton(onClick = onRemove) { Text("Quitar enlace") }
+
+      if (projector != null) {
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Text(projector.label, style = MaterialTheme.typography.labelLarge)
+        Text(
+          "${DownloadLinkFormat.mb(projector.sizeBytes)} · ${stateLabel(projector.state)}",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ProgressOrError(projector)
+        LinkActionButtons(
+          state = projector.state,
+          onDownload = { onProjectorAction("download") },
+          onPause = { onProjectorAction("pause") },
+          onCancel = { onProjectorAction("cancel") },
+          onRetry = { onProjectorAction("retry") },
+          onDeleteFile = { onProjectorAction("delete") },
+          onUse = { onProjectorAction("use") },
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun ProgressOrError(link: DownloadLink) {
+  if (link.state == LinkState.DOWNLOADING || link.state == LinkState.PAUSED) {
+    LinearProgressIndicator(progress = { link.fraction }, modifier = Modifier.fillMaxWidth())
+    Text(DownloadLinkFormat.progress(link), style = MaterialTheme.typography.bodySmall)
+  }
+  if (link.error.isNotBlank()) {
+    Text(
+      "Error: ${link.error}",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.error,
+    )
+  }
+}
+
+@Composable
+private fun LinkActionButtons(
+  state: LinkState,
+  onDownload: () -> Unit,
+  onPause: () -> Unit,
+  onCancel: () -> Unit,
+  onRetry: () -> Unit,
+  onDeleteFile: () -> Unit,
+  onUse: () -> Unit,
+) {
+  FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    when (state) {
+      LinkState.IDLE -> Button(onClick = onDownload) { Text("Descargar") }
+      LinkState.DOWNLOADING -> {
+        OutlinedButton(onClick = onPause) { Text("Pausar") }
+        TextButton(onClick = onCancel) { Text("Cancelar") }
+      }
+      LinkState.PAUSED -> {
+        Button(onClick = onRetry) { Text("Reanudar") }
+        TextButton(onClick = onCancel) { Text("Cancelar") }
+      }
+      LinkState.FAILED -> {
+        Button(onClick = onRetry) { Text("Reintentar") }
+        TextButton(onClick = onCancel) { Text("Cancelar") }
+      }
+      LinkState.COMPLETED -> {
+        Button(onClick = onUse) { Text("Usar") }
+        TextButton(onClick = onDeleteFile) { Text("Borrar archivo") }
       }
     }
   }

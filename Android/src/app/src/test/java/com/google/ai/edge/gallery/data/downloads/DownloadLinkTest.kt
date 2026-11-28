@@ -42,17 +42,15 @@ class DownloadLinkTest {
   }
 
   @Test
-  fun `el catalogo trae dos litertlm y los dos Unsloth con su proyector`() {
+  fun `el catalogo trae dos litertlm cuatro familias GGUF y tres proyectores F16`() {
     val base = DownloadLinkCatalog.base
-    assertEquals(6, base.size)
+    assertEquals(9, base.size)
     assertEquals(2, base.count { it.fileName.endsWith(".litertlm") })
-    assertEquals(
-      2,
-      base.count { it.label.contains("Unsloth") && it.kind == LinkKind.MODEL },
-    )
+    assertEquals(4, base.count { it.label.contains("Unsloth") && it.kind == LinkKind.MODEL })
     assertTrue(base.all { it.url.startsWith("https://huggingface.co/") })
-    assertEquals(2, base.count { it.kind == LinkKind.MMPROJ && it.target == LinkTarget.MMPROJ })
+    assertEquals(3, base.count { it.kind == LinkKind.MMPROJ && it.target == LinkTarget.MMPROJ })
     assertTrue(base.filter { it.kind == LinkKind.MMPROJ }.all { it.fileName.contains("-F16.gguf") })
+    assertTrue(base.filter { it.kind == LinkKind.MODEL && it.groupId.isNotBlank() }.all { it.variants.size == 5 })
   }
 
   @Test
@@ -81,6 +79,37 @@ class DownloadLinkTest {
       DownloadLinkCatalog.fromHfFile("unsloth/qwen", "mmproj-F16.gguf", 10L, LinkKind.MMPROJ, true)
     assertEquals(LinkTarget.MMPROJ, mmproj.target)
     assertFalse(mmproj.vision)
+  }
+
+  @Test
+  fun `la recomendacion elige la cuantizacion que cabe contando el proyector`() {
+    val gb = 1024L * 1024L * 1024L
+    val base = DownloadLinkCatalog.base
+    val e2b = base.first { it.id == "catalog-gemma4-e2b" }
+    val mmproj = base.first { it.id == "catalog-gemma4-e2b-mmproj" }
+    val llama = base.first { it.id == "catalog-llama3p2-3b" }
+
+    val phone8 = DeviceProfile(ramBytes = 8 * gb, soc = "sm8550")
+    assertNull(phone8.recommendedVariant(e2b, mmproj.sizeBytes))
+    val phone12 = DeviceProfile(ramBytes = 12 * gb, soc = "sm8750")
+    assertEquals("Q4_K_M", phone12.recommendedVariant(e2b, mmproj.sizeBytes)?.quant)
+    assertEquals("Q5_K_M", phone12.recommendedVariant(llama)?.quant)
+  }
+
+  @Test
+  fun `cambiar de cuantizacion reinicia el progreso y apunta al archivo nuevo`() {
+    val variant =
+      DownloadVariant("Q4_K_S", "x-q4ks.gguf", "https://huggingface.co/a/b/x-q4ks.gguf", 800L)
+    val running =
+      link.copy(variants = listOf(variant))
+        .withProgress(600L, 100L, 1_000L)
+        .copy(state = LinkState.DOWNLOADING)
+
+    val changed = running.withVariant(variant)
+    assertEquals("x-q4ks.gguf", changed.fileName)
+    assertEquals(800L, changed.sizeBytes)
+    assertEquals(LinkState.IDLE, changed.state)
+    assertEquals(0L, changed.receivedBytes)
   }
 
   @Test

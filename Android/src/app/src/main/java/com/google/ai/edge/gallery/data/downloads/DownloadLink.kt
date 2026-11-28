@@ -23,6 +23,15 @@ enum class LinkTarget {
   MMPROJ,
 }
 
+/** Una cuantización alternativa del mismo modelo del catálogo (tamaños verificados en HF). */
+@Serializable
+data class DownloadVariant(
+  val quant: String,
+  val fileName: String,
+  val url: String,
+  val sizeBytes: Long,
+)
+
 /**
  * Un modelo enlazado: entra en la lista desde el catálogo o desde Hugging Face y se queda ahí
  * aunque se cambie de pestaña o se cierre la pantalla. El worker escribe el progreso aquí.
@@ -47,6 +56,8 @@ data class DownloadLink(
   val pinned: Boolean = false,
   /** Modelo y proyector que se descargan juntos. */
   val groupId: String = "",
+  /** Cuantizaciones disponibles de esta familia; vacío si el enlace viene de una búsqueda. */
+  val variants: List<DownloadVariant> = emptyList(),
   val addedAtMs: Long = 0L,
 ) {
   val fraction: Float
@@ -61,6 +72,19 @@ data class DownloadLink(
 
   fun withState(state: LinkState, error: String = ""): DownloadLink =
     copy(state = state, error = error, bytesPerSecond = 0L, remainingMs = 0L)
+
+  /** Cambia la cuantización: el progreso anterior ya no sirve porque es otro archivo. */
+  fun withVariant(variant: DownloadVariant): DownloadLink =
+    copy(
+      url = variant.url,
+      fileName = variant.fileName,
+      sizeBytes = variant.sizeBytes,
+      state = LinkState.IDLE,
+      receivedBytes = 0L,
+      bytesPerSecond = 0L,
+      remainingMs = 0L,
+      error = "",
+    )
 }
 
 /** Formateo puro del progreso de la tarjeta (MB, velocidad y ETA). */

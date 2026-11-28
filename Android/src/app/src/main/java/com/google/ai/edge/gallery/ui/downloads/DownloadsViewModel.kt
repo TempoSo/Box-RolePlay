@@ -10,6 +10,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.google.ai.edge.gallery.data.downloads.DownloadLink
 import com.google.ai.edge.gallery.data.downloads.DownloadLinkStore
+import com.google.ai.edge.gallery.data.downloads.DownloadVariant
 import com.google.ai.edge.gallery.data.downloads.DeviceProfile
 import com.google.ai.edge.gallery.data.downloads.LinkState
 import com.google.ai.edge.gallery.worker.KEY_LINK_FILE
@@ -63,6 +64,19 @@ class DownloadsViewModel @Inject constructor(@ApplicationContext private val con
         .addTag("nexo_link:${link.id}")
         .build()
     workManager.enqueueUniqueWork(link.id, ExistingWorkPolicy.KEEP, request)
+  }
+
+  /**
+   * Cambia la cuantización de una familia. Se borra el archivo anterior y su `.part`: son GGUF
+   * distintos, reanudar desde el viejo mezclaría los dos. El estado vuelve a IDLE y el worker
+   * leerá el nuevo nombre del store al pulsar Descargar.
+   */
+  fun selectVariant(link: DownloadLink, variant: DownloadVariant) {
+    if (variant.fileName == link.fileName) return
+    workManager.cancelUniqueWork(link.id)
+    DownloadLinkStore.pathFor(context, link).delete()
+    File(DownloadLinkStore.pathFor(context, link).path + ".part").delete()
+    DownloadLinkStore.update(link.id) { it.withVariant(variant) }
   }
 
   /** Pausa conservando el `.part`: al reanudar se envía el rango HTTP desde ahí. */
