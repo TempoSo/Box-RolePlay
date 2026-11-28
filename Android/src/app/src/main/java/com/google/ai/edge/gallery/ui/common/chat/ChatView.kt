@@ -131,6 +131,15 @@ fun ChatView(
 
   val context = LocalContext.current
 
+  // Fondo del personaje: la conversación ya guarda a qué personaje pertenece, así que no hace falta
+  // pasar un parámetro nuevo por la navegación (también funciona al reabrir un chat desde el historial).
+  var backgroundCharacterId by remember { mutableStateOf("") }
+  LaunchedEffect(conversationId) {
+    val id = conversationId ?: return@LaunchedEffect
+    val llmViewModel = viewModel as? com.google.ai.edge.gallery.ui.llmchat.LlmChatViewModelBase
+    backgroundCharacterId = llmViewModel?.getConversationById(id)?.characterId ?: ""
+  }
+
   // Load conversation history: use explicit conversationId if provided, else auto-resume
   // the most recent conversation for this model (only when autoResumeConversation is true).
   LaunchedEffect(conversationId, selectedModel.name) {
@@ -343,6 +352,7 @@ fun ChatView(
                 allowImageOnlySend = allowImageOnlySend,
                 emptyStateComposable = emptyStateComposable,
                 aboveInputComposable = aboveInputComposable,
+                backgroundCharacterId = backgroundCharacterId,
               )
             // Model download
             false ->

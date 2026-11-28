@@ -2,13 +2,18 @@ package com.google.ai.edge.gallery.ui.roleplay
 
 import android.content.Intent
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.graphics.BitmapFactory
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +28,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -34,6 +40,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -66,11 +74,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.ai.edge.gallery.data.characters.CharacterAppearance
+import com.google.ai.edge.gallery.data.characters.CharacterAppearanceStore
 import com.google.ai.edge.gallery.data.characters.toJsonArrayString
 import com.google.ai.edge.gallery.data.characters.toStringList
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
 import com.google.ai.edge.gallery.ui.common.TagChips
 import java.io.File
+import java.util.UUID
 
 /** Lista de personajes: importar tarjeta (.json/.png), crear, editar, compartir, borrar y chatear. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -437,6 +448,37 @@ fun CharacterEditorScreen(
     var nameError by remember { mutableStateOf(false) }
     var tab by remember { mutableIntStateOf(0) }
     var modelName by remember { mutableStateOf("") }
+    // Apariencia: se guarda en preferencias (no en la tarjeta) para no migrar la base de datos.
+    // Un personaje nuevo ya necesita id para guardar su imagen de fondo antes del primer «Guardar».
+    val editorId = remember(characterId) { if (characterId == "new") UUID.randomUUID().toString() else characterId }
+    val appearanceStore = remember { CharacterAppearanceStore(context) }
+    var wallpaperId by remember { mutableStateOf("") }
+    var customImagePath by remember { mutableStateOf("") }
+    var expression by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    val backgroundPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            scope.launch {
+                val ok =
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            if (bytes == null) false
+                            else {
+                                CharacterAppearanceStore.imageFile(context, editorId).writeBytes(bytes)
+                                true
+                            }
+                        }.getOrDefault(false)
+                    }
+                if (ok) {
+                    customImagePath = CharacterAppearanceStore.imageFile(context, editorId).absolutePath
+                    wallpaperId = CharacterAppearanceStore.CUSTOM
+                } else {
+                    Toast.makeText(context, "No se pudo leer esa imagen.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     // Lorebook: entradas editables. Solo se reescribe el character_book si se tocó algo.
     val lore = remember { mutableStateListOf<com.google.ai.edge.gallery.data.characters.LoreEntry>() }
     val loreKeyText = remember { mutableStateListOf<String>() }
@@ -470,11 +512,16 @@ fun CharacterEditorScreen(
             }
             loaded = true
         }
+        val look = appearanceStore.load(editorId)
+        wallpaperId = look.wallpaperId
+        customImagePath = look.imagePath
+        expression = look.expression
     }
 
     fun build(): RoleplayCharacter {
         val base = original ?: RoleplayCharacter(name = name)
         return base.copy(
+            id = editorId,
             modelName = modelName,
             name = name.trim(),
             description = description,
@@ -534,8 +581,6 @@ fun CharacterEditorScreen(
                             label = { Text("Etiquetas (separadas por coma)") },
                             modifier = Modifier.fillMaxWidth(),
                         )
-                    }
-                    1 -> {
                         Text(
                             "Saludos. Se usa el primero al empezar un chat; si agregas más, se elige uno al azar.",
                             style = MaterialTheme.typography.bodySmall,
@@ -563,6 +608,16 @@ fun CharacterEditorScreen(
                             "Puedes usar {{char}} y {{user}} en cualquier campo.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    1 -> {
+                        AppearanceEditor(
+                            wallpaperId = wallpaperId,
+                            onWallpaper = { wallpaperId = it },
+                            customImagePath = customImagePath,
+                            onPickImage = { backgroundPicker.launch(arrayOf("image/*")) },
+                            expression = expression,
+                            onExpression = { expression = it },
                         )
                     }
                     2 -> {
@@ -677,7 +732,16 @@ fun CharacterEditorScreen(
                 Button(
                     onClick = {
                         if (name.isBlank()) { nameError = true; tab = 0; return@Button }
-                        viewModel.save(build(), onDone = navigateUp)
+                        viewModel.save(
+                            build(),
+                            onDone = {
+                                appearanceStore.save(
+                                    editorId,
+                                    CharacterAppearance(wallpaperId, customImagePath, expression),
+                                )
+                                navigateUp()
+                            },
+                        )
                     },
                     modifier = Modifier.weight(1f),
                 ) { Text("Guardar") }
@@ -694,5 +758,62 @@ private fun BigField(label: String, value: String, onChange: (String) -> Unit, l
         label = { Text(label) },
         minLines = lines,
         modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** Fondo y expresión del personaje. La expresión se guarda ya, pero hoy no se inyecta en el prompt. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AppearanceEditor(
+    wallpaperId: String,
+    onWallpaper: (String) -> Unit,
+    customImagePath: String,
+    onPickImage: () -> Unit,
+    expression: String,
+    onExpression: (String) -> Unit,
+) {
+    Text("Fondo del chat", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Se ve detrás de los mensajes. Los fondos de color se animan suavemente; tu imagen se muestra fija y atenuada.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val choices =
+            listOf("" to "Ninguno") +
+                CharacterAppearanceStore.PRESETS.map { it to CharacterAppearanceStore.labelsFor(it) } +
+                listOf(CharacterAppearanceStore.CUSTOM to "Imagen propia")
+        choices.forEach { (id, label) ->
+            FilterChip(selected = wallpaperId == id, onClick = { onWallpaper(id) }, label = { Text(label) })
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = onPickImage) {
+            Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null)
+            Spacer(Modifier.width(4.dp))
+            Text("Elegir imagen")
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (customImagePath.isNotBlank()) "Imagen lista" else "Sin imagen propia",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Spacer(Modifier.size(8.dp))
+    Text("Expresión", style = MaterialTheme.typography.titleSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        CharacterAppearanceStore.EXPRESSIONS.forEach { label ->
+            FilterChip(
+                selected = expression == label,
+                onClick = { onExpression(if (expression == label) "" else label) },
+                label = { Text(label) },
+            )
+        }
+    }
+    Text(
+        "Se guarda para más adelante: hoy el personaje no recibe la expresión automáticamente.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }

@@ -140,6 +140,8 @@ fun ChatPanel(
   allowImageOnlySend: Boolean = false,
   emptyStateComposable: @Composable (Model) -> Unit = {},
   aboveInputComposable: @Composable (Model) -> Unit = {},
+  /** Personaje de roleplay cuyo fondo se dibuja detrás de los mensajes (vacío = fondo normal). */
+  backgroundCharacterId: String = "",
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
@@ -288,6 +290,7 @@ fun ChatPanel(
       modifier = modifier.padding(innerPadding).consumeWindowInsets(innerPadding).imePadding()
     ) {
       Box(contentAlignment = Alignment.BottomCenter, modifier = Modifier.weight(1f)) {
+        CharacterChatBackground(backgroundCharacterId)
         val cdChatPanel = stringResource(R.string.cd_chat_panel)
         LazyColumn(
           modifier =

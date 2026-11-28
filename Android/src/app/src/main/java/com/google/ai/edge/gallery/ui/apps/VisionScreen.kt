@@ -1,10 +1,16 @@
 package com.google.ai.edge.gallery.ui.apps
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,6 +70,7 @@ import com.google.ai.edge.gallery.ui.home.BoxScaffold
 import com.google.ai.edge.gallery.ui.llmchat.LlmAskImageViewModel
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -157,6 +164,41 @@ fun VisionScreen(
         }
       }
     }
+  // Cámara: se guarda la foto en cacheDir/images (ya compartido por el FileProvider de la app) y se
+  // lee con el mismo decodeScaled que las imágenes de galería, así que respeta EXIF y no pasa de
+  // 1536 px. Con ACTION_IMAGE_CAPTURE + Uri propia se obtiene la foto completa, no una miniatura.
+  var cameraUri by remember { mutableStateOf<Uri?>(null) }
+  val takePicture =
+    rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+      val uri = cameraUri
+      if (ok && uri != null) {
+        scope.launch {
+          bitmap = withContext(Dispatchers.IO) { runCatching { decodeScaled(context, uri) }.getOrNull() }
+          if (bitmap == null) note = "No se pudo abrir la foto tomada."
+          error = null
+          model?.let { viewModel.clearAllMessages(it) }
+          withContext(Dispatchers.IO) { runCatching { File(uri.path ?: "").delete() } }
+          cameraUri = null
+        }
+      }
+    }
+  val askCamera =
+    rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+      if (!granted) note = "Sin permiso de cámara no se puede tomar la foto."
+      else cameraUri?.let { takePicture.launch(it) }
+    }
+
+  fun takePhoto() {
+    val file = File(File(context.cacheDir, "images"), "vision_capture_${System.currentTimeMillis()}.jpg")
+    file.parentFile?.mkdirs()
+    cameraUri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+      cameraUri?.let { takePicture.launch(it) }
+    } else {
+      askCamera.launch(Manifest.permission.CAMERA)
+    }
+  }
+
   val mmprojPicker =
     rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
       if (uri != null) {
@@ -210,7 +252,7 @@ fun VisionScreen(
       verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       // ── 01 Imagen de prueba ────────────────────────────────────────────────
-      VisionSection("01", "Imagen de prueba", "Elige una foto y pulsa «Procesar imagen».") {
+      VisionSection("01", "Imagen de prueba", "Elige una foto, toma una con la cámara y pulsa «Procesar imagen».") {
         val bmp = bitmap
         if (bmp != null) {
           Image(
@@ -235,6 +277,10 @@ fun VisionScreen(
           OutlinedButton(onClick = { imagePicker.launch("image/*") }, enabled = !busy, modifier = Modifier.weight(1f)) {
             Icon(Icons.Rounded.AddPhotoAlternate, null)
             Text(if (bmp == null) "Elegir imagen" else "Cambiar")
+          }
+          OutlinedButton(onClick = { takePhoto() }, enabled = !busy, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Rounded.PhotoCamera, null)
+            Text("Tomar foto")
           }
           if (busy) {
             Button(onClick = { model?.let { viewModel.stopResponse(it) } }, modifier = Modifier.weight(1f)) {

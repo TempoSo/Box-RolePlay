@@ -3,6 +3,7 @@ package com.google.ai.edge.gallery.tts
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
@@ -13,8 +14,10 @@ import kotlin.math.tanh
 /**
  * Limpieza de la muestra de voz de referencia de Pocket TTS (que clona la voz tal cual suena, con su
  * ruido, silencios y volumen). Lógica pura, sin Android. Pasos: quitar el nivel DC y los graves de
- * ruido (<80 Hz), reducir el ruido de fondo por sustracción espectral, recortar silencios (inicio,
- * final y pausas largas), limitar la duración, igualar el volumen y suavizar los bordes.
+ * ruido (<80 Hz), cortar el hiss por encima de 7,5 kHz, reducir el ruido de fondo por sustracción
+ * espectral, recortar silencios (inicio, final y pausas largas), elegir el mejor tramo de hasta
+ * 12 s (el límite real de SherpaPocketEngine), igualar el volumen, suavizar los bordes y entregar
+ * siempre WAV mono a 24 kHz (la tasa que espera Pocket TTS).
  */
 object VoiceCleaner {
   class Report(
@@ -24,67 +27,133 @@ object VoiceCleaner {
     val snrDb: Float?,
     /** % de muestras saturadas (clipping) en la original. */
     val clippedPct: Float,
+    /** Relación voz/ruido estimada después de limpiar, en dB. */
+    val snrAfterDb: Float?,
     val notes: List<String>,
   )
 
   class Result(val samples: FloatArray, val sampleRate: Int, val report: Report)
 
   private const val MIN_VOICE_S = 3f
+  /** SherpaPocketEngine recorta la referencia a 12 s: no sirve guardar más. */
+  private const val MAX_REFERENCE_S = 12f
+  /** Pocket TTS genera audio a 24 kHz; todas las voces guardadas salen a esa tasa. */
+  private const val TARGET_RATE = 24000
 
-  fun clean(input: FloatArray, sampleRate: Int, maxSeconds: Float = 20f): Result {
+  fun clean(input: FloatArray, sampleRate: Int, maxSeconds: Float = MAX_REFERENCE_S): Result {
     val notes = mutableListOf<String>()
     val inSec = input.size.toFloat() / sampleRate
     val clipped = if (input.isEmpty()) 0f else input.count { abs(it) >= 0.999f } * 100f / input.size
     if (clipped > 0.5f) notes.add("La grabación está saturada (%.1f %% de muestras): graba más lejos o con menos volumen.".format(clipped))
-    if (input.size < sampleRate / 2) return Result(input, sampleRate, Report(inSec, inSec, null, clipped, notes + "Muestra demasiado corta."))
+    if (input.size < sampleRate / 2) {
+      val short = resample(input, sampleRate, TARGET_RATE)
+      return Result(short, TARGET_RATE, Report(inSec, short.size.toFloat() / TARGET_RATE, null, clipped, null, notes + "Muestra demasiado corta."))
+    }
 
-    var x = removeDcAndRumble(input, sampleRate)
-    val before = frameRms(x, sampleRate)
-    val snr = estimateSnr(before)
+    var x = bandlimit(removeDcAndRumble(input, sampleRate), sampleRate)
+    val snr = estimateSnr(frameRms(x, sampleRate))
     x = denoise(x, sampleRate)
-    val rms = frameRms(x, sampleRate)
-    val thr = speechThreshold(rms)
+    val snrAfter = estimateSnr(frameRms(x, sampleRate))
+    if (snr != null && snrAfter != null && snrAfter > snr + 1f) {
+      notes.add("Ruido estimado: %.0f dB → %.0f dB.".format(snr, snrAfter))
+    }
+    // VAD suavizado: un pico suelto no cuenta como voz y un bache corto no la corta.
+    val smooth = smoothRms(frameRms(x, sampleRate))
+    val thr = speechThreshold(smooth)
     val frame = frameLen(sampleRate)
-    val voiced = BooleanArray(rms.size) { rms[it] > thr }
+    val voiced = BooleanArray(smooth.size) { smooth[it] > thr }
     if (voiced.none { it }) {
-      return Result(x, sampleRate, Report(inSec, x.size.toFloat() / sampleRate, snr, clipped, notes + "No se detecta voz en la muestra."))
+      val out = resample(x, sampleRate, TARGET_RATE)
+      return Result(out, TARGET_RATE, Report(inSec, out.size.toFloat() / TARGET_RATE, snr, clipped, snrAfter, notes + "No se detecta voz en la muestra."))
     }
     // Recorte: bordes con 150 ms de margen; pausas largas (>0,6 s) acortadas a 0,3 s.
     val margin = (0.15f * sampleRate / frame).toInt().coerceAtLeast(1)
     val first = max(0, voiced.indexOfFirst { it } - margin)
-    val last = min(rms.size - 1, voiced.indexOfLast { it } + margin)
+    val last = min(smooth.size - 1, voiced.indexOfLast { it } + margin)
     val maxGap = (0.6f * sampleRate / frame).toInt()
     val keepGap = (0.3f * sampleRate / frame).toInt()
     val out = ArrayList<Float>(x.size)
     var f = first
     val limit = (maxSeconds * sampleRate).toInt()
-    while (f <= last) {
+    while (f <= last && out.size < limit) {
       // Longitud del tramo de silencio que empieza en f
       var g = f
       while (g <= last && !voiced[g]) g++
       val gap = g - f
-      val take = if (gap > maxGap) keepGap else gap
+      val take = min(if (gap > maxGap) keepGap else gap, max(0, (limit - out.size) / frame))
       for (i in 0 until take) appendFrame(out, x, f + i, frame)
       f += max(gap, 0)
-      if (f > last) break
+      if (f > last || out.size >= limit) break
       // tramo con voz
       var v = f
       while (v <= last && voiced[v]) v++
       for (i in f until v) appendFrame(out, x, i, frame)
       f = v
-      if (out.size >= limit) {
-        // Se corta en el primer hueco tras alcanzar el límite
-        notes.add("Se usaron solo los primeros %d s: más no mejora el clon.".format(maxSeconds.toInt()))
-        break
-      }
     }
-    var y = FloatArray(min(out.size, limit + sampleRate)) { out[it] }
-    if (y.size > limit) y = y.copyOf(limit)
+    var y = FloatArray(out.size) { out[it] }
+    if (y.size > limit) {
+      y = bestWindow(y, sampleRate, limit)
+      notes.add("Se eligió el tramo con más voz (%d s máximo): el motor solo usa %d s.".format(maxSeconds.toInt(), maxSeconds.toInt()))
+    }
     y = normalize(y, sampleRate)
-    val outSec = y.size.toFloat() / sampleRate
-    if (outSec < MIN_VOICE_S) notes.add("Quedan solo %.1f s de voz; con 5-15 s el clon sale mejor.".format(outSec))
-    if (snr != null && snr < 15f) notes.add("Había bastante ruido de fondo (%.0f dB); se redujo, pero una grabación en silencio será mejor.".format(snr))
-    return Result(y, sampleRate, Report(inSec, outSec, snr, clipped, notes))
+    y = resample(y, sampleRate, TARGET_RATE)
+    val outSec = y.size.toFloat() / TARGET_RATE
+    if (outSec < MIN_VOICE_S) notes.add("Quedan solo %.1f s de voz; con 5-12 s el clon sale mejor.".format(outSec))
+    if (snr != null && snr in 1f..15f) notes.add("Había bastante ruido de fondo (%.0f dB); se redujo, pero una grabación en silencio será mejor.".format(snr))
+    return Result(y, TARGET_RATE, Report(inSec, outSec, snr, clipped, snrAfter, notes))
+  }
+
+  /** Filtro paso bajo de un polo: quita el hiss por encima de ~7,5 kHz sin tocar la voz. */
+  fun bandlimit(x: FloatArray, sr: Int, cutoff: Float = 7500f): FloatArray {
+    if (cutoff >= sr / 2f || x.isEmpty()) return x
+    val a = exp(-2.0 * PI * cutoff / sr).toFloat()
+    var y = 0f
+    return FloatArray(x.size) { i -> y = a * y + (1f - a) * x[i]; y }
+  }
+
+  /** Media móvil de 3 tramos para que el VAD no tiemble con un solo pico. */
+  private fun smoothRms(v: FloatArray): FloatArray =
+    FloatArray(v.size) { i ->
+      val prev = v.getOrElse(i - 1) { v[i] }
+      val next = v.getOrElse(i + 1) { v[i] }
+      (prev + 2f * v[i] + next) / 4f
+    }
+
+  /**
+   * Si la muestra limpia pasa del límite, se queda el tramo continuo con más energía de voz en vez
+   * de los primeros segundos (que a menudo son «probando, probando»).
+   */
+  private fun bestWindow(x: FloatArray, sr: Int, maxSamples: Int): FloatArray {
+    if (x.size <= maxSamples) return x
+    val frame = frameLen(sr)
+    val frames = (x.size + frame - 1) / frame
+    val winFrames = max(1, maxSamples / frame)
+    val rms = frameRms(x, sr)
+    val prefix = FloatArray(rms.size + 1)
+    for (i in rms.indices) prefix[i + 1] = prefix[i] + rms[i] * rms[i]
+    var bestStart = 0
+    var best = -1f
+    var s = 0
+    while (s + winFrames <= frames) {
+      val score = prefix[min(frames, s + winFrames)] - prefix[s]
+      if (score > best) { best = score; bestStart = s }
+      s += max(1, winFrames / 4)
+    }
+    val from = bestStart * frame
+    return x.copyOfRange(from, min(x.size, from + maxSamples))
+  }
+
+  /** Interpolación lineal a 24 kHz. La señal ya está limitada a 7,5 kHz, así que no hay aliasing. */
+  fun resample(x: FloatArray, from: Int, to: Int): FloatArray {
+    if (from == to || x.isEmpty()) return x
+    val count = max(1, (x.size.toLong() * to / from).toInt())
+    return FloatArray(count) { i ->
+      val pos = i.toDouble() * from / to
+      val a = pos.toInt().coerceAtMost(x.size - 1)
+      val b = min(x.size - 1, a + 1)
+      val frac = (pos - a).toFloat()
+      x[a] * (1f - frac) + x[b] * frac
+    }
   }
 
   private fun appendFrame(out: MutableList<Float>, x: FloatArray, idx: Int, frame: Int) {
@@ -113,8 +182,12 @@ object VoiceCleaner {
     return s[((s.size - 1) * p).toInt()]
   }
 
-  /** Umbral de "hay voz": por encima del ruido de fondo (percentil 10) con margen, nunca menos de -50 dBFS. */
-  private fun speechThreshold(rms: FloatArray): Float = max(percentile(rms, 0.10f) * 3f, 0.003f)
+  /**
+   * Umbral de "hay voz": por encima del ruido de fondo (percentil 10) pero también por debajo del
+   * propio hablante (percentil 90), para no recortar a alguien que habla bajito en una casa silenciosa.
+   */
+  private fun speechThreshold(rms: FloatArray): Float =
+    max(max(percentile(rms, 0.10f) * 3f, percentile(rms, 0.90f) * 0.06f), 0.003f)
 
   private fun estimateSnr(rms: FloatArray): Float? {
     val noise = percentile(rms, 0.10f)

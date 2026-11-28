@@ -44,4 +44,26 @@ class VoiceCleanerTest {
     val res = VoiceCleaner.clean(FloatArray(sr * 4) { if (it % 2 == 0) 1f else -1f }, sr)
     assertTrue(res.report.notes.any { "saturada" in it })
   }
+
+  @Test fun convierteSiempreAWavMonoA24k() {
+    val src = FloatArray(48000) { (0.3 * sin(2 * PI * 180 * it / 48000f)).toFloat() }
+    val resampled = VoiceCleaner.resample(src, 48000, 24000)
+    assertEquals(24000, resampled.size)
+    assertTrue(resampled.all { !it.isNaN() })
+    assertEquals(24000, VoiceCleaner.clean(sample(), sr).sampleRate)
+  }
+
+  @Test fun eligeElMejorTramoYNoPasaDe12Segundos() {
+    val r = java.util.Random(2)
+    val long =
+      FloatArray(sr * 20) { i ->
+        val t = i / sr.toFloat()
+        val voice = if (t >= 2f) (0.3 * sin(2 * PI * 180 * t) + 0.1 * sin(2 * PI * 900 * t)).toFloat() else 0f
+        voice + 0.02f * r.nextGaussian().toFloat() + 0.05f
+      }
+    val res = VoiceCleaner.clean(long, sr)
+    assertTrue(res.report.outSeconds <= 12.1f)
+    assertTrue(res.report.notes.any { "tramo" in it })
+    assertTrue(res.samples.all { !it.isNaN() })
+  }
 }

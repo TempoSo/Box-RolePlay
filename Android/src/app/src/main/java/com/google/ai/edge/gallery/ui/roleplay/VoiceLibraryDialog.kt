@@ -198,7 +198,7 @@ fun VoiceLibraryDialog(onDismiss: () -> Unit, currentPath: String? = null, onPic
                             Column(Modifier.weight(1f)) {
                                 Text("Limpiar la voz al guardar", style = MaterialTheme.typography.titleSmall)
                                 Text(
-                                    "Quita ruido y graves, recorta silencios, limita a 20 s e iguala el volumen. Recomendado para Pocket TTS, que clona la muestra tal cual suena.",
+                                    "Quita DC, graves y hiss, reduce el ruido, elige el mejor tramo de hasta 12 s, iguala el volumen y convierte a WAV mono de 24 kHz. Recomendado para Pocket TTS, que clona la muestra tal cual suena.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
