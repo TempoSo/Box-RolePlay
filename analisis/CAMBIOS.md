@@ -41,6 +41,14 @@
 
 ## 📝 Registro
 
+### 2026-11-28 — Modo conversación manos libres (rama `voz-manos-libres`, en prueba)
+
+- **Qué**: botón de micrófono en la barra de entrada del chat de roleplay. Un toque empieza a escuchar; cada transcripción se envía como mensaje del usuario; cuando el modelo termina **y** el TTS deja de hablar, vuelve a escuchar automáticamente. Un segundo toque corta el bucle y la voz. El idioma del reconocedor sigue ahora el del dispositivo (antes estaba fijo en `en-US`). Se añade `HandsFreePolicy` con la regla pura de reinicio.
+- **Por qué**: el usuario pidió un modo tipo Grok/Free Talk para hablar con el personaje sin tocar la pantalla entre turnos, y pidió expresamente hacerlo **en otra rama** para probarlo mañana antes de Integrarlo con fuerza. Se crea `voz-manos-libres` desde `desarrollo` (`9a0cd69`); no se fusiona en `desarrollo` ni en `main`.
+- **Archivos**: `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/HandsFreeButton.kt` (nuevo), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/HandsFreePolicy.kt` (nuevo), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/MessageInputText.kt` (parámetro `handsFreeComposable`), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/chat/ChatPanel.kt` ( cable del botón ), `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/textandvoiceinput/HoldToDictateViewModel.kt` (`startHandsFree`/`stopHandsFree`/`restartListening`, reintentos y locale), `Android/src/app/src/test/java/com/google/ai/edge/gallery/ui/common/chat/HandsFreePolicyTest.kt` (nuevo), `analisis/CAMBIOS.md`.
+- **Verificado**: `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon` → BUILD SUCCESSFUL, 290 tests, 0 fallos. Sin verificar en móvil. Es una primera versión: el STT es el `SpeechRecognizer` del sistema (no 100 % local); el siguiente paso, si la prueba gusta, es sustituirlo por SenseVoice local del AAR de sherpa-onnx y afinar detección de silencio.
+- **Nota**: `AGENTS.md` establece `desarrollo` como única rama de trabajo, pero el usuario pidió explícitamente otra rama para esta prueba; su instrucción prevalece y se respeta sin crear más ramas para nada más.
+
 ### 2026-11-28 — Chat: eliminar un mensaje y reescribir el turno
 
 - **Qué**: «Eliminar» entra en el menú de tres puntos de las acciones del chat de roleplay, tanto en mensajes del usuario como del modelo. Borra el mensaje elegido y todo lo que vino después (respuesta incluida), tanto en pantalla como en la conversación guardada, con diálogo de confirmación. Después se puede volver a escribir el turno y regenerar desde ahí. No aparece en chats que no sean de roleplay (`supportsMessageTools`).

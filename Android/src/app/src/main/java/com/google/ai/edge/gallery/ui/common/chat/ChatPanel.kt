@@ -783,6 +783,20 @@ fun ChatPanel(
         allowImageOnlySend = allowImageOnlySend,
         showStopButtonWhenInProgress = showStopButtonInInputWhenInProgress,
         onImageLimitExceeded = { showImageLimitBanner = true },
+        handsFreeComposable = {
+          if (viewModel.supportsMessageTools) {
+            HandsFreeButton(
+              enabled = !uiState.inProgress && !uiState.isResettingSession,
+              inProgress = uiState.inProgress,
+              onTranscript = { texto ->
+                onSendMessage(
+                  selectedModel,
+                  listOf(ChatMessageText(content = texto, side = ChatSide.USER)),
+                )
+              },
+            )
+          }
+        },
       )
     }
   }
