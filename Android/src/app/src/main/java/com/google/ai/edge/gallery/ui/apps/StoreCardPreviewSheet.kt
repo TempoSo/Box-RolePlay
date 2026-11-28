@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.characters.toCard
+import com.google.ai.edge.gallery.ui.common.sheetNestedScroll
 import com.google.ai.edge.gallery.store.StorePreview
 import com.google.ai.edge.gallery.ui.roleplay.ExpandableBlock
 
@@ -67,7 +68,9 @@ fun StoreCardPreviewSheet(
   }
 
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+    // El gesto hacia arriba, cuando el contenido ya está al fondo, se consume aquí para que el
+    // sheet no rebote en su ancla superior (fichas que ocupan justo la ventana).
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).sheetNestedScroll(scrollState)) {
       Column(
         // Sin overscroll propio: con fichas cortas el estiramiento del scroll peleaba con el drag
         // del sheet y producia el "levantamiento fantasma" al arrastrar hacia abajo.

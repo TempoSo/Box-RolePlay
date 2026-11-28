@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.characters.CharacterPromptBuilder
 import com.google.ai.edge.gallery.data.local.entities.RoleplayCharacter
+import com.google.ai.edge.gallery.ui.common.sheetNestedScroll
 import java.io.File
 
 /**
@@ -95,7 +96,8 @@ fun CharacterDetailSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        // El gesto hacia arriba se consume al fondo del scroll para que el sheet no rebote.
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).sheetNestedScroll(scrollState)) {
             Column(
                 // Sin overscroll propio: si la ficha es corta, el estiramiento del scroll
                 // competia con el drag del sheet y hacia que oscilara al arrastrar hacia abajo.

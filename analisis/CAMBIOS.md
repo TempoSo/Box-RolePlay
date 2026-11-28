@@ -41,6 +41,13 @@
 
 ## 📝 Registro
 
+### 2026-11-27 — Fichas: evitar el rebote al deslizar hacia arriba cuando el contenido cabe justo
+
+- **Qué**: se añade una conexión de scroll anidado que consume el gesto hacia arriba cuando el contenido de la ficha ya está en el fondo. Así el `ModalBottomSheet` no recibe ese delta y deja de rebotar en su ancla superior. El gesto hacia abajo **no** se consume, para que siga cerrando la ficha. Se aplica tanto a la ficha previa de la tienda como a la ficha de personaje importado.
+- **Por qué**: el usuario vio que, con personajes que ocupan exactamente la ventana, al arrastrar hacia arriba la hoja «baila» como si intentara desplazarse infinitamente. Causa: con contenido que cabe justo no hay recorrido de scroll, así que todo el gesto ascendente llegaba al sheet, que hace rubber-band en el ancla `Expanded` (y con `skipPartiallyExpanded = true` no puede expandirse más). El fix anterior solo había desactivado el `overscrollEffect` interno, que resolvía el caso de contenido corto al arrastrar hacia abajo pero no este.
+- **Archivos**: nuevo `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/common/SheetScroll.kt` (`sheetScrollConnection` + `Modifier.sheetNestedScroll`); `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/apps/StoreCardPreviewSheet.kt` y `Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/roleplay/CharacterDetailSheet.kt` (conexión aplicada al contenedor de la hoja); `analisis/CAMBIOS.md`.
+- **Verificado**: `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon` → BUILD SUCCESSFUL, sin regresiones en tests. Sin verificar en móvil: el gesto real en una ficha que ocupa exactamente la ventana y que «Sorpréndeme» siga abriendo la ficha sin rebote. Queda en `desarrollo`, sin fusionar en `main`.
+
 ### 2026-11-27 — Memoria: cada recuerdo nace estructurado y suma nodos al grafo (Fase 1)
 
 - **Qué**: al guardar cualquier recuerdo (automático al chatear, manual o resultado de absorber) se generan de inmediato sus nodos y relaciones en el grafo del personaje: nodo del recuerdo, nodo con el texto sin procesar (`derived_from`), personas (T0), conceptos/emociones (T1), tripletas sujeto → relación → objeto y arista temporal `next` hacia la versión anterior. La nota automática además se convierte en `CharacterMemory` con `sourceConversationId` del chat actual, así que no se inyecta en esa misma conversación (anti-eco y firma estable para la caché de prefijo). «Absorber clústeres» deja de ser el paso que arma la memoria; queda como consolidación opcional.
